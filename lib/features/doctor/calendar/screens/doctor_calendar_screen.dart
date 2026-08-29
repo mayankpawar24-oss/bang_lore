@@ -1,0 +1,534 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:uuid/uuid.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/section_header.dart';
+import '../../../../core/widgets/status_chip.dart';
+import '../../../../data/providers/providers.dart';
+import '../../../../data/models/appointment_model.dart';
+import '../../../../data/models/patient_model.dart';
+
+class DoctorCalendarScreen extends ConsumerStatefulWidget {
+  const DoctorCalendarScreen({super.key});
+
+  @override
+  ConsumerState<DoctorCalendarScreen> createState() => _DoctorCalendarScreenState();
+}
+
+class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
+  DateTime _selectedDate = DateTime.now();
+  DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  List<String> _customSlots = ['09:00 AM', '10:30 AM', '02:00 PM', '04:30 PM'];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = ref.read(authProvider).user;
+      if (user != null) {
+        ref.read(appointmentsProvider.notifier).loadAppointments(user.id);
+      }
+      ref.read(patientsProvider.notifier).loadPatients();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appointments = ref.watch(appointmentsProvider);
+    final patients = ref.watch(patientsProvider);
+
+    final selectedDayAppointments = appointments.where((a) => _isSameDay(a.dateTime, _selectedDate)).toList();
+    final pendingRequests = appointments.where((a) => a.status == AppointmentStatus.pending).toList();
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Doctor Calendar',
+                        style: TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.navy,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Manage consultation schedule & slots',
+                        style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: () => _showAddSlotSheet(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.blueToIndigo,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(LucideIcons.plus, color: Colors.white, size: 16),
+                          SizedBox(width: 4),
+                          Text('Add Slot', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Full Month Grid View
+              _buildMonthCalendarView(appointments),
+              const SizedBox(height: 24),
+
+              // Pending Requests
+              if (pendingRequests.isNotEmpty) ...[
+                const SectionHeader(title: 'Appointment Requests', subtitle: 'Pending patient requests'),
+                const SizedBox(height: 12),
+                ...pendingRequests.map((req) => _buildRequestCard(req)),
+                const SizedBox(height: 24),
+              ],
+
+              // Scheduled Appointments for Selected Day
+              SectionHeader(
+                title: 'Scheduled Consultations',
+                subtitle: _formatDateStr(_selectedDate),
+              ),
+              const SizedBox(height: 14),
+              if (selectedDayAppointments.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                  ),
+                  child: const Center(
+                    child: Text('No appointments scheduled for this day.', style: TextStyle(color: AppColors.secondaryText)),
+                  ),
+                )
+              else
+                ...selectedDayAppointments.map((appt) => _buildAppointmentCard(appt)),
+              const SizedBox(height: 24),
+
+              // Availability & Time Slots Section
+              const SectionHeader(
+                title: 'Availability & Slots',
+                subtitle: 'Tap open slots to book a patient consultation',
+              ),
+              const SizedBox(height: 14),
+              _buildSlotsContainer(context, patients),
+
+              const SizedBox(height: 40),
+            ],
+          ).animate().fadeIn(duration: 300.ms),
+        ),
+      ),
+    );
+  }
+
+  // Full Month Interactive Grid Calendar
+  Widget _buildMonthCalendarView(List<AppointmentModel> appointments) {
+    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final monthName = months[_focusedMonth.month - 1];
+
+    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final firstWeekday = DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday % 7;
+
+    final now = DateTime.now();
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.navy.withValues(alpha: 0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '$monthName ${_focusedMonth.year}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.navy,
+                ),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(LucideIcons.chevronLeft, color: AppColors.navy, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.chevronRight, color: AppColors.navy, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: const ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day) {
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    day,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.muted),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: firstWeekday + daysInMonth,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 1.1,
+            ),
+            itemBuilder: (context, index) {
+              if (index < firstWeekday) return const SizedBox.shrink();
+              final dayNum = index - firstWeekday + 1;
+              final dayDate = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
+
+              final isSelected = _isSameDay(dayDate, _selectedDate);
+              final isToday = _isSameDay(dayDate, now);
+              final dayAppts = appointments.where((a) => _isSameDay(a.dateTime, dayDate)).toList();
+
+              return GestureDetector(
+                onTap: () => setState(() => _selectedDate = dayDate),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primaryBlue
+                        : (isToday ? AppColors.softBlue : Colors.transparent),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '$dayNum',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: (isSelected || isToday) ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : (isToday ? AppColors.primaryBlue : AppColors.navy),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      if (dayAppts.isNotEmpty)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: dayAppts.take(3).map((a) {
+                            final dotColor = a.status == AppointmentStatus.completed
+                                ? AppColors.success
+                                : (a.status == AppointmentStatus.cancelled ? AppColors.danger : Colors.white);
+                            return Container(
+                              width: 4,
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(horizontal: 1),
+                              decoration: BoxDecoration(color: isSelected ? dotColor : AppColors.primaryBlue, shape: BoxShape.circle),
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequestCard(AppointmentModel appt) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(color: AppColors.navy.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(appt.patientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.navy)),
+              StatusChip(label: 'PENDING', status: 'warning'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('${appt.specialty} • ${_formatTime(appt.dateTime)}', style: const TextStyle(color: AppColors.secondaryText, fontSize: 13)),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => ref.read(appointmentsProvider.notifier).cancelAppointment(appt.id),
+                  child: const Text('Decline', style: TextStyle(color: AppColors.danger)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PrimaryButton(
+                  label: 'Accept',
+                  onPressed: () {
+                    final accepted = appt.copyWith(status: AppointmentStatus.scheduled);
+                    ref.read(appointmentsProvider.notifier).bookAppointment(accepted);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAppointmentCard(AppointmentModel appt) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(color: AppColors.softBlue, shape: BoxShape.circle),
+            child: const Icon(LucideIcons.stethoscope, color: AppColors.primaryBlue, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(appt.patientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy)),
+                const SizedBox(height: 2),
+                Text('${appt.specialty} • ${_formatTime(appt.dateTime)} (${appt.durationMinutes} min)', style: const TextStyle(color: AppColors.secondaryText, fontSize: 12)),
+              ],
+            ),
+          ),
+          StatusChip(
+            label: appt.status.name.toUpperCase(),
+            status: appt.status == AppointmentStatus.completed ? 'success' : 'primary',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSlotsContainer(BuildContext context, List<PatientModel> patients) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Available Time Slots', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy)),
+          const SizedBox(height: 4),
+          const Text('Tap an open slot to schedule a consultation', style: TextStyle(color: AppColors.secondaryText, fontSize: 12)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _customSlots.map((slot) {
+              return GestureDetector(
+                onTap: () => _bookPatientSlotModal(context, slot, patients),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceBlue,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.clock, size: 14, color: AppColors.primaryBlue),
+                      const SizedBox(width: 6),
+                      Text(slot, style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _bookPatientSlotModal(BuildContext context, String timeSlot, List<PatientModel> patients) {
+    String selectedPatient = patients.isNotEmpty ? patients.first.name : 'Margaret Chen';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Schedule Slot ($timeSlot)', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+              const SizedBox(height: 4),
+              Text('Date: ${_formatDateStr(_selectedDate)}', style: const TextStyle(color: AppColors.secondaryText, fontSize: 13)),
+              const SizedBox(height: 16),
+              const Text('Select Patient', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.navy)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: patients.map((p) => ChoiceChip(
+                  label: Text(p.name),
+                  selected: selectedPatient == p.name,
+                  selectedColor: AppColors.primaryBlue,
+                  labelStyle: TextStyle(color: selectedPatient == p.name ? Colors.white : AppColors.primaryBlue, fontWeight: FontWeight.bold),
+                  onSelected: (val) { if (val) setModalState(() => selectedPatient = p.name); },
+                )).toList(),
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Confirm Consultation Slot',
+                onPressed: () {
+                  final newAppt = AppointmentModel(
+                    id: const Uuid().v4(),
+                    patientId: 'p_margaret_01',
+                    doctorId: 'd_aisha_01',
+                    doctorName: 'Dr. Aisha Patel',
+                    patientName: selectedPatient,
+                    specialty: 'Cardiology Consultation',
+                    dateTime: _selectedDate,
+                    durationMinutes: 30,
+                    status: AppointmentStatus.scheduled,
+                  );
+                  ref.read(appointmentsProvider.notifier).bookAppointment(newAppt);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Consultation booked for $selectedPatient at $timeSlot!'), backgroundColor: AppColors.primaryBlue));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddSlotSheet(BuildContext context) {
+    final slotCtrl = TextEditingController(text: '03:30 PM');
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Add Custom Available Slot', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            const SizedBox(height: 16),
+            TextField(controller: slotCtrl, decoration: const InputDecoration(labelText: 'Time Slot', hintText: 'e.g. 03:30 PM')),
+            const SizedBox(height: 24),
+            PrimaryButton(
+              label: 'Save Time Slot',
+              onPressed: () {
+                if (slotCtrl.text.isNotEmpty) {
+                  setState(() => _customSlots.add(slotCtrl.text));
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('New time slot added!'), backgroundColor: AppColors.primaryBlue));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _formatDateStr(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $ampm';
+  }
+}
