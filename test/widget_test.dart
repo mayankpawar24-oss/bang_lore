@@ -4,8 +4,8 @@ import 'package:continuum_health/main.dart';
 
 void main() {
   testWidgets('App load test', (WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: ContinuumHealthApp()));
+    await tester.pumpWidget(const ProviderScope(child: ArdiusCareApp()));
     await tester.pumpAndSettle(const Duration(seconds: 1));
-    expect(find.byType(ContinuumHealthApp), findsOneWidget);
+    expect(find.byType(ArdiusCareApp), findsOneWidget);
   });
 }

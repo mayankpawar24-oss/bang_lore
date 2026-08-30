@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/glass_card.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/family_member_model.dart';
@@ -15,47 +15,74 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final members = ref.watch(familyMembersProvider);
     final member = members.firstWhere(
       (m) => m.id == memberId,
-      orElse: () => members.isNotEmpty ? members.first : FamilyMemberModel(
-        id: memberId, name: 'Unknown', relationship: 'Unknown', generation: 0,
-        avatarUrl: null, knownConditions: [], familyHistory: [], careNeeds: 'None',
-        careTasks: [], hydration: HydrationStatus.needed, walking: WalkingStatus.needed, medication: MedicationStatus.needed,
-      ),
+      orElse: () => members.isNotEmpty
+          ? members.first
+          : FamilyMemberModel(
+              id: memberId,
+              name: 'Unknown',
+              relationship: 'Unknown',
+              generation: 0,
+              avatarUrl: null,
+              knownConditions: [],
+              familyHistory: [],
+              careNeeds: 'None',
+              careTasks: [],
+              hydration: HydrationStatus.needed,
+              walking: WalkingStatus.needed,
+              medication: MedicationStatus.needed,
+            ),
     );
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       appBar: AppBar(
-        title: Text(member.name, style: const TextStyle(color: AppColors.navy, fontWeight: FontWeight.bold)),
+        title: Text(
+          member.name,
+          style: TextStyle(
+            color: isDark ? Colors.white : AppColors.navy,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: AppColors.navy),
+          icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
           onPressed: () => context.pop(),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header Profile Card
-            GlassCard(
-              padding: const EdgeInsets.all(24),
+            AppCard(
+              padding: const EdgeInsets.all(22),
+              borderRadius: 24,
+              elevation: 1,
               child: Row(
                 children: [
                   CircleAvatar(
                     radius: 36,
-                    backgroundColor: AppColors.softBlue,
+                    backgroundColor: isDark
+                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                        : AppColors.softBlue,
                     backgroundImage: (member.avatarUrl != null && member.avatarUrl!.isNotEmpty)
                         ? NetworkImage(member.avatarUrl!)
                         : null,
                     child: (member.avatarUrl == null || member.avatarUrl!.isEmpty)
                         ? Text(
                             member.name.isNotEmpty ? member.name[0] : '?',
-                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryBlue,
+                            ),
                           )
                         : null,
                   ),
@@ -66,18 +93,39 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
                       children: [
                         Text(
                           member.name,
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy),
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.navy,
+                            letterSpacing: -0.3,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${member.relationship} • Generation ${member.generation}',
-                          style: const TextStyle(fontSize: 14, color: AppColors.secondaryText),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          ),
                         ),
                         if (member.careNeeds != null && member.careNeeds!.isNotEmpty) ...[
                           const SizedBox(height: 6),
-                          Text(
-                            'Needs: ${member.careNeeds}',
-                            style: const TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontWeight: FontWeight.w600),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                                  : AppColors.softBlue,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Needs: ${member.careNeeds}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.primaryBlue,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ],
@@ -93,11 +141,11 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _buildWellnessBadge('Hydration', member.hydration.name, LucideIcons.droplet, AppColors.accentCyan)),
+                Expanded(child: _buildWellnessBadge('Hydration', member.hydration.name, LucideIcons.droplet, AppColors.accentCyan, isDark)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildWellnessBadge('Walking', member.walking.name, LucideIcons.footprints, AppColors.success)),
+                Expanded(child: _buildWellnessBadge('Walking', member.walking.name, LucideIcons.footprints, AppColors.success, isDark)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildWellnessBadge('Medication', member.medication.name, LucideIcons.pill, AppColors.primaryBlue)),
+                Expanded(child: _buildWellnessBadge('Medication', member.medication.name, LucideIcons.pill, AppColors.primaryBlue, isDark)),
               ],
             ),
             const SizedBox(height: 24),
@@ -107,17 +155,22 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
               const SectionHeader(title: 'Known Conditions'),
               const SizedBox(height: 12),
               Wrap(
-                spacing: 8, runSpacing: 8,
+                spacing: 8,
+                runSpacing: 8,
                 children: member.knownConditions.map((c) => Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: AppColors.danger.withValues(alpha: 0.1),
+                    color: AppColors.danger.withValues(alpha: isDark ? 0.2 : 0.1),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
                   ),
                   child: Text(
                     c,
-                    style: const TextStyle(color: AppColors.danger, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 )).toList(),
               ),
@@ -131,13 +184,11 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
                 subtitle: 'Hereditary health indicators',
               ),
               const SizedBox(height: 10),
-              Container(
+              AppCard(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.softBlue.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.2)),
-                ),
+                borderRadius: 20,
+                elevation: 1,
+                borderColor: AppColors.primaryBlue.withValues(alpha: 0.2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -147,14 +198,28 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
                         children: [
                           const Icon(LucideIcons.activity, size: 16, color: AppColors.primaryBlue),
                           const SizedBox(width: 10),
-                          Text(h, style: const TextStyle(fontSize: 15, color: AppColors.navy, fontWeight: FontWeight.w500)),
+                          Expanded(
+                            child: Text(
+                              h,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? Colors.white : AppColors.navy,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     )),
-                    const Divider(height: 16),
+                    Divider(height: 16, color: isDark ? const Color(0xFF334155) : AppColors.border),
                     const Text(
-                      'Family history context — not a diagnosis.',
-                      style: TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600),
+                      'Family history context — not a clinical diagnosis.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.primaryBlue,
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -168,47 +233,61 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
               subtitle: 'Tap tasks to cycle status (To Do → Active → Done)',
             ),
             const SizedBox(height: 14),
-            _buildCareTasksList(context, ref, member),
+            _buildCareTasksList(context, ref, member, isDark),
+            const SizedBox(height: 30),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildWellnessBadge(String title, String status, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-      ),
+  Widget _buildWellnessBadge(String title, String status, IconData icon, Color color, bool isDark) {
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 16,
+      elevation: 0.5,
       child: Column(
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 6),
-          Text(title, style: const TextStyle(fontSize: 12, color: AppColors.secondaryText)),
-          const SizedBox(height: 2),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isDark ? 0.25 : 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+            ),
+          ),
+          const SizedBox(height: 3),
           Text(
             status.toUpperCase(),
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCareTasksList(BuildContext context, WidgetRef ref, FamilyMemberModel member) {
+  Widget _buildCareTasksList(BuildContext context, WidgetRef ref, FamilyMemberModel member, bool isDark) {
     if (member.careTasks.isEmpty) {
-      return Container(
+      return AppCard(
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-        ),
-        child: const Center(
-          child: Text('No active care tasks assigned.', style: TextStyle(color: AppColors.secondaryText)),
+        borderRadius: 20,
+        child: Center(
+          child: Text(
+            'No active care tasks assigned.',
+            style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+          ),
         ),
       );
     }
@@ -233,7 +312,12 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
             break;
         }
 
-        return GestureDetector(
+        return AppCard(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          borderRadius: 16,
+          elevation: 0.5,
+          borderColor: statusColor.withValues(alpha: 0.35),
           onTap: () {
             CareTaskStatus nextStatus;
             if (task.status == CareTaskStatus.todo) {
@@ -245,56 +329,54 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
             }
             ref.read(familyMembersProvider.notifier).updateCareTaskStatus(member.id, task.id, nextStatus);
           },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-              boxShadow: [
-                BoxShadow(color: AppColors.navy.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 3)),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: task.status == CareTaskStatus.done
+                            ? (isDark ? const Color(0xFF64748B) : AppColors.secondaryText)
+                            : (isDark ? Colors.white : AppColors.navy),
+                        decoration: task.status == CareTaskStatus.done ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
+                    if (task.assignedTo != null) ...[
+                      const SizedBox(height: 4),
                       Text(
-                        task.title,
+                        'Assigned to ${task.assignedTo}',
                         style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: task.status == CareTaskStatus.done ? AppColors.secondaryText : AppColors.navy,
-                          decoration: task.status == CareTaskStatus.done ? TextDecoration.lineThrough : null,
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                         ),
                       ),
-                      if (task.assignedTo != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Assigned to ${task.assignedTo}',
-                          style: const TextStyle(fontSize: 12, color: AppColors.secondaryText),
-                        ),
-                      ],
                     ],
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: isDark ? 0.25 : 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       }).toList(),

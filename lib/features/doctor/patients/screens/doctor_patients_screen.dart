@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../data/providers/providers.dart';
@@ -21,6 +23,8 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _selectedFilter = 'All'; // All, Critical, Attention, Stable
 
+  final List<String> _filters = ['All', 'Critical', 'Attention', 'Stable'];
+
   @override
   void initState() {
     super.initState();
@@ -30,7 +34,14 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final patients = ref.watch(patientsProvider);
     final authState = ref.watch(authProvider);
 
@@ -42,13 +53,12 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Top App Bar
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
                 children: [
                   Row(
@@ -56,33 +66,51 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
                             'My Patients',
                             style: TextStyle(
                               fontSize: 26,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.navy,
+                              color: isDark ? Colors.white : AppColors.navy,
                               letterSpacing: -0.5,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
                             'Search & view patient health briefs',
-                            style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                            style: TextStyle(
+                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
-                      IconButton(
-                        onPressed: () => context.push('/doctor/patients/scan-qr'),
-                        icon: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => context.push('/doctor/patients/scan-qr'),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.1)
+                                    : AppColors.border.withValues(alpha: 0.8),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(LucideIcons.qrCode, color: AppColors.primaryBlue, size: 20),
                           ),
-                          child: const Icon(LucideIcons.qrCode, color: AppColors.primaryBlue, size: 20),
                         ),
                       ),
                     ],
@@ -90,53 +118,69 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                   const SizedBox(height: 16),
 
                   // Search Field
-                  TextField(
+                  AppSearchBar(
                     controller: _searchController,
+                    hintText: 'Search patients by name or condition...',
                     onChanged: (val) {
                       ref.read(patientsProvider.notifier).searchPatients(val);
                     },
-                    decoration: InputDecoration(
-                      hintText: 'Search patients by name or condition...',
-                      prefixIcon: const Icon(LucideIcons.search, color: AppColors.secondaryText, size: 20),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.6)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.6)),
-                      ),
-                    ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
-                  // Filter Chips
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['All', 'Critical', 'Attention', 'Stable'].map((filter) {
+                  // Filter Chips Strip
+                  SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _filters.length,
+                      itemBuilder: (context, index) {
+                        final filter = _filters[index];
                         final isSelected = _selectedFilter == filter;
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(filter),
-                            selected: isSelected,
-                            selectedColor: AppColors.primaryBlue,
-                            backgroundColor: Colors.white,
-                            labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppColors.navy,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedFilter = filter),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.primaryBlue
+                                    : (isDark ? const Color(0xFF131C2E) : Colors.white),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppColors.primaryBlue
+                                      : (isDark
+                                          ? Colors.white.withValues(alpha: 0.08)
+                                          : AppColors.border),
+                                ),
+                                boxShadow: isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  filter,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.white
+                                        : (isDark ? Colors.white : AppColors.navy),
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
                             ),
-                            onSelected: (val) {
-                              if (val) setState(() => _selectedFilter = filter);
-                            },
                           ),
                         );
-                      }).toList(),
+                      },
                     ),
                   ),
                 ],
@@ -145,17 +189,56 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
 
             // Patient List View
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: filteredPatients.length,
-                itemBuilder: (context, index) {
-                  final patient = filteredPatients[index];
-                  return _buildPatientListItem(patient, authState.user?.id, authState.user?.name)
-                      .animate()
-                      .fadeIn(duration: 300.ms, delay: (40 * index).ms)
-                      .slideY(begin: 0.05);
-                },
-              ),
+              child: filteredPatients.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF131C2E) : AppColors.softBlue,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              LucideIcons.users,
+                              size: 36,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'No patients found',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Try adjusting your search query or filter criteria.',
+                            style: TextStyle(
+                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      itemCount: filteredPatients.length,
+                      itemBuilder: (context, index) {
+                        final patient = filteredPatients[index];
+                        return _buildPatientListItem(
+                          patient,
+                          authState.user?.id,
+                          authState.user?.name,
+                          isDark,
+                        ).animate().fadeIn(duration: 250.ms, delay: (30 * index).ms).slideY(begin: 0.04);
+                      },
+                    ),
             ),
           ],
         ),
@@ -163,108 +246,129 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
     );
   }
 
-  Widget _buildPatientListItem(PatientModel patient, String? doctorId, String? doctorName) {
-    return GestureDetector(
+  Widget _buildPatientListItem(
+    PatientModel patient,
+    String? doctorId,
+    String? doctorName,
+    bool isDark,
+  ) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 0.5,
+      borderColor: !patient.isAuthorized
+          ? AppColors.warning.withValues(alpha: 0.4)
+          : null,
       onTap: () {
         if (patient.isAuthorized) {
           context.push('/doctor/patients/patient/${patient.id}', extra: patient);
         } else {
-          _showRequestAccessDialog(patient, doctorId, doctorName);
+          _showRequestAccessDialog(patient, doctorId, doctorName, isDark);
         }
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: patient.isAuthorized
-                ? AppColors.border.withValues(alpha: 0.6)
-                : AppColors.warning.withValues(alpha: 0.4),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.navy.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: patient.isAuthorized ? AppColors.softBlue : Colors.grey.shade200,
-              child: Text(
-                patient.name[0],
-                style: TextStyle(
-                  color: patient.isAuthorized ? AppColors.primaryBlue : AppColors.muted,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: patient.isAuthorized
+                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : AppColors.softBlue)
+                : (isDark ? const Color(0xFF1E293B) : Colors.grey.shade200),
+            child: Text(
+              patient.name.isNotEmpty ? patient.name[0] : 'P',
+              style: TextStyle(
+                color: patient.isAuthorized ? AppColors.primaryBlue : AppColors.muted,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          patient.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.navy),
-                          overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        patient.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!patient.isAuthorized)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.warning.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: const [
+                            Icon(LucideIcons.lock, size: 11, color: AppColors.warning),
+                            SizedBox(width: 4),
+                            Text(
+                              'LOCKED',
+                              style: TextStyle(
+                                color: AppColors.warning,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      if (!patient.isAuthorized)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: const [
-                              Icon(LucideIcons.lock, size: 12, color: AppColors.warning),
-                              SizedBox(width: 4),
-                              Text('LOCKED', style: TextStyle(color: AppColors.warning, fontSize: 10, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${patient.age} yrs • ${patient.condition}',
-                    style: const TextStyle(color: AppColors.secondaryText, fontSize: 13),
-                  ),
-                  if (patient.isAuthorized && patient.vitals != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'HR: ${patient.vitals!['hr'] ?? 74} bpm • SpO₂: ${patient.vitals!['spo2'] ?? 98}%',
-                      style: const TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontWeight: FontWeight.w500),
-                    ),
                   ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${patient.age} yrs • ${patient.condition}',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+                if (patient.isAuthorized && patient.vitals != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'HR: ${patient.vitals!['hr'] ?? 74} bpm • SpO₂: ${patient.vitals!['spo2'] ?? 98}%',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primaryBlue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(width: 10),
-            if (patient.isAuthorized)
-              StatusChip(label: patient.status.toUpperCase(), status: patient.status)
-            else
-              const Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          if (patient.isAuthorized)
+            StatusChip(label: patient.status.toUpperCase(), status: patient.status)
+          else
+            const Icon(LucideIcons.chevronRight, size: 18, color: AppColors.muted),
+        ],
       ),
     );
   }
 
-  void _showRequestAccessDialog(PatientModel patient, String? doctorId, String? doctorName) {
+  void _showRequestAccessDialog(
+    PatientModel patient,
+    String? doctorId,
+    String? doctorName,
+    bool isDark,
+  ) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
         return Padding(
@@ -275,21 +379,28 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.15),
+                  color: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(LucideIcons.lock, size: 40, color: AppColors.warning),
+                child: const Icon(LucideIcons.lock, size: 36, color: AppColors.warning),
               ),
               const SizedBox(height: 16),
               Text(
                 'Access Restricted',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy),
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 'You need patient authorization to access medical records for ${patient.name}.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 24),
               PrimaryButton(
@@ -309,7 +420,10 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
                   ref.read(permissionRequestsProvider.notifier).addRequest(req);
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Access request sent to ${patient.name}!'), backgroundColor: AppColors.primaryBlue),
+                    SnackBar(
+                      content: Text('Access request sent to ${patient.name}!'),
+                      backgroundColor: AppColors.primaryBlue,
+                    ),
                   );
                 },
               ),

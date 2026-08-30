@@ -5,8 +5,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/providers/providers.dart';
-import '../../../../data/models/doctor_model.dart';
-import '../../../../core/widgets/glass_card.dart';
+import '../../../../core/widgets/app_search_bar.dart';
+import '../../../../core/widgets/doctor_card.dart';
 
 class DoctorSearchScreen extends ConsumerStatefulWidget {
   const DoctorSearchScreen({super.key});
@@ -25,7 +25,7 @@ class _DoctorSearchScreenState extends ConsumerState<DoctorSearchScreen> {
     'Neurology',
     'Endocrinology',
     'Pulmonology',
-    'General'
+    'General',
   ];
 
   @override
@@ -36,174 +36,179 @@ class _DoctorSearchScreenState extends ConsumerState<DoctorSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final doctors = ref.watch(doctorsProvider);
-    
-    // Filter logic
+
     final filteredDoctors = doctors.where((doc) {
       if (_selectedSpecialty != 'All' && doc.specialty != _selectedSpecialty) {
         return false;
       }
       if (_searchController.text.isNotEmpty) {
-        return doc.name.toLowerCase().contains(_searchController.text.toLowerCase()) || 
-               doc.specialty.toLowerCase().contains(_searchController.text.toLowerCase());
+        final query = _searchController.text.toLowerCase();
+        return doc.name.toLowerCase().contains(query) ||
+            doc.specialty.toLowerCase().contains(query) ||
+            doc.hospital.toLowerCase().contains(query);
       }
       return true;
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       appBar: AppBar(
-        title: const Text('Find a Doctor', style: TextStyle(color: AppColors.textDark)),
+        title: Text(
+          'Find a Doctor',
+          style: TextStyle(
+            color: isDark ? Colors.white : AppColors.navy,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: AppColors.textDark),
+          icon: Icon(
+            LucideIcons.arrowLeft,
+            color: isDark ? Colors.white : AppColors.navy,
+          ),
           onPressed: () => context.pop(),
         ),
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: AppSearchBar(
               controller: _searchController,
+              hintText: 'Search by doctor name or specialty...',
+              autofocus: false,
               onChanged: (val) {
-                // If using the searchDoctors method on provider:
+                setState(() {});
                 ref.read(doctorsProvider.notifier).searchDoctors(val);
               },
-              decoration: InputDecoration(
-                hintText: 'Search by name or specialty...',
-                prefixIcon: const Icon(LucideIcons.search, color: AppColors.textSecondary),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-              ),
             ),
           ),
+          const SizedBox(height: 8),
           SizedBox(
-            height: 50,
+            height: 44,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               itemCount: _specialties.length,
               itemBuilder: (context, index) {
                 final spec = _specialties[index];
                 final isSelected = _selectedSpecialty == spec;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8.0),
-                  child: FilterChip(
-                    label: Text(spec),
-                    selected: isSelected,
-                    onSelected: (selected) {
+                  child: GestureDetector(
+                    onTap: () {
                       setState(() {
                         _selectedSpecialty = spec;
                       });
                     },
-                    selectedColor: AppColors.primaryBlue,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.textDark,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    backgroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isSelected ? AppColors.primaryBlue : Colors.grey.shade300),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primaryBlue
+                            : (isDark ? const Color(0xFF131C2E) : Colors.white),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primaryBlue
+                              : (isDark
+                                  ? Colors.white.withValues(alpha: 0.1)
+                                  : AppColors.border),
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: Text(
+                          spec,
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : (isDark ? Colors.white : AppColors.navy),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Expanded(
             child: filteredDoctors.isEmpty
-                ? const Center(child: Text('No doctors found.', style: TextStyle(color: AppColors.textSecondary)))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: filteredDoctors.length,
-                    itemBuilder: (context, index) {
-                      final doctor = filteredDoctors[index];
-                      return _buildDoctorListItem(context, doctor)
-                          .animate()
-                          .fadeIn(delay: Duration(milliseconds: 50 * index))
-                          .slideY(begin: 0.1, end: 0);
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDoctorListItem(BuildContext context, DoctorModel doctor) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => context.push('/patient/doctor/${doctor.id}'),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: AppColors.softBlue,
-                  backgroundImage: doctor.avatarUrl.isNotEmpty ? NetworkImage(doctor.avatarUrl) : null,
-                  child: doctor.avatarUrl.isEmpty
-                      ? Text(doctor.name.substring(0, 1), style: const TextStyle(color: AppColors.primaryBlue, fontSize: 24))
-                      : null,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
+              ? Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF131C2E) : AppColors.softBlue,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          LucideIcons.userX,
+                          size: 36,
+                          color: AppColors.primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
                       Text(
-                        doctor.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textDark),
+                        'No doctors found',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        '${doctor.specialty} • ${doctor.hospital}',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(LucideIcons.star, color: AppColors.warning, size: 16),
-                          const SizedBox(width: 4),
-                          Text(doctor.rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(width: 16),
-                          const Icon(LucideIcons.mapPin, color: AppColors.textSecondary, size: 16),
-                          const SizedBox(width: 4),
-                          Text('${doctor.distance} km', style: const TextStyle(color: AppColors.textSecondary)),
-                        ],
+                      const Text(
+                        'Try searching with a different specialty or name.',
+                        style: TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  itemCount: filteredDoctors.length,
+                  itemBuilder: (context, index) {
+                    final doctor = filteredDoctors[index];
+                    return DoctorCard(
+                      name: doctor.name,
+                      specialty: doctor.specialty,
+                      avatarUrl: doctor.avatarUrl,
+                      rating: doctor.rating,
+                      distanceKm: doctor.distance,
+                      isAvailable: doctor.isAvailable,
+                      variant: DoctorCardVariant.list,
+                      onTap: () => context.push('/patient/dashboard/doctor/${doctor.id}'),
+                    )
+                        .animate()
+                        .fadeIn(delay: Duration(milliseconds: 40 * index))
+                        .slideY(begin: 0.05, end: 0);
+                  },
                 ),
-                const Icon(LucideIcons.chevronRight, color: AppColors.textSecondary),
-              ],
-            ),
           ),
-        ),
+        ],
       ),
     );
   }

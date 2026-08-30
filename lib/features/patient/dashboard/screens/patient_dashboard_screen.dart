@@ -8,7 +8,12 @@ import '../../../../data/providers/providers.dart';
 import '../../../../data/models/doctor_model.dart';
 import '../../../../data/models/medication_model.dart';
 import '../../../../data/models/appointment_model.dart';
-import '../../../../core/widgets/glass_card.dart';
+import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_search_bar.dart';
+import '../../../../core/widgets/doctor_card.dart';
+import '../../../../core/widgets/medication_card.dart';
+import '../../../../core/widgets/appointment_card.dart';
+import '../../../../core/widgets/floating_ai_orb.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 
@@ -32,6 +37,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final doctors = ref.watch(doctorsProvider);
     final medications = ref.watch(medicationsProvider);
     final appointments = ref.watch(appointmentsProvider);
@@ -48,7 +54,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: Stack(
           children: [
@@ -57,28 +63,37 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildHeader(context, unreadCount),
-                  const SizedBox(height: 24),
-                  _buildFindDoctor(context),
+                  _buildHeader(context, unreadCount, isDark),
+                  const SizedBox(height: 20),
+                  AppSearchBar(
+                    readOnly: true,
+                    hintText: 'Search specialists, symptoms, clinics...',
+                    onTap: () => context.push('/patient/dashboard/doctor-search'),
+                    onFilterTap: () => context.push('/patient/dashboard/doctor-search'),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildFindDoctorBanner(context, isDark),
                   const SizedBox(height: 24),
                   if (doctors.isNotEmpty) ...[
                     _buildNearbyDoctors(context, doctors),
                     const SizedBox(height: 24),
                   ],
-                  _buildTodayMedication(medications),
+                  _buildTodayMedication(medications, isDark),
                   const SizedBox(height: 24),
                   if (nextAppointment != null) ...[
                     _buildNextAppointment(context, nextAppointment),
                     const SizedBox(height: 24),
                   ],
-                  const SizedBox(height: 80), // Padding for floating AI
+                  const SizedBox(height: 80), // Padding clearance for floating AI orb
                 ],
-              ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05, end: 0, curve: Curves.easeOutCubic),
+              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.04, end: 0, curve: Curves.easeOutCubic),
             ),
             Positioned(
               bottom: 24,
               right: 20,
-              child: _buildAIChatButton(context),
+              child: FloatingAIOrb(
+                onTap: () => context.push('/patient/dashboard/ai-chat'),
+              ),
             ),
           ],
         ),
@@ -86,15 +101,15 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context, int unreadCount) {
+  Widget _buildHeader(BuildContext context, int unreadCount, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: AppColors.blueToIndigo,
@@ -112,7 +127,8 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    fontSize: 17,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
@@ -121,83 +137,93 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: const [
-                    Text(
-                      'Good morning, ',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.secondaryText,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Good morning,',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
                 Row(
-                  children: const [
+                  children: [
                     Text(
-                      'Margaret ',
+                      'Margaret',
                       style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : AppColors.navy,
                         letterSpacing: -0.4,
                       ),
                     ),
-                    Text('👋', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 4),
+                    const Text('👋', style: TextStyle(fontSize: 17)),
                   ],
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'How can we help today?',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 13,
-                  ),
                 ),
               ],
             ),
           ],
         ),
         Stack(
+          clipBehavior: Clip.none,
           children: [
-            IconButton(
-              onPressed: () => NotificationSheet.show(context),
-              icon: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.navy.withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => NotificationSheet.show(context),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : AppColors.border.withValues(alpha: 0.8),
                     ),
-                  ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    LucideIcons.bell,
+                    color: isDark ? Colors.white : AppColors.navy,
+                    size: 20,
+                  ),
                 ),
-                child: const Icon(LucideIcons.bell, color: AppColors.navy, size: 20),
               ),
             ),
             if (unreadCount > 0)
               Positioned(
-                top: 6,
-                right: 6,
+                top: -3,
+                right: -3,
                 child: Container(
                   padding: const EdgeInsets.all(5),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: AppColors.danger,
                     shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$unreadCount',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
+                      width: 2,
                     ),
                   ),
-                ).animate().scale(),
+                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                  child: Center(
+                    child: Text(
+                      '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ).animate().scale(duration: 200.ms),
               ),
           ],
         ),
@@ -205,52 +231,59 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     );
   }
 
-  Widget _buildFindDoctor(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      gradientOverlay: AppColors.blueToCyan,
+  Widget _buildFindDoctorBanner(BuildContext context, bool isDark) {
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      gradient: const LinearGradient(
+        colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: 20,
+      elevation: 2,
       onTap: () => context.push('/patient/dashboard/doctor-search'),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.22),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(
-              LucideIcons.search,
+              LucideIcons.stethoscope,
               color: Colors.white,
-              size: 26,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
                 Text(
-                  'Find a Doctor',
+                  'Find Top Specialists',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
                   ),
                 ),
-                SizedBox(height: 4),
+                SizedBox(height: 2),
                 Text(
-                  'Book top specialists near you',
+                  'Book verified doctors near you',
                   style: TextStyle(
                     color: Colors.white70,
-                    fontSize: 13,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.22),
               shape: BoxShape.circle,
@@ -258,7 +291,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
             child: const Icon(
               LucideIcons.arrowRight,
               color: Colors.white,
-              size: 20,
+              size: 18,
             ),
           ),
         ],
@@ -271,20 +304,28 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
-          title: 'Nearby Doctors',
+          title: 'Our Specialists',
           actionText: 'See All',
           onActionTap: () => context.push('/patient/dashboard/doctor-search'),
         ),
         const SizedBox(height: 14),
         SizedBox(
-          height: 185,
+          height: 195,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: doctors.take(4).length,
             separatorBuilder: (context, index) => const SizedBox(width: 14),
             itemBuilder: (context, index) {
               final doctor = doctors[index];
-              return _buildDoctorCard(context, doctor);
+              return DoctorCard(
+                name: doctor.name,
+                specialty: doctor.specialty,
+                avatarUrl: doctor.avatarUrl,
+                rating: doctor.rating,
+                distanceKm: doctor.distance,
+                isAvailable: doctor.isAvailable,
+                onTap: () => context.push('/patient/dashboard/doctor/${doctor.id}'),
+              );
             },
           ),
         ),
@@ -292,118 +333,9 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     );
   }
 
-  Widget _buildDoctorCard(BuildContext context, DoctorModel doctor) {
-    return GlassCard(
-      width: 165,
-      padding: const EdgeInsets.all(14),
-      onTap: () => context.push('/patient/dashboard/doctor/${doctor.id}'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: AppColors.softBlue,
-                  backgroundImage: doctor.avatarUrl.isNotEmpty ? NetworkImage(doctor.avatarUrl) : null,
-                  child: doctor.avatarUrl.isEmpty
-                      ? Text(
-                          doctor.name.isNotEmpty ? doctor.name[0] : 'D',
-                          style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 18),
-                        )
-                      : null,
-                ),
-                if (doctor.isAvailable)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: AppColors.success,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            doctor.name,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              color: AppColors.navy,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            doctor.specialty,
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 12,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: AppColors.success,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                doctor.isAvailable ? 'Available' : 'Busy',
-                style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(LucideIcons.star, color: AppColors.warning, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    doctor.rating.toStringAsFixed(1),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.navy),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  const Icon(LucideIcons.mapPin, color: AppColors.muted, size: 12),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${doctor.distance} km',
-                    style: const TextStyle(color: AppColors.secondaryText, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTodayMedication(List<MedicationModel> medications) {
+  Widget _buildTodayMedication(List<MedicationModel> medications, bool isDark) {
+    final now = DateTime.now();
     final todayMeds = medications.where((m) {
-      final now = DateTime.now();
       return m.date.year == now.year && m.date.month == now.month && m.date.day == now.day;
     }).toList();
 
@@ -418,8 +350,12 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           trailing: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.success.withValues(alpha: 0.12),
+              color: AppColors.success.withValues(alpha: isDark ? 0.2 : 0.12),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.success.withValues(alpha: 0.3),
+                width: 1,
+              ),
             ),
             child: Text(
               '$takenCount of $totalCount taken',
@@ -433,21 +369,34 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
         ),
         const SizedBox(height: 14),
         if (todayMeds.isEmpty)
-          const Text('No medications scheduled for today.', style: TextStyle(color: AppColors.secondaryText))
-        else ...[
-          ...todayMeds.map((med) => _buildMedicationCard(med)),
-          const SizedBox(height: 4),
-          Center(
-            child: TextButton(
-              onPressed: () {},
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Text('View Medication History', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.w600, fontSize: 13)),
-                  SizedBox(width: 4),
-                  Icon(LucideIcons.arrowRight, color: AppColors.primaryBlue, size: 14),
-                ],
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : AppColors.border.withValues(alpha: 0.6),
               ),
+            ),
+            child: const Center(
+              child: Text(
+                'No medications scheduled for today.',
+                style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
+              ),
+            ),
+          )
+        else ...[
+          ...todayMeds.map(
+            (med) => MedicationCard(
+              name: med.name,
+              dosage: med.dosage,
+              time: med.time,
+              isTaken: med.isTaken,
+              onMarkAsTaken: () {
+                ref.read(medicationsProvider.notifier).markAsTaken(med.id);
+              },
             ),
           ),
         ],
@@ -455,204 +404,21 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     );
   }
 
-  Widget _buildMedicationCard(MedicationModel med) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: med.isTaken
-              ? AppColors.success.withValues(alpha: 0.25)
-              : AppColors.border.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withValues(alpha: 0.025),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: med.isTaken
-                  ? AppColors.success.withValues(alpha: 0.1)
-                  : AppColors.softBlue,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              LucideIcons.pill,
-              color: med.isTaken ? AppColors.success : AppColors.primaryBlue,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${med.name} ${med.dosage}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: med.isTaken ? AppColors.navy : AppColors.navy,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  med.time,
-                  style: const TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (med.isTaken)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                children: const [
-                  Icon(LucideIcons.check, color: AppColors.success, size: 14),
-                  SizedBox(width: 4),
-                  Text(
-                    'Taken',
-                    style: TextStyle(
-                      color: AppColors.success,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ).animate().scale(duration: 200.ms)
-          else
-            GestureDetector(
-              onTap: () {
-                ref.read(medicationsProvider.notifier).markAsTaken(med.id);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Mark as taken',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildNextAppointment(BuildContext context, AppointmentModel appointment) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      onTap: () => context.push('/patient/schedule'),
-      gradientOverlay: const LinearGradient(
-        colors: [Color(0xFFEFF6FF), Color(0xFFF0F7FF)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryBlue.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: const Icon(LucideIcons.calendar, color: AppColors.primaryBlue, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Text(
-                      'Next Appointment',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: AppColors.navy,
-                      ),
-                    ),
-                    Icon(LucideIcons.arrowRight, color: AppColors.primaryBlue, size: 16),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Tomorrow, Aug 29 • ${_formatTime(appointment.dateTime)}',
-                  style: const TextStyle(color: AppColors.primaryBlue, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${appointment.doctorName} • ${appointment.specialty}',
-                  style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAIChatButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/patient/dashboard/ai-chat'),
-      child: Container(
-        width: 58,
-        height: 58,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: AppColors.blueToCyan,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaryBlue.withValues(alpha: 0.4),
-              blurRadius: 16,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            )
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader(
+          title: 'Upcoming Consultation',
         ),
-        child: const Icon(LucideIcons.bot, color: Colors.white, size: 26),
-      ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.08, 1.08), duration: 2.seconds),
+        const SizedBox(height: 14),
+        AppointmentCard(
+          title: appointment.doctorName,
+          subtitle: appointment.specialty,
+          dateTime: appointment.dateTime,
+          onTap: () => context.push('/patient/schedule'),
+        ),
+      ],
     );
-  }
-
-  String _formatTime(DateTime dt) {
-    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $ampm';
   }
 }

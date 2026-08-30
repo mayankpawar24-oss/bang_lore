@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/status_chip.dart';
@@ -35,6 +36,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final appointments = ref.watch(appointmentsProvider);
     final reminders = ref.watch(remindersProvider);
     final members = ref.watch(familyMembersProvider);
@@ -43,7 +45,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     final selectedDayReminders = reminders.where((r) => _isSameDay(r.dateTime, _selectedDate)).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: Stack(
           children: [
@@ -52,16 +54,16 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildHeader(context),
+                  _buildHeader(context, isDark),
                   const SizedBox(height: 20),
-                  _buildMonthCalendarView(appointments, reminders),
+                  _buildMonthCalendarView(appointments, reminders, isDark),
                   const SizedBox(height: 24),
-                  _buildAppointmentsSection(selectedDayAppointments),
+                  _buildAppointmentsSection(selectedDayAppointments, isDark),
                   const SizedBox(height: 24),
-                  _buildDoctorAvailabilitySection(context),
+                  _buildDoctorAvailabilitySection(context, isDark),
                   const SizedBox(height: 28),
-                  _buildRemindersSection(selectedDayReminders, members),
-                  const SizedBox(height: 100), // Padding for SOS button
+                  _buildRemindersSection(selectedDayReminders, members, isDark),
+                  const SizedBox(height: 100), // Clearance for floating SOS button
                 ],
               ).animate().fadeIn(duration: 300.ms),
             ),
@@ -76,21 +78,34 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'Schedule',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: AppColors.navy,
-            letterSpacing: -0.5,
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Schedule',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Consultations & care timeline',
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+              ),
+            ),
+          ],
         ),
         GestureDetector(
-          onTap: () => _showAddAppointmentSheet(context),
+          onTap: () => _showAddAppointmentSheet(context, isDark),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
@@ -125,29 +140,25 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
   }
 
   // FULL MONTH INTERACTIVE CALENDAR
-  Widget _buildMonthCalendarView(List<AppointmentModel> appointments, List<ReminderModel> reminders) {
-    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  Widget _buildMonthCalendarView(
+    List<AppointmentModel> appointments,
+    List<ReminderModel> reminders,
+    bool isDark,
+  ) {
+    final months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
     final monthName = months[_focusedMonth.month - 1];
 
     final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
     final firstWeekday = DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday % 7; // 0 for Sun
-
     final now = DateTime.now();
 
-    return Container(
+    return AppCard(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withValues(alpha: 0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      borderRadius: 24,
+      elevation: 1,
       child: Column(
         children: [
           // Month & Navigation Header
@@ -156,16 +167,20 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
             children: [
               Text(
                 '$monthName ${_focusedMonth.year}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.navy,
+                  color: isDark ? Colors.white : AppColors.navy,
                 ),
               ),
               Row(
                 children: [
                   IconButton(
-                    icon: const Icon(LucideIcons.chevronLeft, color: AppColors.navy, size: 20),
+                    icon: Icon(
+                      LucideIcons.chevronLeft,
+                      color: isDark ? Colors.white : AppColors.navy,
+                      size: 20,
+                    ),
                     onPressed: () {
                       setState(() {
                         _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
@@ -173,7 +188,11 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                     },
                   ),
                   IconButton(
-                    icon: const Icon(LucideIcons.chevronRight, color: AppColors.navy, size: 20),
+                    icon: Icon(
+                      LucideIcons.chevronRight,
+                      color: isDark ? Colors.white : AppColors.navy,
+                      size: 20,
+                    ),
                     onPressed: () {
                       setState(() {
                         _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
@@ -236,7 +255,9 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? AppColors.primaryBlue
-                        : (isToday ? AppColors.softBlue : Colors.transparent),
+                        : (isToday
+                            ? (isDark ? const Color(0xFF1E3A8A) : AppColors.softBlue)
+                            : Colors.transparent),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -249,7 +270,9 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                           fontWeight: (isSelected || isToday) ? FontWeight.bold : FontWeight.w500,
                           color: isSelected
                               ? Colors.white
-                              : (isToday ? AppColors.primaryBlue : AppColors.navy),
+                              : (isToday
+                                  ? AppColors.primaryBlue
+                                  : (isDark ? Colors.white : AppColors.navy)),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -289,7 +312,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  Widget _buildAppointmentsSection(List<AppointmentModel> appointments) {
+  Widget _buildAppointmentsSection(List<AppointmentModel> appointments, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -299,89 +322,79 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
         ),
         const SizedBox(height: 14),
         if (appointments.isEmpty)
-          Container(
+          AppCard(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-            ),
+            padding: const EdgeInsets.all(24),
+            borderRadius: 20,
             child: Center(
               child: Text(
                 'No appointments scheduled for ${_formatDateStr(_selectedDate)}',
-                style: const TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 14,
+                ),
               ),
             ),
           )
         else
-          ...appointments.map((a) => _buildAppointmentCard(context, a)),
+          ...appointments.map((a) => _buildAppointmentCard(context, a, isDark)),
       ],
     );
   }
 
-  Widget _buildAppointmentCard(BuildContext context, AppointmentModel appointment) {
-    return GestureDetector(
-      onTap: () => _showAppointmentDetailModal(context, appointment),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.navy.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+  Widget _buildAppointmentCard(BuildContext context, AppointmentModel appointment, bool isDark) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
+      onTap: () => _showAppointmentDetailModal(context, appointment, isDark),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
+              borderRadius: BorderRadius.circular(14),
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.softBlue,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(LucideIcons.stethoscope, color: AppColors.primaryBlue, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    appointment.doctorName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: AppColors.navy,
-                    ),
+            child: const Icon(LucideIcons.stethoscope, color: AppColors.primaryBlue, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  appointment.doctorName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isDark ? Colors.white : AppColors.navy,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${appointment.specialty} • ${_formatTime(appointment.dateTime)}',
-                    style: const TextStyle(color: AppColors.secondaryText, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${appointment.specialty} • ${_formatTime(appointment.dateTime)}',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 13,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            StatusChip(
-              label: appointment.status.name.toUpperCase(),
-              status: appointment.status == AppointmentStatus.completed
-                  ? 'success'
-                  : (appointment.status == AppointmentStatus.cancelled ? 'danger' : 'primary'),
-            ),
-          ],
-        ),
+          ),
+          StatusChip(
+            label: appointment.status.name.toUpperCase(),
+            status: appointment.status == AppointmentStatus.completed
+                ? 'success'
+                : (appointment.status == AppointmentStatus.cancelled ? 'danger' : 'primary'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDoctorAvailabilitySection(BuildContext context) {
+  Widget _buildDoctorAvailabilitySection(BuildContext context, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -390,20 +403,10 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           subtitle: 'Connected specialists & open consultation times',
         ),
         const SizedBox(height: 14),
-        Container(
+        AppCard(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.navy.withValues(alpha: 0.03),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+          borderRadius: 24,
+          elevation: 1,
           child: Column(
             children: [
               _buildDoctorSlotRow(
@@ -411,20 +414,29 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                 doctorName: 'Dr. Aisha Patel',
                 specialty: 'Cardiology',
                 slots: ['10:30 AM', '2:00 PM', '4:30 PM'],
+                isDark: isDark,
               ),
-              const Divider(height: 24),
+              Divider(
+                height: 24,
+                color: isDark ? const Color(0xFF334155) : AppColors.border,
+              ),
               _buildDoctorSlotRow(
                 context,
                 doctorName: 'Dr. James Wilson',
                 specialty: 'Neurology',
                 slots: ['11:00 AM', '3:15 PM'],
+                isDark: isDark,
               ),
-              const Divider(height: 24),
+              Divider(
+                height: 24,
+                color: isDark ? const Color(0xFF334155) : AppColors.border,
+              ),
               _buildDoctorSlotRow(
                 context,
                 doctorName: 'Dr. Sarah Kim',
                 specialty: 'Endocrinology',
                 slots: ['9:30 AM', '1:00 PM'],
+                isDark: isDark,
               ),
             ],
           ),
@@ -438,6 +450,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     required String doctorName,
     required String specialty,
     required List<String> slots,
+    required bool isDark,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -447,11 +460,18 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           children: [
             Text(
               doctorName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
             ),
             Text(
               specialty,
-              style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -462,14 +482,16 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           children: slots.map((slot) {
             return GestureDetector(
               onTap: () {
-                _bookSlot(context, doctorName, specialty, slot);
+                _bookSlot(context, doctorName, specialty, slot, isDark);
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.softBlue,
+                  color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : AppColors.softBlue,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Text(
                   slot,
@@ -487,13 +509,31 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  void _bookSlot(BuildContext context, String doctorName, String specialty, String slotTime) {
+  void _bookSlot(
+    BuildContext context,
+    String doctorName,
+    String specialty,
+    String slotTime,
+    bool isDark,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Book $slotTime Slot?', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy)),
-        content: Text('Confirm consultation with $doctorName ($specialty) for ${_formatDateStr(_selectedDate)} at $slotTime.'),
+        title: Text(
+          'Book $slotTime Slot?',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : AppColors.navy,
+          ),
+        ),
+        content: Text(
+          'Confirm consultation with $doctorName ($specialty) for ${_formatDateStr(_selectedDate)} at $slotTime.',
+          style: TextStyle(
+            color: isDark ? const Color(0xFF94A3B8) : AppColors.slate,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -529,7 +569,11 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  Widget _buildRemindersSection(List<ReminderModel> reminders, List<FamilyMemberModel> members) {
+  Widget _buildRemindersSection(
+    List<ReminderModel> reminders,
+    List<FamilyMemberModel> members,
+    bool isDark,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -539,31 +583,31 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Your Reminders',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.navy,
+                    color: isDark ? Colors.white : AppColors.navy,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'Care reminders for you and family',
                   style: TextStyle(
-                    color: AppColors.secondaryText,
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                     fontSize: 13,
                   ),
                 ),
               ],
             ),
             GestureDetector(
-              onTap: () => _showAddReminderSheet(context, members),
+              onTap: () => _showAddReminderSheet(context, members, isDark),
               child: Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: AppColors.softBlue,
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(LucideIcons.plus, color: AppColors.primaryBlue, size: 20),
@@ -573,28 +617,27 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
         ),
         const SizedBox(height: 14),
         if (reminders.isEmpty)
-          Container(
+          AppCard(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-            ),
-            child: const Center(
+            padding: const EdgeInsets.all(24),
+            borderRadius: 20,
+            child: Center(
               child: Text(
                 'No reminders for this day',
-                style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 14,
+                ),
               ),
             ),
           )
         else
-          ...reminders.map((r) => _buildReminderCard(r)),
+          ...reminders.map((r) => _buildReminderCard(r, isDark)),
       ],
     );
   }
 
-  Widget _buildReminderCard(ReminderModel reminder) {
+  Widget _buildReminderCard(ReminderModel reminder, bool isDark) {
     IconData icon;
     Color iconColor;
 
@@ -622,31 +665,20 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
 
     final assignee = reminder.assignedBy ?? 'Me';
 
-    return Container(
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: reminder.isCompleted ? AppColors.surfaceBlue.withValues(alpha: 0.4) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: reminder.isCompleted
-              ? AppColors.success.withValues(alpha: 0.3)
-              : AppColors.border.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      borderRadius: 20,
+      elevation: 0.5,
+      borderColor: reminder.isCompleted
+          ? AppColors.success.withValues(alpha: 0.3)
+          : (isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.border.withValues(alpha: 0.6)),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.1),
+              color: iconColor.withValues(alpha: isDark ? 0.2 : 0.1),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: iconColor, size: 20),
@@ -661,7 +693,9 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
-                    color: reminder.isCompleted ? AppColors.secondaryText : AppColors.navy,
+                    color: reminder.isCompleted
+                        ? (isDark ? const Color(0xFF64748B) : AppColors.secondaryText)
+                        : (isDark ? Colors.white : AppColors.navy),
                     decoration: reminder.isCompleted ? TextDecoration.lineThrough : null,
                   ),
                 ),
@@ -672,13 +706,16 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                     const SizedBox(width: 4),
                     Text(
                       _formatTime(reminder.dateTime),
-                      style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        fontSize: 12,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppColors.softBlue,
+                        color: isDark ? const Color(0xFF1E3A8A) : AppColors.softBlue,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -741,19 +778,23 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
             ),
           ],
         ),
-      ).animate(onPlay: (controller) => controller.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.08, 1.08), duration: 1.seconds),
+      )
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .scale(begin: const Offset(1, 1), end: const Offset(1.08, 1.08), duration: 1.seconds),
     );
   }
 
   void _showSosBottomSheet(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.all(28),
         child: Column(
@@ -768,14 +809,24 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
               child: const Icon(LucideIcons.shieldAlert, color: AppColors.danger, size: 44),
             ),
             const SizedBox(height: 16),
-            const Text('Emergency SOS', style: TextStyle(color: AppColors.danger, fontSize: 24, fontWeight: FontWeight.bold)),
+            const Text(
+              'Emergency SOS',
+              style: TextStyle(color: AppColors.danger, fontSize: 24, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
-            const Text('This will alert your family and care team immediately.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.secondaryText, fontSize: 14)),
+            Text(
+              'This will alert your family and care team immediately.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                fontSize: 14,
+              ),
+            ),
             const SizedBox(height: 28),
             GestureDetector(
               onLongPress: () {
                 Navigator.pop(context);
-                _showSosSuccess(context);
+                _showSosSuccess(context, isDark);
               },
               child: Container(
                 width: 140,
@@ -784,13 +835,28 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                   shape: BoxShape.circle,
                   color: AppColors.danger,
                   boxShadow: [
-                    BoxShadow(color: AppColors.danger.withValues(alpha: 0.4), blurRadius: 20, spreadRadius: 4),
+                    BoxShadow(
+                      color: AppColors.danger.withValues(alpha: 0.4),
+                      blurRadius: 20,
+                      spreadRadius: 4,
+                    ),
                   ],
                 ),
                 child: const Center(
-                  child: Text('HOLD\nTO\nACTIVATE', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15, height: 1.3)),
+                  child: Text(
+                    'HOLD\nTO\nACTIVATE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      height: 1.3,
+                    ),
+                  ),
                 ),
-              ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.05, 1.05), duration: 500.ms),
+              )
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .scale(begin: const Offset(1, 1), end: const Offset(1.05, 1.05), duration: 500.ms),
             ),
             const SizedBox(height: 28),
             TextButton(
@@ -803,22 +869,30 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  void _showSosSuccess(BuildContext context) {
+  void _showSosSuccess(BuildContext context, bool isDark) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(LucideIcons.checkCircle2, color: AppColors.success, size: 64).animate().scale(),
             const SizedBox(height: 16),
-            const Text('SOS Activated', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'SOS Activated',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 20),
-            _buildCheckItem('Family notified'),
-            _buildCheckItem('Care team notified'),
-            _buildCheckItem('Location shared'),
-            _buildCheckItem('Health info shared'),
+            _buildCheckItem('Family notified', isDark),
+            _buildCheckItem('Care team notified', isDark),
+            _buildCheckItem('Location shared', isDark),
+            _buildCheckItem('Health info shared', isDark),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Cancel Emergency',
@@ -831,22 +905,29 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  Widget _buildCheckItem(String text) {
+  Widget _buildCheckItem(String text, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           const Icon(LucideIcons.check, color: AppColors.success, size: 18),
           const SizedBox(width: 10),
-          Text(text, style: const TextStyle(fontSize: 15, color: AppColors.navy)),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 15,
+              color: isDark ? Colors.white : AppColors.navy,
+            ),
+          ),
         ],
       ),
     ).animate().fadeIn().slideX();
   }
 
-  void _showAppointmentDetailModal(BuildContext context, AppointmentModel appt) {
+  void _showAppointmentDetailModal(BuildContext context, AppointmentModel appt, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -854,15 +935,34 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(appt.doctorName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              appt.doctorName,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text('${appt.specialty} Consultation', style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
-            const Divider(height: 24),
-            Text('Date & Time: ${_formatDateStr(appt.dateTime)} at ${_formatTime(appt.dateTime)}', style: const TextStyle(fontSize: 14, color: AppColors.slate)),
+            Text(
+              '${appt.specialty} Consultation',
+              style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
+            ),
+            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
+            Text(
+              'Date & Time: ${_formatDateStr(appt.dateTime)} at ${_formatTime(appt.dateTime)}',
+              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+            ),
             const SizedBox(height: 8),
-            Text('Duration: ${appt.durationMinutes} minutes', style: const TextStyle(fontSize: 14, color: AppColors.slate)),
+            Text(
+              'Duration: ${appt.durationMinutes} minutes',
+              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+            ),
             const SizedBox(height: 8),
-            Text('Notes: ${appt.notes ?? "Routine checkup"}', style: const TextStyle(fontSize: 14, color: AppColors.slate)),
+            Text(
+              'Notes: ${appt.notes ?? "Routine checkup"}',
+              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
           ],
@@ -871,7 +971,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  void _showAddAppointmentSheet(BuildContext context) {
+  void _showAddAppointmentSheet(BuildContext context, bool isDark) {
     final docCtrl = TextEditingController();
     final specCtrl = TextEditingController();
 
@@ -880,17 +980,44 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Add Appointment', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Add Appointment',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            TextField(controller: docCtrl, decoration: const InputDecoration(labelText: 'Doctor Name', hintText: 'e.g. Dr. Aisha Patel')),
+            TextField(
+              controller: docCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Doctor Name',
+                hintText: 'e.g. Dr. Aisha Patel',
+              ),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: specCtrl, decoration: const InputDecoration(labelText: 'Specialty', hintText: 'e.g. Cardiology')),
+            TextField(
+              controller: specCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Specialty',
+                hintText: 'e.g. Cardiology',
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Book Appointment',
@@ -918,7 +1045,7 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  void _showAddReminderSheet(BuildContext context, List<FamilyMemberModel> members) {
+  void _showAddReminderSheet(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
     final titleCtrl = TextEditingController();
     ReminderType selectedType = ReminderType.medicine;
     String selectedAssignee = 'Myself';
@@ -931,8 +1058,16 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF131C2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -940,31 +1075,71 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Add Reminder', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy)),
-                  IconButton(icon: const Icon(LucideIcons.x, color: AppColors.slate), onPressed: () => Navigator.pop(context)),
+                  Text(
+                    'Add Reminder',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      LucideIcons.x,
+                      color: isDark ? const Color(0xFF94A3B8) : AppColors.slate,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
-              TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Reminder Title', hintText: 'e.g. Take Lisinopril')),
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Reminder Title',
+                  hintText: 'e.g. Take Lisinopril',
+                ),
+              ),
               const SizedBox(height: 16),
-              const Text('Reminder Type', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.navy)),
+              Text(
+                'Reminder Type',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
-                spacing: 8, runSpacing: 8,
+                spacing: 8,
+                runSpacing: 8,
                 children: ReminderType.values.map((type) {
                   final isSelected = selectedType == type;
                   return ChoiceChip(
                     label: Text(type.name.toUpperCase()),
                     selected: isSelected,
                     selectedColor: AppColors.primaryBlue,
-                    backgroundColor: AppColors.surfaceBlue,
-                    labelStyle: TextStyle(color: isSelected ? Colors.white : AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12),
-                    onSelected: (val) { if (val) setModalState(() => selectedType = type); },
+                    backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.surfaceBlue,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.primaryBlue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                    onSelected: (val) {
+                      if (val) setModalState(() => selectedType = type);
+                    },
                   );
                 }).toList(),
               ),
               const SizedBox(height: 16),
-              const Text('Assign To (Self or Family)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.navy)),
+              Text(
+                'Assign To (Self or Family)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -973,10 +1148,18 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                   return ChoiceChip(
                     label: Text(person),
                     selected: isSelected,
-                    selectedColor: AppColors.softBlue,
-                    backgroundColor: Colors.grey.shade100,
-                    labelStyle: TextStyle(color: isSelected ? AppColors.primaryBlue : AppColors.slate, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, fontSize: 13),
-                    onSelected: (val) { if (val) setModalState(() => selectedAssignee = person); },
+                    selectedColor: isDark ? const Color(0xFF1E3A8A) : AppColors.softBlue,
+                    backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100,
+                    labelStyle: TextStyle(
+                      color: isSelected
+                          ? AppColors.primaryBlue
+                          : (isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                    onSelected: (val) {
+                      if (val) setModalState(() => selectedAssignee = person);
+                    },
                   );
                 }).toList(),
               ),

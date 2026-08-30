@@ -5,10 +5,11 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/glass_card.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/vital_card.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/floating_ai_orb.dart';
 import '../../../../data/providers/providers.dart';
 
 class PatientProfileScreen extends ConsumerWidget {
@@ -16,8 +17,10 @@ class PatientProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: Stack(
           children: [
@@ -26,21 +29,23 @@ class PatientProfileScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildProfileHero(context),
+                  _buildProfileHero(context, isDark),
                   const SizedBox(height: 24),
-                  _buildCurrentVitals(),
+                  _buildCurrentVitals(isDark),
                   const SizedBox(height: 24),
-                  _buildHealthInformation(context),
+                  _buildHealthInformation(context, isDark),
                   const SizedBox(height: 24),
-                  _buildDataPrivacySection(context, ref),
-                  const SizedBox(height: 100), // FAB padding
+                  _buildDataPrivacySection(context, ref, isDark),
+                  const SizedBox(height: 100), // Clearance for floating AI
                 ],
-              ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05, end: 0),
+              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.04, end: 0),
             ),
             Positioned(
               bottom: 24,
               right: 20,
-              child: _buildAIChatButton(context),
+              child: FloatingAIOrb(
+                onTap: () => context.push('/patient/dashboard/ai-chat'),
+              ),
             ),
           ],
         ),
@@ -48,12 +53,16 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildProfileHero(BuildContext context) {
+  Widget _buildProfileHero(BuildContext context, bool isDark) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: AppColors.heroGradient,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2563EB), Color(0xFF0EA5E9)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
@@ -72,11 +81,16 @@ class PatientProfileScreen extends ConsumerWidget {
               border: Border.all(color: Colors.white, width: 2.5),
             ),
             child: const CircleAvatar(
-              radius: 44,
+              radius: 42,
               backgroundColor: Colors.white24,
               child: Text(
                 'MC',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ),
@@ -92,8 +106,8 @@ class PatientProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           const Text(
-            '72 years old • Heart Failure',
-            style: TextStyle(fontSize: 14, color: Colors.white70),
+            '72 years old • Heart Failure Care Plan',
+            style: TextStyle(fontSize: 13, color: Colors.white70),
           ),
           const SizedBox(height: 10),
           Container(
@@ -104,7 +118,7 @@ class PatientProfileScreen extends ConsumerWidget {
               border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
             ),
             child: const Text(
-              '🟢 Stable Status',
+              '🟢 Stable Health Status',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -119,7 +133,7 @@ class PatientProfileScreen extends ConsumerWidget {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => _showQrCode(context),
+                  onTap: () => _showQrCode(context, isDark),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
@@ -130,7 +144,7 @@ class PatientProfileScreen extends ConsumerWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: const [
-                        Icon(LucideIcons.qrCode, color: Colors.white, size: 20),
+                        Icon(LucideIcons.qrCode, color: Colors.white, size: 18),
                         SizedBox(width: 8),
                         Text(
                           'Your Health QR',
@@ -157,7 +171,7 @@ class PatientProfileScreen extends ConsumerWidget {
                   ),
                   child: Row(
                     children: const [
-                      Icon(LucideIcons.edit2, color: Colors.white, size: 18),
+                      Icon(LucideIcons.edit2, color: Colors.white, size: 16),
                       SizedBox(width: 6),
                       Text(
                         'Edit',
@@ -174,7 +188,7 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildCurrentVitals() {
+  Widget _buildCurrentVitals(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -257,7 +271,7 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildHealthInformation(BuildContext context) {
+  Widget _buildHealthInformation(BuildContext context, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -266,19 +280,10 @@ class PatientProfileScreen extends ConsumerWidget {
           subtitle: 'Personal medical documentation',
         ),
         const SizedBox(height: 14),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.navy.withValues(alpha: 0.03),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+        AppCard(
+          padding: EdgeInsets.zero,
+          borderRadius: 24,
+          elevation: 1,
           child: Column(
             children: [
               _buildListTile(
@@ -286,39 +291,44 @@ class PatientProfileScreen extends ConsumerWidget {
                 iconColor: AppColors.primaryBlue,
                 title: 'Health Information',
                 subtitle: 'Vitals, conditions, allergies',
-                onTap: () => _showDetailModal(context, 'Health Information', 'Conditions: Heart Failure, Hypertension\nAllergies: Penicillin\nBlood Group: O+'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Health Information', 'Conditions: Heart Failure, Hypertension\nAllergies: Penicillin\nBlood Group: O+', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.pill,
                 iconColor: AppColors.accentCyan,
                 title: 'Medications',
                 subtitle: 'Furosemide, Lisinopril, Metoprolol',
-                onTap: () => _showDetailModal(context, 'Current Medications', '1. Furosemide 40mg - Morning\n2. Lisinopril 10mg - Evening\n3. Metoprolol 25mg - Night'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Current Medications', '1. Furosemide 40mg - Morning\n2. Lisinopril 10mg - Evening\n3. Metoprolol 25mg - Night', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.barChart2,
                 iconColor: AppColors.success,
                 title: 'Reports',
                 subtitle: 'Blood test (Aug 15), ECG (Aug 10)',
-                onTap: () => _showDetailModal(context, 'Medical Reports', '• Blood Panel - Normal (Aug 15)\n• ECG Scan - Stable Sinus Rhythm (Aug 10)\n• Chest X-Ray - No congestion (Jul 28)'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Medical Reports', '• Blood Panel - Normal (Aug 15)\n• ECG Scan - Stable Sinus Rhythm (Aug 10)\n• Chest X-Ray - No congestion (Jul 28)', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.history,
                 iconColor: AppColors.warning,
                 title: 'Medical History',
                 subtitle: 'Past surgeries & procedures',
-                onTap: () => _showDetailModal(context, 'Medical History', '2019: Coronary Angioplasty\n2015: Appendectomy'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Medical History', '2019: Coronary Angioplasty\n2015: Appendectomy', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.phoneCall,
                 iconColor: AppColors.danger,
                 title: 'Emergency Contacts',
                 subtitle: 'Sarah Chen (Daughter), David Chen (Father)',
-                onTap: () => _showDetailModal(context, 'Emergency Contacts', '1. Sarah Chen (Daughter): +1 (555) 234-5678\n2. David Chen (Father): +1 (555) 876-5432'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Emergency Contacts', '1. Sarah Chen (Daughter): +1 (555) 234-5678\n2. David Chen (Father): +1 (555) 876-5432', isDark),
               ),
             ],
           ),
@@ -327,7 +337,7 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildDataPrivacySection(BuildContext context, WidgetRef ref) {
+  Widget _buildDataPrivacySection(BuildContext context, WidgetRef ref, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -336,19 +346,10 @@ class PatientProfileScreen extends ConsumerWidget {
           subtitle: 'Export records & manage permissions',
         ),
         const SizedBox(height: 14),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.navy.withValues(alpha: 0.03),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+        AppCard(
+          padding: EdgeInsets.zero,
+          borderRadius: 24,
+          elevation: 1,
           child: Column(
             children: [
               _buildListTile(
@@ -356,16 +357,18 @@ class PatientProfileScreen extends ConsumerWidget {
                 iconColor: const Color(0xFF8B5CF6),
                 title: 'Dark / Night Mode',
                 subtitle: ref.watch(themeModeProvider) == ThemeMode.dark ? 'Enabled (Night palette)' : 'Disabled (Light palette)',
+                isDark: isDark,
                 onTap: () {
                   ref.read(themeModeProvider.notifier).toggleTheme();
                 },
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.download,
                 iconColor: AppColors.primaryBlue,
                 title: 'Download Health Data',
                 subtitle: 'Export encrypted medical records (PDF/JSON)',
+                isDark: isDark,
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -375,28 +378,31 @@ class PatientProfileScreen extends ConsumerWidget {
                   );
                 },
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.database,
                 iconColor: AppColors.accentCyan,
                 title: 'FHIR Data Export',
                 subtitle: 'HL7 FHIR v4.0.1 standardized export',
-                onTap: () => _showDetailModal(context, 'FHIR Data Export', 'FHIR R4 Endpoint: Active\nLast Sync: 10 minutes ago\nData standard: HL7 FHIR v4.0.1'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'FHIR Data Export', 'FHIR R4 Endpoint: Active\nLast Sync: 10 minutes ago\nData standard: HL7 FHIR v4.0.1', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.shieldCheck,
                 iconColor: AppColors.success,
                 title: 'Privacy & Permissions',
                 subtitle: 'Dr. Aisha Patel (Authorized)',
-                onTap: () => _showDetailModal(context, 'Privacy & Permissions', 'Authorized Doctor: Dr. Aisha Patel\nStatus: Approved\nAccess level: Full Clinical Brief'),
+                isDark: isDark,
+                onTap: () => _showDetailModal(context, 'Privacy & Permissions', 'Authorized Doctor: Dr. Aisha Patel\nStatus: Approved\nAccess level: Full Clinical Brief', isDark),
               ),
-              const Divider(indent: 64, endIndent: 20),
+              Divider(indent: 64, endIndent: 20, height: 1, color: isDark ? const Color(0xFF334155) : AppColors.border),
               _buildListTile(
                 icon: LucideIcons.logOut,
                 iconColor: AppColors.danger,
                 title: 'Log Out',
                 subtitle: 'Switch account or end session',
+                isDark: isDark,
                 onTap: () => context.go('/login'),
               ),
             ],
@@ -412,30 +418,31 @@ class PatientProfileScreen extends ConsumerWidget {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required bool isDark,
   }) {
     return ListTile(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.1),
+          color: iconColor.withValues(alpha: isDark ? 0.2 : 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: iconColor, size: 20),
       ),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 15,
-          color: AppColors.navy,
+          color: isDark ? Colors.white : AppColors.navy,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
-          color: AppColors.secondaryText,
+        style: TextStyle(
+          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
           fontSize: 13,
         ),
       ),
@@ -443,9 +450,10 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showDetailModal(BuildContext context, String title, String content) {
+  void _showDetailModal(BuildContext context, String title, String content, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -453,9 +461,23 @@ class PatientProfileScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            Text(content, style: const TextStyle(fontSize: 15, color: AppColors.slate, height: 1.5)),
+            Text(
+              content,
+              style: TextStyle(
+                fontSize: 15,
+                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+                height: 1.5,
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
           ],
@@ -464,31 +486,45 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showQrCode(BuildContext context) {
+  void _showQrCode(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36, height: 5,
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(3)),
+              width: 36,
+              height: 5,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(3),
+              ),
             ),
             const SizedBox(height: 16),
-            const Text('Your Health QR', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Your Health QR',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Show this to your doctor to securely share your health profile',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 28),
             Container(
@@ -497,7 +533,11 @@ class PatientProfileScreen extends ConsumerWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
-                  BoxShadow(color: AppColors.navy.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 6)),
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
+                  ),
                 ],
                 border: Border.all(color: AppColors.softBlue, width: 2),
               ),
@@ -505,20 +545,31 @@ class PatientProfileScreen extends ConsumerWidget {
                 data: 'continuum://patient/margaret-chen/connect',
                 version: QrVersions.auto,
                 size: 200.0,
-                foregroundColor: AppColors.navy,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: AppColors.navy,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: AppColors.navy,
+                ),
               ),
             ),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: AppColors.surfaceBlue,
+                color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : AppColors.surfaceBlue,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Text(
                 'Doctor scans → Request sent → You approve → Connected',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue, fontSize: 12),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaryBlue,
+                  fontSize: 12,
+                ),
               ),
             ),
             const SizedBox(height: 28),
@@ -526,29 +577,6 @@ class PatientProfileScreen extends ConsumerWidget {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildAIChatButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/patient/dashboard/ai-chat'),
-      child: Container(
-        width: 58,
-        height: 58,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: AppColors.blueToCyan,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaryBlue.withValues(alpha: 0.4),
-              blurRadius: 16,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: const Icon(LucideIcons.bot, color: Colors.white, size: 26),
-      ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.08, 1.08), duration: 2.seconds),
     );
   }
 }

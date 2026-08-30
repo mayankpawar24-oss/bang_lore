@@ -5,8 +5,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/secondary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
@@ -25,6 +27,7 @@ class PatientDetailScreen extends ConsumerStatefulWidget {
 class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final patients = ref.watch(patientsProvider);
     final currentPatient = widget.patient ??
         patients.firstWhere(
@@ -34,24 +37,62 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
 
     if (!currentPatient.isAuthorized) {
       return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(title: const Text('Access Restricted')),
+        backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
+        appBar: AppBar(
+          title: Text(
+            'Access Restricted',
+            style: TextStyle(
+              color: isDark ? Colors.white : AppColors.navy,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
+            onPressed: () => context.pop(),
+          ),
+        ),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(LucideIcons.lock, size: 64, color: AppColors.warning),
-              const SizedBox(height: 16),
-              const Text('Patient Authorization Required', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy)),
-              const SizedBox(height: 8),
-              const Text('Request permission to view medical records.', style: TextStyle(color: AppColors.secondaryText)),
-              const SizedBox(height: 20),
-              PrimaryButton(
-                label: 'Go Back',
-                isFullWidth: false,
-                onPressed: () => context.pop(),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(LucideIcons.lock, size: 56, color: AppColors.warning),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Patient Authorization Required',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Request permission from ${currentPatient.name} to view continuous health records.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                PrimaryButton(
+                  label: 'Go Back',
+                  isFullWidth: false,
+                  onPressed: () => context.pop(),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -62,44 +103,47 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
         : (currentPatient.medicationAdherence >= 60 ? AppColors.warning : AppColors.danger);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       appBar: AppBar(
-        title: const Text('Patient Health Brief', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Patient Health Brief',
+          style: TextStyle(
+            color: isDark ? Colors.white : AppColors.navy,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: AppColors.navy),
+          icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
           onPressed: () => context.pop(),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Patient Header Card
-            Container(
+            AppCard(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.navy.withValues(alpha: 0.04),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
+              borderRadius: 24,
+              elevation: 1,
               child: Row(
                 children: [
                   CircleAvatar(
-                    radius: 36,
-                    backgroundColor: AppColors.softBlue,
+                    radius: 34,
+                    backgroundColor: isDark
+                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                        : AppColors.softBlue,
                     child: Text(
-                      currentPatient.name[0],
-                      style: const TextStyle(fontSize: 28, color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
+                      currentPatient.name.isNotEmpty ? currentPatient.name[0] : 'P',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        color: AppColors.primaryBlue,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -109,12 +153,20 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                       children: [
                         Text(
                           currentPatient.name,
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.navy),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.navy,
+                            letterSpacing: -0.3,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${currentPatient.age} yrs • ${currentPatient.condition}',
-                          style: const TextStyle(color: AppColors.secondaryText, fontSize: 14),
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            fontSize: 13,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         StatusChip(label: currentPatient.status.toUpperCase(), status: currentPatient.status),
@@ -124,18 +176,15 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 ],
               ),
             ).animate().fadeIn().slideY(begin: -0.05),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Medication Adherence Section
             const SectionHeader(title: 'Medication Adherence'),
             const SizedBox(height: 12),
-            Container(
+            AppCard(
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-              ),
+              borderRadius: 20,
+              elevation: 1,
               child: Row(
                 children: [
                   Stack(
@@ -146,14 +195,18 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                         width: 64,
                         child: CircularProgressIndicator(
                           value: currentPatient.medicationAdherence / 100,
-                          backgroundColor: AppColors.softBlue,
+                          backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
                           color: adherenceColor,
                           strokeWidth: 8,
                         ),
                       ),
                       Text(
                         '${currentPatient.medicationAdherence.toInt()}%',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: adherenceColor, fontSize: 16),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: adherenceColor,
+                          fontSize: 15,
+                        ),
                       ),
                     ],
                   ),
@@ -163,13 +216,22 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          currentPatient.medicationAdherence >= 80 ? 'Optimal Adherence' : 'Intervention Recommended',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: adherenceColor, fontSize: 15),
+                          currentPatient.medicationAdherence >= 80
+                              ? 'Optimal Adherence'
+                              : 'Intervention Recommended',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: adherenceColor,
+                            fontSize: 15,
+                          ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Tracked continuous medication intake across 30 days.',
-                          style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -177,47 +239,75 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 ],
               ),
             ).animate().fadeIn().slideY(begin: 0.05),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Recent Vitals Grid
             const SectionHeader(title: 'Current Vitals'),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _buildVitalTile('Heart Rate', '${currentPatient.vitals?['hr'] ?? 74} bpm', LucideIcons.activity, AppColors.danger)),
+                Expanded(child: _buildVitalTile('Heart Rate', '${currentPatient.vitals?['hr'] ?? 74} bpm', LucideIcons.activity, AppColors.danger, isDark)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildVitalTile('SpO₂', '${currentPatient.vitals?['spo2'] ?? 98}%', LucideIcons.wind, AppColors.primaryBlue)),
+                Expanded(child: _buildVitalTile('SpO₂', '${currentPatient.vitals?['spo2'] ?? 98}%', LucideIcons.wind, AppColors.primaryBlue, isDark)),
                 const SizedBox(width: 10),
-                Expanded(child: _buildVitalTile('Weight', '${currentPatient.vitals?['weight'] ?? 68} kg', LucideIcons.scale, AppColors.success)),
+                Expanded(child: _buildVitalTile('Weight', '${currentPatient.vitals?['weight'] ?? 68} kg', LucideIcons.scale, AppColors.success, isDark)),
               ],
             ).animate().fadeIn().slideY(begin: 0.05),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Family Medical Context
             const SectionHeader(title: 'Generational Family History', subtitle: 'Hereditary risk indicators'),
             const SizedBox(height: 12),
-            Container(
+            AppCard(
               padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.softBlue.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.2)),
-              ),
+              borderRadius: 20,
+              elevation: 1,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('• Father — Coronary artery disease', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w600, fontSize: 14)),
-                  SizedBox(height: 4),
-                  Text('• Grandmother — Hypertension, Type 2 Diabetes', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w600, fontSize: 14)),
-                  Divider(height: 20),
-                  Text(
-                    'Family history context — not a diagnosis.',
-                    style: TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold),
+                children: [
+                  Row(
+                    children: [
+                      const Icon(LucideIcons.dna, color: AppColors.primaryBlue, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Father — Coronary artery disease',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : AppColors.navy,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(LucideIcons.dna, color: AppColors.accentCyan, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Grandmother — Hypertension, Type 2 Diabetes',
+                        style: TextStyle(
+                          color: isDark ? Colors.white : AppColors.navy,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Divider(height: 20, color: isDark ? const Color(0xFF334155) : AppColors.border),
+                  const Text(
+                    'Family history context — not a clinical diagnosis.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primaryBlue,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Actions Section
             const SectionHeader(title: 'Doctor Actions'),
@@ -225,126 +315,77 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
             PrimaryButton(
               label: 'Schedule Appointment',
               icon: LucideIcons.calendar,
-              onPressed: () => _showAppointmentSheet(context, currentPatient.name),
+              onPressed: () => _showAppointmentSheet(context, currentPatient.name, isDark),
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showReminderSheet(context),
-                    icon: const Icon(LucideIcons.bell, color: AppColors.primaryBlue, size: 18),
-                    label: const Text('Send Reminder', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      side: const BorderSide(color: AppColors.primaryBlue),
-                    ),
+                  child: SecondaryButton(
+                    text: 'Send Reminder',
+                    icon: LucideIcons.bell,
+                    onPressed: () => _showReminderSheet(context, isDark),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showRecordsSheet(context, currentPatient.name),
-                    icon: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue, size: 18),
-                    label: const Text('View Records', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      side: const BorderSide(color: AppColors.primaryBlue),
-                    ),
+                  child: SecondaryButton(
+                    text: 'View Records',
+                    icon: LucideIcons.fileText,
+                    onPressed: () => _showRecordsSheet(context, currentPatient.name, isDark),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildVitalTile(String title, String value, IconData icon, Color color) {
-    return Container(
+  Widget _buildVitalTile(String label, String value, IconData icon, Color color, bool isDark) {
+    return AppCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-      ),
+      borderRadius: 16,
+      elevation: 0.5,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy)),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isDark ? 0.25 : 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: isDark ? Colors.white : AppColors.navy,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(title, style: const TextStyle(color: AppColors.secondaryText, fontSize: 11)),
+          Text(
+            label,
+            style: TextStyle(
+              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  void _showAppointmentSheet(BuildContext context, String patientName) {
+  void _showAppointmentSheet(BuildContext context, String patientName, bool isDark) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Schedule Consultation for $patientName', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
-            const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Consultation Reason', hintText: 'Follow-up / ECG check')),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Confirm Schedule',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Consultation booked for $patientName!'), backgroundColor: AppColors.primaryBlue));
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showReminderSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Send Patient Medication Reminder', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
-            const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Reminder Message', hintText: 'Take Furosemide 40mg at 6 PM')),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Send Direct Reminder',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reminder sent to patient app!'), backgroundColor: AppColors.primaryBlue));
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showRecordsSheet(BuildContext context, String patientName) {
-    showModalBottomSheet(
-      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -352,11 +393,101 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$patientName Medical Records', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Schedule Consultation with $patientName',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('Blood Test Panel (Aug 15)'), trailing: const Icon(LucideIcons.eye)),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('12-Lead ECG Report (Aug 10)'), trailing: const Icon(LucideIcons.eye)),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('Echocardiogram Summary (Jul 28)'), trailing: const Icon(LucideIcons.eye)),
+            const TextField(decoration: InputDecoration(labelText: 'Consultation Reason', hintText: 'e.g. ECG Review')),
+            const SizedBox(height: 24),
+            PrimaryButton(
+              label: 'Confirm Consultation Slot',
+              onPressed: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Appointment scheduled!'), backgroundColor: AppColors.primaryBlue),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReminderSheet(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Send Patient Care Reminder',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const TextField(decoration: InputDecoration(labelText: 'Reminder Message', hintText: 'e.g. Take evening BP reading')),
+            const SizedBox(height: 24),
+            PrimaryButton(
+              label: 'Send Push Reminder',
+              onPressed: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Reminder sent to patient!'), backgroundColor: AppColors.primaryBlue),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRecordsSheet(BuildContext context, String patientName, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Medical Records — $patientName',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+              title: Text('Comprehensive Blood Panel (Aug 15)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              trailing: const Icon(LucideIcons.download),
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+              title: Text('12-Lead Electrocardiogram (Aug 10)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              trailing: const Icon(LucideIcons.download),
+            ),
+            const SizedBox(height: 16),
+            PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
           ],
         ),
       ),

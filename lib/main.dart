@@ -13,11 +13,11 @@ void main() {
       statusBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const ProviderScope(child: ContinuumHealthApp()));
+  runApp(const ProviderScope(child: ArdiusCareApp()));
 }
 
-class ContinuumHealthApp extends ConsumerWidget {
-  const ContinuumHealthApp({super.key});
+class ArdiusCareApp extends ConsumerWidget {
+  const ArdiusCareApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,7 +25,7 @@ class ContinuumHealthApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp.router(
-      title: 'Continuum Health',
+      title: 'Ardius Care',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,

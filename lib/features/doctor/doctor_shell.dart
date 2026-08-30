@@ -20,57 +20,58 @@ class DoctorShellScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
           border: Border(
             top: BorderSide(
-              color: AppColors.border.withValues(alpha: 0.6),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : AppColors.border.withValues(alpha: 0.8),
               width: 1,
             ),
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.navy.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
+              color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
         child: SafeArea(
-          child: BottomNavigationBar(
-            currentIndex: navigationShell.currentIndex,
-            onTap: _goBranch,
-            backgroundColor: Colors.white,
+          child: NavigationBar(
+            selectedIndex: navigationShell.currentIndex,
+            onDestinationSelected: _goBranch,
+            backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
             elevation: 0,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: AppColors.primaryBlue,
-            unselectedItemColor: AppColors.secondaryText,
-            selectedFontSize: 12,
-            unselectedFontSize: 12,
-            showSelectedLabels: true,
-            showUnselectedLabels: true,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(LucideIcons.layoutDashboard),
-                activeIcon: Icon(LucideIcons.layoutDashboard, color: AppColors.primaryBlue),
+            indicatorColor: isDark
+                ? const Color(0xFF1E3A8A).withValues(alpha: 0.5)
+                : AppColors.softBlue,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: [
+              NavigationDestination(
+                icon: Icon(LucideIcons.layoutDashboard, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.layoutDashboard, color: AppColors.primaryBlue),
                 label: 'Dashboard',
               ),
-              BottomNavigationBarItem(
-                icon: Icon(LucideIcons.calendar),
-                activeIcon: Icon(LucideIcons.calendar, color: AppColors.primaryBlue),
+              NavigationDestination(
+                icon: Icon(LucideIcons.calendar, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.calendar, color: AppColors.primaryBlue),
                 label: 'Calendar',
               ),
-              BottomNavigationBarItem(
-                icon: Icon(LucideIcons.users),
-                activeIcon: Icon(LucideIcons.users, color: AppColors.primaryBlue),
+              NavigationDestination(
+                icon: Icon(LucideIcons.users, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.users, color: AppColors.primaryBlue),
                 label: 'Patients',
               ),
-              BottomNavigationBarItem(
-                icon: Icon(LucideIcons.user),
-                activeIcon: Icon(LucideIcons.user, color: AppColors.primaryBlue),
+              NavigationDestination(
+                icon: Icon(LucideIcons.user, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.user, color: AppColors.primaryBlue),
                 label: 'Profile',
               ),
             ],

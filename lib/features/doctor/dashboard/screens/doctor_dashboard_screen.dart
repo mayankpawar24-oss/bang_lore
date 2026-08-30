@@ -5,8 +5,10 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/section_header.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
 import '../../../../data/models/appointment_model.dart';
@@ -33,6 +35,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final patients = ref.watch(patientsProvider);
     final appointments = ref.watch(appointmentsProvider);
     final authState = ref.watch(authProvider);
@@ -46,7 +49,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
@@ -56,83 +59,11 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             }
           },
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const CircleAvatar(
-                          radius: 24,
-                          backgroundColor: AppColors.softBlue,
-                          backgroundImage: NetworkImage('https://i.pravatar.cc/150?u=aisha'),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Good morning, Dr. ${authState.user?.name.split(' ').last ?? 'Patel'} 👋',
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.navy,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              'Cardiology • City Heart Center',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.secondaryText,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      onPressed: () => NotificationSheet.show(context),
-                      icon: Stack(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.navy.withValues(alpha: 0.04),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(LucideIcons.bell, color: AppColors.navy, size: 20),
-                          ),
-                          Positioned(
-                            right: 2,
-                            top: 2,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: AppColors.danger,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                _buildHeader(context, authState.user?.name, isDark),
                 const SizedBox(height: 20),
 
                 // Stat Cards Grid (2x2)
@@ -144,26 +75,33 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                   crossAxisSpacing: 12,
                   childAspectRatio: 1.45,
                   children: [
-                    _buildStatCard('Active Patients', activePatients.length.toString(), LucideIcons.users, AppColors.primaryBlue),
-                    _buildStatCard('Appts Today', todayAppointments.length.toString(), LucideIcons.calendar, AppColors.success),
-                    _buildStatCard('Needs Attention', needsAttention.length.toString(), LucideIcons.alertTriangle, AppColors.warning),
-                    _buildStatCard('Available Slots', '8', LucideIcons.clock, AppColors.accentCyan),
+                    _buildStatCard('Active Patients', activePatients.length.toString(), LucideIcons.users, AppColors.primaryBlue, isDark),
+                    _buildStatCard('Appts Today', todayAppointments.length.toString(), LucideIcons.calendar, AppColors.success, isDark),
+                    _buildStatCard('Needs Attention', needsAttention.length.toString(), LucideIcons.alertTriangle, AppColors.warning, isDark),
+                    _buildStatCard('Available Slots', '8', LucideIcons.clock, AppColors.accentCyan, isDark),
                   ],
-                ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05),
+                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
                 const SizedBox(height: 24),
 
                 // Quick Actions Bar
-                const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                Text(
+                  'Quick Actions',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildQuickActionButton('Add Appt', LucideIcons.plusCircle, AppColors.primaryBlue, () => _showAddAppointmentModal(context)),
-                      _buildQuickActionButton('Add Patient', LucideIcons.userPlus, AppColors.success, () => _showAddPatientModal(context)),
-                      _buildQuickActionButton('Send Alert', LucideIcons.bellRing, AppColors.danger, () => _showSendAlertModal(context)),
-                      _buildQuickActionButton('Add Reminder', LucideIcons.clock, AppColors.warning, () => _showAddReminderModal(context)),
-                      _buildQuickActionButton('View Reports', LucideIcons.fileText, const Color(0xFF8B5CF6), () => _showReportsModal(context)),
+                      _buildQuickActionButton('Add Appt', LucideIcons.plusCircle, AppColors.primaryBlue, () => _showAddAppointmentModal(context, isDark), isDark),
+                      _buildQuickActionButton('Add Patient', LucideIcons.userPlus, AppColors.success, () => _showAddPatientModal(context, isDark), isDark),
+                      _buildQuickActionButton('Send Alert', LucideIcons.bellRing, AppColors.danger, () => _showSendAlertModal(context, isDark), isDark),
+                      _buildQuickActionButton('Add Reminder', LucideIcons.clock, AppColors.warning, () => _showAddReminderModal(context, isDark), isDark),
+                      _buildQuickActionButton('View Reports', LucideIcons.fileText, const Color(0xFF8B5CF6), () => _showReportsModal(context, isDark), isDark),
                     ],
                   ),
                 ),
@@ -171,39 +109,43 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
 
                 // Patients Needing Attention Section
                 if (needsAttention.isNotEmpty) ...[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Patients Needing Attention', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy)),
-                      TextButton(
-                        onPressed: () => context.go('/doctor/patients'),
-                        child: const Text('View All', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
-                      ),
-                    ],
+                  SectionHeader(
+                    title: 'Patients Needing Attention',
+                    actionText: 'View All',
+                    onActionTap: () => context.go('/doctor/patients'),
                   ),
-                  const SizedBox(height: 10),
-                  ...needsAttention.map((patient) => _buildAttentionCard(context, patient, appointments)),
+                  const SizedBox(height: 12),
+                  ...needsAttention.map((patient) => _buildAttentionCard(context, patient, isDark)),
                   const SizedBox(height: 24),
                 ],
 
                 // Today's Schedule Stream
-                const Text("Today's Schedule", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                Text(
+                  "Today's Schedule",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 if (todayAppointments.isEmpty)
-                  Container(
+                  AppCard(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
-                    ),
-                    child: const Center(
-                      child: Text('No more consultations scheduled for today.', style: TextStyle(color: AppColors.secondaryText)),
+                    padding: const EdgeInsets.all(24),
+                    borderRadius: 20,
+                    child: Center(
+                      child: Text(
+                        'No consultations scheduled for today.',
+                        style: TextStyle(
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          fontSize: 14,
+                        ),
+                      ),
                     ),
                   )
                 else
-                  ...todayAppointments.map((appt) => _buildScheduleTile(appt)),
+                  ...todayAppointments.map((appt) => _buildScheduleTile(appt, isDark)),
 
                 const SizedBox(height: 40),
               ],
@@ -214,21 +156,134 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+  Widget _buildHeader(BuildContext context, String? doctorName, bool isDark) {
+    final lastName = doctorName != null ? doctorName.split(' ').last : 'Patel';
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : Colors.white,
+                  width: 2,
+                ),
+              ),
+              child: const ClipOval(
+                child: Image(
+                  image: NetworkImage('https://i.pravatar.cc/150?u=aisha'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Dr. $lastName',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text('👋', style: TextStyle(fontSize: 17)),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Cardiology • City Heart Center',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => NotificationSheet.show(context),
+            borderRadius: BorderRadius.circular(14),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : AppColors.border.withValues(alpha: 0.8),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    LucideIcons.bell,
+                    color: isDark ? Colors.white : AppColors.navy,
+                    size: 20,
+                  ),
+                ),
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
+                        width: 2,
+                      ),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    child: const Center(
+                      child: Text(
+                        '3',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, bool isDark) {
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -239,7 +294,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
+                  color: color.withValues(alpha: isDark ? 0.2 : 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: color, size: 20),
@@ -257,10 +312,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           const SizedBox(height: 10),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppColors.secondaryText,
+              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -270,19 +325,23 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  Widget _buildQuickActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildQuickActionButton(String label, IconData icon, Color color, VoidCallback onTap, bool isDark) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(right: 12),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : AppColors.border.withValues(alpha: 0.8),
+          ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.navy.withValues(alpha: 0.03),
+              color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.03),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -292,83 +351,96 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.navy)),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAttentionCard(BuildContext context, PatientModel patient, List<AppointmentModel> appointments) {
+  Widget _buildAttentionCard(BuildContext context, PatientModel patient, bool isDark) {
     final isCritical = patient.status == 'critical';
     final color = isCritical ? AppColors.danger : AppColors.warning;
 
-    return GestureDetector(
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
+      borderColor: color.withValues(alpha: 0.4),
       onTap: () => context.push('/doctor/patients/patient/${patient.id}', extra: patient),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: color.withValues(alpha: isDark ? 0.25 : 0.15),
+            child: Text(
+              patient.name.isNotEmpty ? patient.name[0] : 'P',
+              style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: color.withValues(alpha: 0.15),
-              child: Text(patient.name[0], style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patient.name,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${patient.condition} • Adherence ${patient.medicationAdherence.toInt()}%',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(patient.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy)),
-                  const SizedBox(height: 2),
-                  Text('${patient.condition} • Adherence ${patient.medicationAdherence.toInt()}%', style: const TextStyle(color: AppColors.secondaryText, fontSize: 12)),
-                ],
-              ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: isDark ? 0.2 : 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                isCritical ? 'CRITICAL' : 'ATTENTION',
-                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
-              ),
+            child: Text(
+              isCritical ? 'CRITICAL' : 'ATTENTION',
+              style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildScheduleTile(AppointmentModel appt) {
-    return Container(
+  Widget _buildScheduleTile(AppointmentModel appt, bool isDark) {
+    return AppCard(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-      ),
+      borderRadius: 18,
+      elevation: 0.5,
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: AppColors.softBlue, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: const Icon(LucideIcons.stethoscope, color: AppColors.primaryBlue, size: 20),
           ),
           const SizedBox(width: 14),
@@ -376,16 +448,42 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(appt.patientName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy)),
+                Text(
+                  appt.patientName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text('${appt.specialty} • ${_formatTime(appt.dateTime)}', style: const TextStyle(color: AppColors.secondaryText, fontSize: 12)),
+                Text(
+                  '${appt.specialty} • ${_formatTime(appt.dateTime)}',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: AppColors.softBlue, borderRadius: BorderRadius.circular(10)),
-            child: const Text('CONFIRMED', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 11)),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : AppColors.softBlue,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.primaryBlue.withValues(alpha: 0.25),
+              ),
+            ),
+            child: const Text(
+              'CONFIRMED',
+              style: TextStyle(
+                color: AppColors.primaryBlue,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
           ),
         ],
       ),
@@ -393,22 +491,43 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   // Modals for Quick Actions
-  void _showAddAppointmentModal(BuildContext context) {
+  void _showAddAppointmentModal(BuildContext context, bool isDark) {
     final patientCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Book Doctor Appointment', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Book Doctor Appointment',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            TextField(controller: patientCtrl, decoration: const InputDecoration(labelText: 'Patient Name', hintText: 'e.g. Margaret Chen')),
+            TextField(
+              controller: patientCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Patient Name',
+                hintText: 'e.g. Margaret Chen',
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Confirm Appointment Slot',
@@ -427,7 +546,12 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                   );
                   ref.read(appointmentsProvider.notifier).bookAppointment(appt);
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Appointment scheduled!'), backgroundColor: AppColors.primaryBlue));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Appointment scheduled!'),
+                      backgroundColor: AppColors.primaryBlue,
+                    ),
+                  );
                 }
               },
             ),
@@ -437,9 +561,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  void _showAddPatientModal(BuildContext context) {
+  void _showAddPatientModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -447,7 +572,14 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Add New Patient', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Add New Patient',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
             const TextField(decoration: InputDecoration(labelText: 'Patient Full Name')),
             const SizedBox(height: 12),
@@ -457,7 +589,12 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
               label: 'Send Access Request',
               onPressed: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Access request sent to patient!'), backgroundColor: AppColors.primaryBlue));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Access request sent to patient!'),
+                    backgroundColor: AppColors.primaryBlue,
+                  ),
+                );
               },
             ),
           ],
@@ -466,9 +603,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  void _showSendAlertModal(BuildContext context) {
+  void _showSendAlertModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -476,15 +614,32 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Send Patient Alert Notification', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Send Patient Alert Notification',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Alert Message', hintText: 'e.g. Please check your blood pressure now.')),
+            const TextField(
+              decoration: InputDecoration(
+                labelText: 'Alert Message',
+                hintText: 'e.g. Please check your blood pressure now.',
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Broadcast Alert',
               onPressed: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alert broadcasted to patient app!'), backgroundColor: AppColors.danger));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Alert broadcasted to patient app!'),
+                    backgroundColor: AppColors.danger,
+                  ),
+                );
               },
             ),
           ],
@@ -493,9 +648,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  void _showAddReminderModal(BuildContext context) {
+  void _showAddReminderModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -503,15 +659,32 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Add Doctor Follow-up Reminder', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Add Doctor Follow-up Reminder',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Reminder Note', hintText: 'e.g. Follow up on ECG report')),
+            const TextField(
+              decoration: InputDecoration(
+                labelText: 'Reminder Note',
+                hintText: 'e.g. Follow up on ECG report',
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Save Doctor Reminder',
               onPressed: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Follow-up reminder set!'), backgroundColor: AppColors.primaryBlue));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Follow-up reminder set!'),
+                    backgroundColor: AppColors.primaryBlue,
+                  ),
+                );
               },
             ),
           ],
@@ -520,9 +693,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  void _showReportsModal(BuildContext context) {
+  void _showReportsModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
@@ -530,11 +704,30 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Recent Medical Reports', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Recent Medical Reports',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('Margaret Chen - Blood Test (Aug 15)'), trailing: const Icon(LucideIcons.download)),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('Margaret Chen - ECG Trace (Aug 10)'), trailing: const Icon(LucideIcons.download)),
-            ListTile(leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue), title: const Text('Emily Davis - Chest X-Ray (Aug 12)'), trailing: const Icon(LucideIcons.download)),
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+              title: Text('Margaret Chen - Blood Test (Aug 15)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              trailing: const Icon(LucideIcons.download),
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+              title: Text('Margaret Chen - ECG Trace (Aug 10)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              trailing: const Icon(LucideIcons.download),
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+              title: Text('Emily Davis - Chest X-Ray (Aug 12)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              trailing: const Icon(LucideIcons.download),
+            ),
           ],
         ),
       ),

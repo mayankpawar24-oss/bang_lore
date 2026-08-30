@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
@@ -54,11 +55,12 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final members = ref.watch(familyMembersProvider);
     final reminders = ref.watch(remindersProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -66,9 +68,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
                 children: [
-                  _buildHeader(context),
+                  _buildHeader(context, isDark),
                   const SizedBox(height: 16),
-                  _buildSegmentedTab(),
+                  _buildSegmentedTab(isDark),
                 ],
               ),
             ),
@@ -80,18 +82,18 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                 },
                 children: [
                   // Tab 1: Canva-like Interactive Tree Editor
-                  _buildTreeTabContent(context, members),
+                  _buildTreeTabContent(context, members, isDark),
 
                   // Tab 2: Family Reminders (Grouped & CRUD)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    child: _buildRemindersTabContent(context, members, reminders),
+                    child: _buildRemindersTabContent(context, members, reminders, isDark),
                   ),
 
                   // Tab 3: Family Features (Interactive Modals)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    child: _buildFeaturesTabContent(context, members),
+                    child: _buildFeaturesTabContent(context, members, isDark),
                   ),
                 ],
               ),
@@ -102,27 +104,27 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text(
               'Family',
               style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
-                color: AppColors.navy,
+                color: isDark ? Colors.white : AppColors.navy,
                 letterSpacing: -0.5,
               ),
             ),
-            SizedBox(height: 2),
+            const SizedBox(height: 2),
             Text(
               'Care together, stay stronger',
               style: TextStyle(
-                color: AppColors.secondaryText,
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                 fontSize: 14,
               ),
             ),
@@ -133,30 +135,36 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           icon: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
               shape: BoxShape.circle,
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : AppColors.border.withValues(alpha: 0.8),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.navy.withValues(alpha: 0.04),
+                  color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
             ),
-            child: const Icon(LucideIcons.bell, color: AppColors.navy, size: 20),
+            child: Icon(LucideIcons.bell, color: isDark ? Colors.white : AppColors.navy, size: 20),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSegmentedTab() {
+  Widget _buildSegmentedTab(bool isDark) {
     final tabs = ['Tree', 'Reminders', 'Features'];
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.softBlue.withValues(alpha: 0.5),
+        color: isDark
+            ? const Color(0xFF131C2E)
+            : AppColors.softBlue.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -171,12 +179,14 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : Colors.transparent,
+                  color: isSelected
+                      ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: AppColors.navy.withValues(alpha: 0.05),
+                            color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.05),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -188,7 +198,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                     label,
                     style: TextStyle(
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                      color: isSelected ? AppColors.primaryBlue : AppColors.secondaryText,
+                      color: isSelected
+                          ? (isDark ? Colors.white : AppColors.primaryBlue)
+                          : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
                       fontSize: 14,
                     ),
                   ),
@@ -205,7 +217,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   // TAB 1: CANVA-LIKE INTERACTIVE FAMILY TREE
   // ==========================================
 
-  Widget _buildTreeTabContent(BuildContext context, List<FamilyMemberModel> members) {
+  Widget _buildTreeTabContent(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -217,13 +229,20 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Family Canvas',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
                   ),
                   Text(
                     '${members.length} Members • Drag to position',
-                    style: const TextStyle(color: AppColors.secondaryText, fontSize: 13),
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -231,7 +250,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                 children: [
                   if (_isEditMode) ...[
                     GestureDetector(
-                      onTap: () => _showAddMemberSheet(context),
+                      onTap: () => _showAddMemberSheet(context, isDark),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
@@ -262,21 +281,27 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: _isEditMode ? AppColors.navy : AppColors.softBlue,
+                        color: _isEditMode
+                            ? (isDark ? const Color(0xFF2563EB) : AppColors.navy)
+                            : (isDark ? const Color(0xFF131C2E) : AppColors.softBlue),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
                           Icon(
                             _isEditMode ? LucideIcons.check : LucideIcons.edit3,
-                            color: _isEditMode ? Colors.white : AppColors.primaryBlue,
+                            color: _isEditMode
+                                ? Colors.white
+                                : (isDark ? Colors.white : AppColors.primaryBlue),
                             size: 14,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             _isEditMode ? 'Done' : 'Edit Tree',
                             style: TextStyle(
-                              color: _isEditMode ? Colors.white : AppColors.primaryBlue,
+                              color: _isEditMode
+                                  ? Colors.white
+                                  : (isDark ? Colors.white : AppColors.primaryBlue),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -304,10 +329,17 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('🔗 Tap a target node to connect link', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.navy)),
+                  Text(
+                    '🔗 Tap a target node to connect link',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
                   GestureDetector(
                     onTap: () => setState(() => _connectingSourceId = null),
-                    child: const Icon(LucideIcons.x, size: 16, color: AppColors.navy),
+                    child: Icon(LucideIcons.x, size: 16, color: isDark ? Colors.white : AppColors.navy),
                   ),
                 ],
               ),
@@ -321,15 +353,25 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFF0FDF4), Color(0xFFEFF6FF), Color(0xFFFAF5FF)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : AppColors.border.withValues(alpha: 0.7),
                   ),
+                  gradient: isDark
+                      ? const LinearGradient(
+                          colors: [Color(0xFF0F172A), Color(0xFF131C2E), Color(0xFF0B1329)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : const LinearGradient(
+                          colors: [Color(0xFFF0FDF4), Color(0xFFEFF6FF), Color(0xFFFAF5FF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.navy.withValues(alpha: 0.04),
+                      color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -340,7 +382,6 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                     final canvasWidth = constraints.maxWidth;
                     final canvasHeight = constraints.maxHeight;
 
-                    // Ensure default positions for members if not set
                     final positions = _getCalculatedPositions(members, canvasWidth, canvasHeight);
 
                     return Stack(
@@ -412,7 +453,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           InkWell(
-                                            onTap: () => _showEditMemberSheet(context, m),
+                                            onTap: () => _showEditMemberSheet(context, m, isDark),
                                             child: const Padding(
                                               padding: EdgeInsets.all(4),
                                               child: Icon(LucideIcons.edit2, color: Colors.white, size: 14),
@@ -443,21 +484,29 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                     width: 125,
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: m.relationship == 'Self' ? AppColors.surfaceBlue : Colors.white,
+                                      color: isDark
+                                          ? (m.relationship == 'Self'
+                                              ? const Color(0xFF1E3A8A).withValues(alpha: 0.5)
+                                              : const Color(0xFF1E293B))
+                                          : (m.relationship == 'Self'
+                                              ? AppColors.surfaceBlue
+                                              : Colors.white),
                                       borderRadius: BorderRadius.circular(16),
                                       border: Border.all(
                                         color: isSelected
                                             ? AppColors.primaryBlue
                                             : (m.relationship == 'Self'
                                                 ? AppColors.primaryBlue
-                                                : AppColors.border.withValues(alpha: 0.8)),
+                                                : (isDark
+                                                    ? Colors.white.withValues(alpha: 0.1)
+                                                    : AppColors.border.withValues(alpha: 0.8))),
                                         width: isSelected ? 2.5 : 1,
                                       ),
                                       boxShadow: [
                                         BoxShadow(
                                           color: isSelected
                                               ? AppColors.primaryBlue.withValues(alpha: 0.25)
-                                              : AppColors.navy.withValues(alpha: 0.04),
+                                              : const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
                                           blurRadius: isSelected ? 12 : 8,
                                           offset: const Offset(0, 3),
                                         ),
@@ -467,12 +516,21 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                       children: [
                                         CircleAvatar(
                                           radius: 16,
-                                          backgroundColor: AppColors.softBlue,
+                                          backgroundColor: isDark
+                                              ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                                              : AppColors.softBlue,
                                           backgroundImage: (m.avatarUrl != null && m.avatarUrl!.isNotEmpty)
                                               ? NetworkImage(m.avatarUrl!)
                                               : null,
                                           child: (m.avatarUrl == null || m.avatarUrl!.isEmpty)
-                                              ? Text(m.name.isNotEmpty ? m.name[0] : '?', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue, fontSize: 12))
+                                              ? Text(
+                                                  m.name.isNotEmpty ? m.name[0] : '?',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppColors.primaryBlue,
+                                                    fontSize: 12,
+                                                  ),
+                                                )
                                               : null,
                                         ),
                                         const SizedBox(width: 8),
@@ -485,14 +543,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 11,
-                                                  color: m.relationship == 'Self' ? AppColors.primaryBlue : AppColors.navy,
+                                                  color: m.relationship == 'Self'
+                                                      ? AppColors.primaryBlue
+                                                      : (isDark ? Colors.white : AppColors.navy),
                                                 ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                               Text(
                                                 m.relationship,
-                                                style: const TextStyle(color: AppColors.secondaryText, fontSize: 9),
+                                                style: TextStyle(
+                                                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                                  fontSize: 9,
+                                                ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -568,6 +631,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     BuildContext context,
     List<FamilyMemberModel> members,
     List<ReminderModel> reminders,
+    bool isDark,
   ) {
     final memberNames = members.map((m) => m.name.split(' ')[0]).toList();
     if (!memberNames.contains('Margaret')) memberNames.insert(0, 'Margaret');
@@ -580,17 +644,27 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 Text(
                   'Family Reminders',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
                 ),
-                SizedBox(height: 2),
-                Text('Grouped by family member', style: TextStyle(color: AppColors.secondaryText, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(
+                  'Grouped by family member',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
             GestureDetector(
-              onTap: () => _showAddFamilyReminderSheet(context, members),
+              onTap: () => _showAddFamilyReminderSheet(context, members, isDark),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
@@ -611,21 +685,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
         const SizedBox(height: 16),
         ...memberNames.map((name) {
           final familyReminders = reminders.where((r) => r.assignedBy == name || r.title.contains(name)).toList();
-          return Container(
+          return AppCard(
             margin: const EdgeInsets.only(bottom: 16),
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.navy.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
+            borderRadius: 20,
+            elevation: 1,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -633,21 +697,40 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   children: [
                     CircleAvatar(
                       radius: 14,
-                      backgroundColor: AppColors.softBlue,
-                      child: Text(name[0], style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12)),
+                      backgroundColor: isDark
+                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                          : AppColors.softBlue,
+                      child: Text(
+                        name[0],
+                        style: const TextStyle(
+                          color: AppColors.primaryBlue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.navy),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 if (familyReminders.isEmpty)
-                  const Text('No active reminders for this member.', style: TextStyle(color: AppColors.muted, fontSize: 12))
+                  Text(
+                    'No active reminders for this member.',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF64748B) : AppColors.muted,
+                      fontSize: 12,
+                    ),
+                  )
                 else
-                  ...familyReminders.map((r) => _buildReminderTile(context, r)),
+                  ...familyReminders.map((r) => _buildReminderTile(context, r, isDark)),
               ],
             ),
           );
@@ -656,7 +739,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  Widget _buildReminderTile(BuildContext context, ReminderModel reminder) {
+  Widget _buildReminderTile(BuildContext context, ReminderModel reminder, bool isDark) {
     IconData icon;
     Color color;
 
@@ -685,7 +768,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
+              color: color.withValues(alpha: isDark ? 0.25 : 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 16),
@@ -700,13 +783,18 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
-                    color: reminder.isCompleted ? AppColors.muted : AppColors.navy,
+                    color: reminder.isCompleted
+                        ? (isDark ? const Color(0xFF64748B) : AppColors.muted)
+                        : (isDark ? Colors.white : AppColors.navy),
                     decoration: reminder.isCompleted ? TextDecoration.lineThrough : null,
                   ),
                 ),
                 Text(
                   _formatTime(reminder.dateTime),
-                  style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -720,7 +808,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(LucideIcons.trash2, size: 16, color: AppColors.muted),
+            icon: Icon(
+              LucideIcons.trash2,
+              size: 16,
+              color: isDark ? const Color(0xFF64748B) : AppColors.muted,
+            ),
             onPressed: () {
               ref.read(remindersProvider.notifier).deleteReminder(reminder.id);
             },
@@ -734,14 +826,14 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   // TAB 3: FEATURES CONTENT (FUNCTIONAL MODALS)
   // ==========================================
 
-  Widget _buildFeaturesTabContent(BuildContext context, List<FamilyMemberModel> members) {
+  Widget _buildFeaturesTabContent(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
     final features = [
-      {'title': 'Shared Care Board', 'desc': 'Manage family tasks & status', 'icon': LucideIcons.users, 'color': AppColors.success, 'action': () => _showCareBoardModal(context, members)},
-      {'title': 'Family Chat & Updates', 'desc': 'Private family messaging', 'icon': LucideIcons.messageCircle, 'color': AppColors.primaryBlue, 'action': () => _showFamilyChatModal(context)},
-      {'title': 'Health News', 'desc': 'Family wellness insights', 'icon': LucideIcons.newspaper, 'color': const Color(0xFF8B5CF6), 'action': () => _showHealthNewsModal(context)},
-      {'title': 'Emergency Contacts', 'desc': 'One-tap family calling', 'icon': LucideIcons.phoneCall, 'color': AppColors.danger, 'action': () => _showEmergencyContactsModal(context)},
-      {'title': 'Care Goals', 'desc': 'Track walking & hydration', 'icon': LucideIcons.target, 'color': AppColors.warning, 'action': () => _showCareGoalsModal(context)},
-      {'title': 'Share Records', 'desc': 'Manage record permissions', 'icon': LucideIcons.fileText, 'color': AppColors.accentCyan, 'action': () => _showShareRecordsModal(context)},
+      {'title': 'Shared Care Board', 'desc': 'Manage family tasks & status', 'icon': LucideIcons.users, 'color': AppColors.success, 'action': () => _showCareBoardModal(context, members, isDark)},
+      {'title': 'Family Chat & Updates', 'desc': 'Private family messaging', 'icon': LucideIcons.messageCircle, 'color': AppColors.primaryBlue, 'action': () => _showFamilyChatModal(context, isDark)},
+      {'title': 'Health News', 'desc': 'Family wellness insights', 'icon': LucideIcons.newspaper, 'color': const Color(0xFF8B5CF6), 'action': () => _showHealthNewsModal(context, isDark)},
+      {'title': 'Emergency Contacts', 'desc': 'One-tap family calling', 'icon': LucideIcons.phoneCall, 'color': AppColors.danger, 'action': () => _showEmergencyContactsModal(context, isDark)},
+      {'title': 'Care Goals', 'desc': 'Track walking & hydration', 'icon': LucideIcons.target, 'color': AppColors.warning, 'action': () => _showCareGoalsModal(context, isDark)},
+      {'title': 'Share Records', 'desc': 'Manage record permissions', 'icon': LucideIcons.fileText, 'color': AppColors.accentCyan, 'action': () => _showShareRecordsModal(context, isDark)},
     ];
 
     return Column(
@@ -763,57 +855,45 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             final desc = f['desc'] as String;
             final action = f['action'] as VoidCallback;
 
-            return GestureDetector(
+            return AppCard(
               onTap: action,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.navy.withValues(alpha: 0.025),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+              padding: const EdgeInsets.all(16),
+              borderRadius: 22,
+              elevation: 0.5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: isDark ? 0.25 : 0.12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(icon, color: color, size: 22),
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.navy,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    desc,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      desc,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.secondaryText,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             );
           }).toList(),
@@ -826,7 +906,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   // MODAL SHEETS & FORM ACTIONS
   // ==========================================
 
-  void _showAddMemberSheet(BuildContext context) {
+  void _showAddMemberSheet(BuildContext context, bool isDark) {
     final nameCtrl = TextEditingController();
     final relCtrl = TextEditingController();
     int gen = 1;
@@ -837,24 +917,53 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF131C2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Add Family Member', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+              Text(
+                'Add Family Member',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', hintText: 'e.g. Sarah Chen')),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Name', hintText: 'e.g. Sarah Chen'),
+              ),
               const SizedBox(height: 12),
-              TextField(controller: relCtrl, decoration: const InputDecoration(labelText: 'Relationship', hintText: 'Parent, Child, Sibling, Partner, Other')),
+              TextField(
+                controller: relCtrl,
+                decoration: const InputDecoration(labelText: 'Relationship', hintText: 'Parent, Child, Sibling, Partner, Other'),
+              ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  const Text('Generation: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Generation: ',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   DropdownButton<int>(
                     value: gen,
+                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                    style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
                     items: const [
                       DropdownMenuItem(value: 0, child: Text('Gen 0 (Grandparent)')),
                       DropdownMenuItem(value: 1, child: Text('Gen 1 (Parent/Aunt)')),
@@ -898,7 +1007,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  void _showEditMemberSheet(BuildContext context, FamilyMemberModel member) {
+  void _showEditMemberSheet(BuildContext context, FamilyMemberModel member, bool isDark) {
     final nameCtrl = TextEditingController(text: member.name);
     final relCtrl = TextEditingController(text: member.relationship);
 
@@ -907,13 +1016,28 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Edit ${member.name}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Edit ${member.name}',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
             const SizedBox(height: 12),
@@ -933,7 +1057,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  void _showAddFamilyReminderSheet(BuildContext context, List<FamilyMemberModel> members) {
+  void _showAddFamilyReminderSheet(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
     final titleCtrl = TextEditingController();
     ReminderType selectedType = ReminderType.medicine;
     String selectedAssignee = 'Sarah';
@@ -947,24 +1071,58 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
-          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 24, left: 24, right: 24, top: 24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF131C2E) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            left: 24,
+            right: 24,
+            top: 24,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Add Family Reminder', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+              Text(
+                'Add Family Reminder',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
               const SizedBox(height: 16),
-              TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Reminder Title', hintText: 'e.g. Drink water or Take meds')),
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Reminder Title',
+                  hintText: 'e.g. Drink water or Take meds',
+                ),
+              ),
               const SizedBox(height: 16),
-              const Text('Family Member', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Family Member',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 children: names.map((n) => ChoiceChip(
                   label: Text(n),
                   selected: selectedAssignee == n,
-                  onSelected: (val) { if (val) setModalState(() => selectedAssignee = n); },
+                  selectedColor: AppColors.primaryBlue,
+                  labelStyle: TextStyle(
+                    color: selectedAssignee == n ? Colors.white : (isDark ? Colors.white : AppColors.navy),
+                    fontWeight: FontWeight.bold,
+                  ),
+                  onSelected: (val) {
+                    if (val) setModalState(() => selectedAssignee = n);
+                  },
                 )).toList(),
               ),
               const SizedBox(height: 24),
@@ -994,30 +1152,68 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   }
 
   // Feature Modals
-  void _showCareBoardModal(BuildContext context, List<FamilyMemberModel> members) {
+  void _showCareBoardModal(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const Text('Shared Care Board', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Shared Care Board',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 8),
-            const Text('Tasks assigned across family members', style: TextStyle(color: AppColors.secondaryText)),
-            const Divider(height: 24),
+            Text(
+              'Tasks assigned across family members',
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+              ),
+            ),
+            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
             Expanded(
               child: ListView(
                 children: members.expand((m) => m.careTasks.map((t) => ListTile(
-                  title: Text(t.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Assigned to ${t.assignedTo ?? m.name}'),
+                  title: Text(
+                    t.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Assigned to ${t.assignedTo ?? m.name}',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                    ),
+                  ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: AppColors.softBlue, borderRadius: BorderRadius.circular(10)),
-                    child: Text(t.status.name.toUpperCase(), style: const TextStyle(color: AppColors.primaryBlue, fontSize: 11, fontWeight: FontWeight.bold)),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                          : AppColors.softBlue,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      t.status.name.toUpperCase(),
+                      style: const TextStyle(
+                        color: AppColors.primaryBlue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ))).toList(),
               ),
@@ -1028,7 +1224,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  void _showFamilyChatModal(BuildContext context) {
+  void _showFamilyChatModal(BuildContext context, bool isDark) {
     final msgCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
@@ -1036,21 +1232,45 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const Text('Family Chat & Updates', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
-            const Divider(height: 24),
-            const Expanded(
+            Text(
+              'Family Chat & Updates',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
+            Expanded(
               child: Center(
-                child: Text('Sarah: "Checked Mom\'s blood pressure at 9 AM — 120/80!"', style: TextStyle(color: AppColors.slate, fontSize: 14)),
+                child: Text(
+                  'Sarah: "Checked Mom\'s blood pressure at 9 AM — 120/80!"',
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
             Row(
               children: [
-                Expanded(child: TextField(controller: msgCtrl, decoration: const InputDecoration(hintText: 'Type family update...'))),
-                IconButton(icon: const Icon(LucideIcons.send, color: AppColors.primaryBlue), onPressed: () => Navigator.pop(context)),
+                Expanded(
+                  child: TextField(
+                    controller: msgCtrl,
+                    decoration: const InputDecoration(hintText: 'Type family update...'),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(LucideIcons.send, color: AppColors.primaryBlue),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ],
             ),
           ],
@@ -1059,73 +1279,134 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  void _showHealthNewsModal(BuildContext context) {
+  void _showHealthNewsModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Text('Health News For Family', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
-            SizedBox(height: 16),
-            Text('• Heart Health: Importance of low sodium intake in seniors.\n• Hydration Tips: Drinking 8 glasses of water improves mobility.\n• Seasonal Care: Flu vaccination guide for family caregivers.', style: TextStyle(height: 1.6, color: AppColors.slate)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEmergencyContactsModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Emergency Contacts', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Health News For Family',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            ListTile(leading: const Icon(LucideIcons.phone, color: AppColors.danger), title: const Text('Sarah Chen (Daughter)'), subtitle: const Text('+1 (555) 234-5678')),
-            ListTile(leading: const Icon(LucideIcons.phone, color: AppColors.danger), title: const Text('David Chen (Father)'), subtitle: const Text('+1 (555) 876-5432')),
+            Text(
+              '• Heart Health: Importance of low sodium intake in seniors.\n• Hydration Tips: Drinking 8 glasses of water improves mobility.\n• Seasonal Care: Flu vaccination guide for family caregivers.',
+              style: TextStyle(
+                height: 1.6,
+                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  void _showCareGoalsModal(BuildContext context) {
+  void _showEmergencyContactsModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Text('Care Goals & Trackers', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
-            SizedBox(height: 16),
-            Text('🎯 Daily Family Goal: 10,000 steps collective walk\n💧 Hydration Target: 2.5L per day per member\n💊 Medication Adherence: Target 95%+', style: TextStyle(height: 1.6, color: AppColors.slate)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showShareRecordsModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Share Records Securely', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            Text(
+              'Emergency Contacts',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
             const SizedBox(height: 16),
-            const Text('Grant secure access to family medical records to authorized caregivers.', style: TextStyle(color: AppColors.slate)),
+            ListTile(
+              leading: const Icon(LucideIcons.phone, color: AppColors.danger),
+              title: Text('Sarah Chen (Daughter)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              subtitle: Text('+1 (555) 234-5678', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText)),
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.phone, color: AppColors.danger),
+              title: Text('David Chen (Father)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              subtitle: Text('+1 (555) 876-5432', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCareGoalsModal(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Care Goals & Trackers',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '🎯 Daily Family Goal: 10,000 steps collective walk\n💧 Hydration Target: 2.5L per day per member\n💊 Medication Adherence: Target 95%+',
+              style: TextStyle(
+                height: 1.6,
+                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShareRecordsModal(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Share Records Securely',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Grant secure access to family medical records to authorized caregivers.',
+              style: TextStyle(
+                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+              ),
+            ),
             const SizedBox(height: 20),
             PrimaryButton(label: 'Export Shared PDF', onPressed: () => Navigator.pop(context)),
           ],
