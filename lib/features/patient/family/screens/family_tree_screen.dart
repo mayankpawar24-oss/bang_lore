@@ -22,7 +22,6 @@ class FamilyTreeScreen extends ConsumerStatefulWidget {
 
 class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   int _selectedTab = 0; // 0: Tree, 1: Reminders, 2: Features
-  late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
 
   // Editor State
@@ -31,11 +30,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   String? _connectingSourceId; // For drawing custom connection links
   String? _draggingMemberId;
   final Map<String, Offset> _localPositions = {};
+  bool _didInitializeCanvasCenter = false;
+
+  void _centerCanvasOnce(double canvasWidth, double canvasHeight, double virtualWidth, double virtualHeight) {
+    if (_didInitializeCanvasCenter) return;
+    _didInitializeCanvasCenter = true;
+    final initialX = (canvasWidth - virtualWidth) / 2;
+    const initialY = 20.0;
+    _transformationController.value = Matrix4.identity()..setTranslationRaw(initialX, initialY, 0.0);
+  }
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -47,28 +54,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _transformationController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
     setState(() => _selectedTab = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final streamMembers = ref.watch(familyMembersStreamProvider).valueOrNull;
-    final streamReminders = ref.watch(remindersStreamProvider).valueOrNull;
-
-    final List<FamilyMemberModel> members = streamMembers ?? ref.watch(familyMembersProvider);
-    final List<ReminderModel> reminders = streamReminders ?? ref.watch(remindersProvider);
+    final members = ref.watch(familyMembersProvider);
+    final reminders = ref.watch(remindersProvider);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -86,25 +84,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               ),
             ),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: (_isEditMode || _draggingMemberId != null || _selectedTab == 0)
-                    ? const NeverScrollableScrollPhysics()
-                    : const BouncingScrollPhysics(),
-                onPageChanged: (index) {
-                  setState(() => _selectedTab = index);
-                },
+              child: IndexedStack(
+                index: _selectedTab,
                 children: [
-                  // Tab 1: Canva-like Interactive Tree Editor
+                  // Tab 0: Canva-like Interactive Tree Editor (True Bidirectional Pan/Zoom)
                   _buildTreeTabContent(context, members, isDark),
 
-                  // Tab 2: Family Reminders (Grouped & CRUD)
+                  // Tab 1: Family Reminders (Grouped & CRUD)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     child: _buildRemindersTabContent(context, members, reminders, isDark),
                   ),
 
-                  // Tab 3: Family Features (Interactive Modals)
+                  // Tab 2: Family Features (Interactive Modals)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     child: _buildFeaturesTabContent(context, members, isDark),
@@ -240,26 +232,30 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Family Canvas',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : AppColors.navy,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Family Canvas',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${members.length} Members • Drag to position',
-                    style: TextStyle(
-                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                      fontSize: 13,
+                    Text(
+                      '${members.length} Members • Drag to position',
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        fontSize: 13,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Row(
                 children: [
                   if (_isEditMode) ...[
@@ -442,6 +438,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                     final virtualWidth = max(canvasWidth, 1400.0);
                     final virtualHeight = max(canvasHeight, 1200.0);
+                    _centerCanvasOnce(canvasWidth, canvasHeight, virtualWidth, virtualHeight);
 
                     final calculatedPositions = _getCalculatedPositions(members, virtualWidth, virtualHeight);
                     for (final m in members) {
@@ -458,9 +455,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                     return InteractiveViewer(
                       transformationController: _transformationController,
-                      boundaryMargin: const EdgeInsets.all(400),
-                      minScale: 0.4,
-                      maxScale: 2.5,
+                      boundaryMargin: const EdgeInsets.symmetric(horizontal: 1200, vertical: 1000),
+                      minScale: 0.3,
+                      maxScale: 3.0,
                       panEnabled: _draggingMemberId == null,
                       scaleEnabled: _draggingMemberId == null,
                       constrained: false,

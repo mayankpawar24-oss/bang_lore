@@ -39,7 +39,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     final streamMeds = ref.watch(medicationsStreamProvider).valueOrNull ?? [];
     final streamVitals = ref.watch(vitalsStreamProvider).valueOrNull ?? [];
     final streamReports = ref.watch(reportsStreamProvider).valueOrNull ?? [];
-    final List<DoctorModel> doctors = ref.watch(doctorsStreamProvider).valueOrNull ?? ref.watch(doctorsProvider);
+    final List<DoctorModel> doctors = ref.watch(doctorsStreamProvider).valueOrNull ?? [];
     final notifications = ref.watch(notificationsStreamProvider).valueOrNull ?? [];
     final unreadCount = notifications.where((n) => !n.isRead).length;
 
@@ -385,12 +385,14 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   children: const [
                     Icon(LucideIcons.leaf, size: 14, color: AppColors.success),
                     SizedBox(width: 6),
-                    Text(
-                      'Traditional Care Suggestion / Nuskha',
-                      style: TextStyle(
-                        color: AppColors.success,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                    Expanded(
+                      child: Text(
+                        'Traditional Care Suggestion / Nuskha',
+                        style: TextStyle(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -517,16 +519,13 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const SectionHeader(title: 'Continuous Vitals'),
-            TextButton.icon(
-              onPressed: () => _showLogVitalsSheet(context, isDark, uid),
-              icon: const Icon(LucideIcons.plus, size: 14),
-              label: const Text('Add Reading', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-          ],
+        SectionHeader(
+          title: 'Continuous Vitals',
+          trailing: TextButton.icon(
+            onPressed: () => _showLogVitalsSheet(context, isDark, uid),
+            icon: const Icon(LucideIcons.plus, size: 14),
+            label: const Text('Add Reading', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
         ),
         const SizedBox(height: 8),
         Row(
@@ -583,15 +582,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const SectionHeader(title: 'Today\'s Medications'),
-            TextButton(
-              onPressed: () => context.push('/patient/timeline'),
-              child: const Text('View All', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
-          ],
+        SectionHeader(
+          title: 'Today\'s Medications',
+          actionText: 'View All',
+          onActionTap: () => context.push('/patient/timeline'),
         ),
         const SizedBox(height: 10),
         if (medications.isEmpty)
@@ -602,9 +596,11 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
               children: [
                 const Icon(LucideIcons.pill, color: AppColors.muted, size: 24),
                 const SizedBox(width: 12),
-                Text(
-                  'No scheduled medications for today.',
-                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 13),
+                Expanded(
+                  child: Text(
+                    'No scheduled medications for today.',
+                    style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 13),
+                  ),
                 ),
               ],
             ),
@@ -634,15 +630,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const SectionHeader(title: 'Care Coordination & Consultations'),
-            TextButton(
-              onPressed: () => context.push('/patient/timeline'),
-              child: const Text('Timeline', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
-          ],
+        SectionHeader(
+          title: 'Care Coordination & Consultations',
+          actionText: 'Timeline',
+          onActionTap: () => context.push('/patient/timeline'),
         ),
         const SizedBox(height: 10),
         AppointmentCard(
@@ -659,15 +650,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const SectionHeader(title: 'Available Specialists'),
-            TextButton(
-              onPressed: () => context.push('/patient/dashboard/doctor-search'),
-              child: const Text('See all', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
-          ],
+        SectionHeader(
+          title: 'Available Specialists',
+          actionText: 'See all',
+          onActionTap: () => context.push('/patient/dashboard/doctor-search'),
         ),
         const SizedBox(height: 12),
         SizedBox(

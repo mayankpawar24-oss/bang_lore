@@ -26,7 +26,8 @@ class SectionHeader extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Expanded(
+            Flexible(
+              fit: FlexFit.loose,
               child: Text(
                 title,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
