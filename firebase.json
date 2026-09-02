@@ -1,0 +1,26 @@
+﻿{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "continuum-health-b54cb",
+          "appId": "1:764798571355:android:f2da35192cd3e9623dc07e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "continuum-health-b54cb",
+          "configurations": {
+            "android": "1:764798571355:android:f2da35192cd3e9623dc07e",
+            "ios": "1:764798571355:ios:32a10763a7eeb1853dc07e"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

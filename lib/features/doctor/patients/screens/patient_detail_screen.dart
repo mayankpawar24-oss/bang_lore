@@ -12,6 +12,7 @@ import '../../../../core/widgets/secondary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
+import '../../../../data/models/permission_request_model.dart';
 import '../../../../data/mock/mock_data.dart';
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
@@ -28,14 +29,19 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final streamPatient = ref.watch(patientStreamProvider(widget.patientId)).valueOrNull;
+    final perm = ref.watch(patientPermissionStreamProvider(widget.patientId)).valueOrNull;
     final patients = ref.watch(patientsProvider);
-    final currentPatient = widget.patient ??
+    final currentPatient = streamPatient ??
+        widget.patient ??
         patients.firstWhere(
           (p) => p.id == widget.patientId,
           orElse: () => MockData.currentPatient,
         );
 
-    if (!currentPatient.isAuthorized) {
+    final isAuthorized = (perm?.status == PermissionStatus.approved) || (widget.patient?.isAuthorized ?? false);
+
+    if (!isAuthorized) {
       return Scaffold(
         backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
         appBar: AppBar(
@@ -87,8 +93,30 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 ),
                 const SizedBox(height: 24),
                 PrimaryButton(
-                  label: 'Go Back',
+                  label: perm?.status == PermissionStatus.pending ? 'Access Requested (Pending)' : 'Request Access',
+                  icon: LucideIcons.send,
                   isFullWidth: false,
+                  onPressed: perm?.status == PermissionStatus.pending
+                      ? null
+                      : () async {
+                          final docUid = ref.read(currentUidProvider);
+                          if (docUid != null) {
+                            await ref.read(patientRepositoryProvider).requestAccess(
+                                  docUid,
+                                  widget.patientId,
+                                  permissions: const ['profile', 'vitals', 'medications', 'appointments', 'medicalHistory', 'familyHistory', 'reports', 'aiChat'],
+                                );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Access request sent to patient')),
+                              );
+                            }
+                          }
+                        },
+                ),
+                const SizedBox(height: 12),
+                SecondaryButton(
+                  text: 'Go Back',
                   onPressed: () => context.pop(),
                 ),
               ],

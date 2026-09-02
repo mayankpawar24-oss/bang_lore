@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,7 +11,6 @@ import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/status_chip.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
-import '../../../../data/models/permission_request_model.dart';
 
 class DoctorPatientsScreen extends ConsumerStatefulWidget {
   const DoctorPatientsScreen({super.key});
@@ -42,7 +42,8 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final patients = ref.watch(patientsProvider);
+    final streamPatients = ref.watch(allPatientsStreamProvider).valueOrNull;
+    final List<PatientModel> patients = streamPatients ?? ref.watch(patientsProvider);
     final authState = ref.watch(authProvider);
 
     final filteredPatients = patients.where((p) {
@@ -405,26 +406,25 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
               const SizedBox(height: 24),
               PrimaryButton(
                 label: 'Send Access Request',
-                onPressed: () {
-                  final docId = doctorId ?? 'd_aisha_01';
-                  final docName = doctorName ?? 'Dr. Aisha Patel';
-                  final req = PermissionRequestModel(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    doctorId: docId,
-                    doctorName: docName,
-                    patientId: patient.id,
-                    patientName: patient.name,
-                    status: PermissionStatus.pending,
-                    requestedAt: DateTime.now(),
-                  );
-                  ref.read(permissionRequestsProvider.notifier).addRequest(req);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Access request sent to ${patient.name}!'),
-                      backgroundColor: AppColors.primaryBlue,
-                    ),
-                  );
+                onPressed: () async {
+                  final realDocUid = ref.read(currentUidProvider);
+                  if (realDocUid != null && realDocUid.isNotEmpty) {
+                    dev.log('[PERMISSION] [DOCTOR] Requesting access for doctor $realDocUid to patient ${patient.id}', name: 'DoctorPatientsScreen');
+                    await ref.read(patientRepositoryProvider).requestAccess(
+                          realDocUid,
+                          patient.id,
+                          permissions: const ['profile', 'vitals', 'medications', 'appointments', 'medicalHistory', 'familyHistory', 'reports', 'aiChat'],
+                        );
+                  }
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Access request sent to ${patient.name}!'),
+                        backgroundColor: AppColors.primaryBlue,
+                      ),
+                    );
+                  }
                 },
               ),
             ],

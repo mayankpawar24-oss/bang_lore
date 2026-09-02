@@ -44,6 +44,26 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
     super.dispose();
   }
 
+  bool _isSlotBooked(String timeStr, List<AppointmentModel> appts) {
+    if (_selectedDay == null) return false;
+    int hour = int.parse(timeStr.substring(0, 2));
+    int minute = int.parse(timeStr.substring(3, 5));
+    if (timeStr.contains('PM') && hour != 12) hour += 12;
+    if (timeStr.contains('AM') && hour == 12) hour = 0;
+
+    final targetDate = DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day, hour, minute);
+
+    return appts.any((a) {
+      if (a.doctorId != widget.doctorId) return false;
+      if (a.status == AppointmentStatus.cancelled || a.status == AppointmentStatus.rejected) return false;
+      return a.dateTime.year == targetDate.year &&
+          a.dateTime.month == targetDate.month &&
+          a.dateTime.day == targetDate.day &&
+          a.dateTime.hour == targetDate.hour &&
+          a.dateTime.minute == targetDate.minute;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -239,7 +259,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
-                childAspectRatio: 2.5,
+                childAspectRatio: 2.2,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
               ),
@@ -247,29 +267,38 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
               itemBuilder: (context, index) {
                 final time = _timeSlots[index];
                 final isSelected = _selectedTime == time;
+                final docAppts = ref.watch(doctorAppointmentsStreamProvider).valueOrNull ?? [];
+                final isBooked = _isSlotBooked(time, docAppts);
+
                 return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedTime = time;
-                    });
-                  },
+                  onTap: isBooked
+                      ? null
+                      : () {
+                          setState(() {
+                            _selectedTime = time;
+                          });
+                        },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.primaryBlue
-                          : (isDark ? const Color(0xFF131C2E) : Colors.white),
+                      color: isBooked
+                          ? (isDark ? const Color(0xFF1E293B) : Colors.grey.shade200)
+                          : isSelected
+                              ? AppColors.primaryBlue
+                              : (isDark ? const Color(0xFF131C2E) : Colors.white),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: isSelected
-                            ? AppColors.primaryBlue
-                            : (isDark
-                                ? Colors.white.withValues(alpha: 0.1)
-                                : AppColors.border),
+                        color: isBooked
+                            ? (isDark ? const Color(0xFF334155) : Colors.grey.shade300)
+                            : isSelected
+                                ? AppColors.primaryBlue
+                                : (isDark
+                                    ? Colors.white.withValues(alpha: 0.1)
+                                    : AppColors.border),
                         width: isSelected ? 1.5 : 1,
                       ),
-                      boxShadow: isSelected
+                      boxShadow: isSelected && !isBooked
                           ? [
                               BoxShadow(
                                 color: AppColors.primaryBlue.withValues(alpha: 0.3),
@@ -279,15 +308,32 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
                             ]
                           : null,
                     ),
-                    child: Text(
-                      time,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : (isDark ? Colors.white : AppColors.navy),
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                        fontSize: 13,
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          time,
+                          style: TextStyle(
+                            color: isBooked
+                                ? (isDark ? const Color(0xFF64748B) : Colors.grey.shade600)
+                                : isSelected
+                                    ? Colors.white
+                                    : (isDark ? Colors.white : AppColors.navy),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 13,
+                            decoration: isBooked ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                        if (isBooked)
+                          Text(
+                            'Reserved',
+                            style: TextStyle(
+                              color: isDark ? const Color(0xFF64748B) : Colors.grey.shade600,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 );
@@ -332,9 +378,9 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
             ).animate().fadeIn().slideY(begin: 0.05),
             const SizedBox(height: 32),
             PrimaryButton(
-              label: 'Confirm Booking',
+              label: 'Request Appointment',
               onPressed: _selectedDay != null && _selectedTime != null ? () => _bookAppointment(doctor, isDark) : null,
-              icon: LucideIcons.check,
+              icon: LucideIcons.calendarCheck,
             ).animate().fadeIn().slideY(begin: 0.05),
             const SizedBox(height: 32),
           ],
@@ -344,6 +390,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
   }
 
   void _bookAppointment(DoctorModel doctor, bool isDark) {
+    if (_selectedDay == null || _selectedTime == null) return;
     int hour = int.parse(_selectedTime!.substring(0, 2));
     int minute = int.parse(_selectedTime!.substring(3, 5));
     if (_selectedTime!.contains('PM') && hour != 12) hour += 12;
@@ -354,16 +401,26 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
       hour, minute,
     );
 
+    final user = ref.read(currentUserProvider).valueOrNull;
+    final currentUid = ref.read(currentUidProvider);
+
+    if (currentUid == null || currentUid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to book an appointment')),
+      );
+      return;
+    }
+
     final appointment = AppointmentModel(
       id: const Uuid().v4(),
-      patientId: 'patient_id_margaret',
+      patientId: currentUid,
       doctorId: doctor.id,
       doctorName: doctor.name,
-      patientName: 'Margaret Chen',
+      patientName: user?.name ?? 'Patient',
       specialty: doctor.specialty,
       dateTime: apptDateTime,
       durationMinutes: 30,
-      status: AppointmentStatus.scheduled,
+      status: AppointmentStatus.pending,
       notes: _notesController.text,
     );
 
@@ -383,7 +440,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
                 .scale(duration: 400.ms, curve: Curves.easeOutBack),
             const SizedBox(height: 16),
             Text(
-              'Booking Confirmed!',
+              'Appointment Request Sent!',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -392,7 +449,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your appointment with ${doctor.name} is scheduled for ${_selectedTime!}.',
+              'Your request with ${doctor.name} for ${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year} at ${_selectedTime!} has been submitted. The doctor will review and confirm.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,

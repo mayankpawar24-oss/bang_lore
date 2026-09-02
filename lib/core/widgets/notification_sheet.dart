@@ -19,7 +19,8 @@ class NotificationSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifications = ref.watch(notificationsProvider);
+    final streamNotifs = ref.watch(notificationsStreamProvider).valueOrNull;
+    final List<NotificationModel> notifications = streamNotifs ?? ref.watch(notificationsProvider);
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
@@ -205,6 +206,46 @@ class NotificationSheet extends ConsumerWidget {
                     item.message,
                     style: const TextStyle(color: AppColors.slate, fontSize: 13, height: 1.4),
                   ),
+                  if (item.type == NotificationType.permission && item.permissionId != null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () async {
+                            await ref.read(patientRepositoryProvider).approveAccess(
+                              item.permissionId!,
+                              permissions: ['profile', 'vitals', 'medications', 'appointments', 'medicalHistory', 'familyHistory', 'reports', 'aiChat'],
+                            );
+                            ref.read(notificationsProvider.notifier).markAsRead(item.id);
+                          },
+                          child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                            side: const BorderSide(color: AppColors.danger),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () async {
+                            await ref.read(patientRepositoryProvider).denyAccess(item.permissionId!);
+                            ref.read(notificationsProvider.notifier).markAsRead(item.id);
+                          },
+                          child: const Text('Decline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

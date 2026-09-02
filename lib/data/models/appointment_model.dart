@@ -1,4 +1,6 @@
-enum AppointmentStatus { scheduled, completed, cancelled, pending }
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum AppointmentStatus { requested, approved, confirmed, rejected, cancelled, completed, scheduled, pending }
 
 class Appointment {
   final String id;
@@ -11,6 +13,9 @@ class Appointment {
   final int durationMinutes;
   final AppointmentStatus status;
   final String? notes;
+  final String? location;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const Appointment({
     required this.id,
@@ -23,6 +28,9 @@ class Appointment {
     required this.durationMinutes,
     required this.status,
     this.notes,
+    this.location,
+    this.createdAt,
+    this.updatedAt,
   });
 
   Appointment copyWith({
@@ -36,6 +44,9 @@ class Appointment {
     int? durationMinutes,
     AppointmentStatus? status,
     String? notes,
+    String? location,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return Appointment(
       id: id ?? this.id,
@@ -48,6 +59,9 @@ class Appointment {
       durationMinutes: durationMinutes ?? this.durationMinutes,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      location: location ?? this.location,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -63,6 +77,7 @@ class Appointment {
       'durationMinutes': durationMinutes,
       'status': status.name,
       'notes': notes,
+      'location': location,
     };
   }
 
@@ -78,7 +93,53 @@ class Appointment {
       durationMinutes: json['durationMinutes'] as int,
       status: AppointmentStatus.values.firstWhere((e) => e.name == json['status']),
       notes: json['notes'] as String?,
+      location: json['location'] as String?,
     );
+  }
+
+  factory Appointment.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Appointment(
+      id: doc.id,
+      patientId: data['patientId'] as String? ?? '',
+      doctorId: data['doctorId'] as String? ?? '',
+      doctorName: data['doctorName'] as String? ?? '',
+      patientName: data['patientName'] as String? ?? '',
+      specialty: data['specialty'] as String? ?? '',
+      dateTime: (data['dateTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      durationMinutes: (data['durationMinutes'] as num?)?.toInt() ?? 30,
+      status: AppointmentStatus.values.firstWhere(
+        (e) => e.name == (data['status'] as String? ?? 'scheduled'),
+        orElse: () => AppointmentStatus.scheduled,
+      ),
+      notes: data['notes'] as String?,
+      location: data['location'] as String?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'patientId': patientId,
+      'doctorId': doctorId,
+      'doctorName': doctorName,
+      'patientName': patientName,
+      'specialty': specialty,
+      'dateTime': Timestamp.fromDate(dateTime),
+      'durationMinutes': durationMinutes,
+      'status': status.name,
+      'notes': notes,
+      'location': location,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  Map<String, dynamic> toFirestoreCreate() {
+    return {
+      ...toFirestore(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
   }
 }
 

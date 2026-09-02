@@ -1,6 +1,6 @@
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -9,7 +9,6 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/vital_card.dart';
 import '../../../../core/widgets/primary_button.dart';
-import '../../../../core/widgets/floating_ai_orb.dart';
 import '../../../../data/providers/providers.dart';
 
 class PatientProfileScreen extends ConsumerWidget {
@@ -22,38 +21,45 @@ class PatientProfileScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProfileHero(context, isDark),
-                  const SizedBox(height: 24),
-                  _buildCurrentVitals(isDark),
-                  const SizedBox(height: 24),
-                  _buildHealthInformation(context, isDark),
-                  const SizedBox(height: 24),
-                  _buildDataPrivacySection(context, ref, isDark),
-                  const SizedBox(height: 100), // Clearance for floating AI
-                ],
-              ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.04, end: 0),
-            ),
-            Positioned(
-              bottom: 24,
-              right: 20,
-              child: FloatingAIOrb(
-                onTap: () => context.push('/patient/dashboard/ai-chat'),
-              ),
-            ),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildProfileHero(context, ref, isDark),
+              const SizedBox(height: 24),
+              _buildCurrentVitals(isDark),
+              const SizedBox(height: 24),
+              _buildHealthInformation(context, isDark),
+              const SizedBox(height: 24),
+              _buildDataPrivacySection(context, ref, isDark),
+              const SizedBox(height: 40),
+            ],
+          ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.04, end: 0),
         ),
       ),
     );
   }
 
-  Widget _buildProfileHero(BuildContext context, bool isDark) {
+  Widget _buildProfileHero(BuildContext context, WidgetRef ref, bool isDark) {
+    final userAsync = ref.watch(currentUserProvider);
+    final patientAsync = ref.watch(currentPatientStreamProvider);
+
+    final fullName = patientAsync.valueOrNull?.name ??
+        userAsync.valueOrNull?.name ??
+        ref.watch(authProvider).user?.name ??
+        'User';
+
+    final age = patientAsync.valueOrNull?.age ?? 30;
+    final condition = patientAsync.valueOrNull?.condition ?? 'General Care';
+
+    final parts = fullName.trim().split(' ').where((p) => p.isNotEmpty).toList();
+    final initials = parts.isEmpty
+        ? 'U'
+        : parts.length == 1
+            ? parts.first[0].toUpperCase()
+            : '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -80,12 +86,12 @@ class PatientProfileScreen extends ConsumerWidget {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2.5),
             ),
-            child: const CircleAvatar(
+            child: CircleAvatar(
               radius: 42,
               backgroundColor: Colors.white24,
               child: Text(
-                'MC',
-                style: TextStyle(
+                initials,
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
@@ -95,9 +101,9 @@ class PatientProfileScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Margaret Chen',
-            style: TextStyle(
+          Text(
+            fullName,
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -105,9 +111,9 @@ class PatientProfileScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '72 years old • Heart Failure Care Plan',
-            style: TextStyle(fontSize: 13, color: Colors.white70),
+          Text(
+            '$age years old • $condition',
+            style: const TextStyle(fontSize: 13, color: Colors.white70),
           ),
           const SizedBox(height: 10),
           Container(
@@ -133,7 +139,7 @@ class PatientProfileScreen extends ConsumerWidget {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => _showQrCode(context, isDark),
+                  onTap: () => _showQrCode(context, ref, isDark),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
@@ -403,7 +409,10 @@ class PatientProfileScreen extends ConsumerWidget {
                 title: 'Log Out',
                 subtitle: 'Switch account or end session',
                 isDark: isDark,
-                onTap: () => context.go('/login'),
+                onTap: () async {
+                  dev.log('[AUTH UI] Patient requested logout', name: 'PatientProfileScreen');
+                  await ref.read(authProvider.notifier).logout();
+                },
               ),
             ],
           ),
@@ -486,7 +495,8 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _showQrCode(BuildContext context, bool isDark) {
+  void _showQrCode(BuildContext context, WidgetRef ref, bool isDark) {
+    final currentUid = ref.watch(currentUidProvider) ?? 'user';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -542,7 +552,7 @@ class PatientProfileScreen extends ConsumerWidget {
                 border: Border.all(color: AppColors.softBlue, width: 2),
               ),
               child: QrImageView(
-                data: 'continuum://patient/margaret-chen/connect',
+                data: 'continuum://patient/$currentUid/connect',
                 version: QrVersions.auto,
                 size: 200.0,
                 eyeStyle: const QrEyeStyle(

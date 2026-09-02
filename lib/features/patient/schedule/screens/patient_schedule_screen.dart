@@ -28,18 +28,24 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(appointmentsProvider.notifier).loadAppointments('patient_id_margaret');
-      ref.read(remindersProvider.notifier).loadReminders('patient_id_margaret');
-      ref.read(familyMembersProvider.notifier).loadFamilyMembers('patient_id_margaret');
+      final uid = ref.read(currentUidProvider);
+      if (uid != null) {
+        ref.read(appointmentsProvider.notifier).loadAppointments(uid);
+        ref.read(remindersProvider.notifier).loadReminders(uid);
+        ref.read(familyMembersProvider.notifier).loadFamilyMembers(uid);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final appointments = ref.watch(appointmentsProvider);
-    final reminders = ref.watch(remindersProvider);
-    final members = ref.watch(familyMembersProvider);
+    final streamAppts = ref.watch(appointmentsStreamProvider).valueOrNull;
+    final List<AppointmentModel> appointments = streamAppts ?? ref.watch(appointmentsProvider);
+    final streamReminders = ref.watch(remindersStreamProvider).valueOrNull;
+    final List<ReminderModel> reminders = streamReminders ?? ref.watch(remindersProvider);
+    final streamMembers = ref.watch(familyMembersStreamProvider).valueOrNull;
+    final List<FamilyMemberModel> members = streamMembers ?? ref.watch(familyMembersProvider);
 
     final selectedDayAppointments = appointments.where((a) => _isSameDay(a.dateTime, _selectedDate)).toList();
     final selectedDayReminders = reminders.where((r) => _isSameDay(r.dateTime, _selectedDate)).toList();

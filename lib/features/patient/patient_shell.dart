@@ -62,7 +62,12 @@ class PatientShellScreen extends StatelessWidget {
               NavigationDestination(
                 icon: Icon(LucideIcons.calendar, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
                 selectedIcon: const Icon(LucideIcons.calendar, color: AppColors.primaryBlue),
-                label: 'Schedule',
+                label: 'Calendar',
+              ),
+              NavigationDestination(
+                icon: Icon(LucideIcons.bot, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.bot, color: AppColors.primaryBlue),
+                label: 'AI Assistant',
               ),
               NavigationDestination(
                 icon: Icon(LucideIcons.users, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),

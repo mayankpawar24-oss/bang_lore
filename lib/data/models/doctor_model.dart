@@ -1,3 +1,5 @@
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Doctor {
   final String id;
   final String name;
@@ -10,6 +12,10 @@ class Doctor {
   final String about;
   final List<String> availableDays;
   final bool isAvailable;
+  // Extended
+  final String? licenseNumber;
+  final String? uid;
+  final DateTime? createdAt;
 
   const Doctor({
     required this.id,
@@ -23,6 +29,9 @@ class Doctor {
     required this.about,
     required this.availableDays,
     required this.isAvailable,
+    this.licenseNumber,
+    this.uid,
+    this.createdAt,
   });
 
   Doctor copyWith({
@@ -37,6 +46,9 @@ class Doctor {
     String? about,
     List<String>? availableDays,
     bool? isAvailable,
+    String? licenseNumber,
+    String? uid,
+    DateTime? createdAt,
   }) {
     return Doctor(
       id: id ?? this.id,
@@ -50,6 +62,9 @@ class Doctor {
       about: about ?? this.about,
       availableDays: availableDays ?? this.availableDays,
       isAvailable: isAvailable ?? this.isAvailable,
+      licenseNumber: licenseNumber ?? this.licenseNumber,
+      uid: uid ?? this.uid,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -66,6 +81,8 @@ class Doctor {
       'about': about,
       'availableDays': availableDays,
       'isAvailable': isAvailable,
+      'licenseNumber': licenseNumber,
+      'uid': uid,
     };
   }
 
@@ -82,7 +99,54 @@ class Doctor {
       about: json['about'] as String,
       availableDays: List<String>.from(json['availableDays']),
       isAvailable: json['isAvailable'] as bool,
+      licenseNumber: json['licenseNumber'] as String?,
+      uid: json['uid'] as String?,
     );
+  }
+
+  factory Doctor.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return Doctor(
+      id: doc.id,
+      name: data['name'] as String? ?? '',
+      specialty: data['specialty'] as String? ?? '',
+      hospital: data['hospital'] as String? ?? '',
+      rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
+      distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
+      avatarUrl: data['avatarUrl'] as String? ?? '',
+      phone: data['phone'] as String? ?? '',
+      about: data['about'] as String? ?? '',
+      availableDays: List<String>.from(data['availableDays'] ?? []),
+      isAvailable: data['isAvailable'] as bool? ?? true,
+      licenseNumber: data['licenseNumber'] as String?,
+      uid: data['uid'] as String?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'uid': uid ?? id,
+      'name': name,
+      'specialty': specialty,
+      'hospital': hospital,
+      'rating': rating,
+      'distance': distance,
+      'avatarUrl': avatarUrl,
+      'phone': phone,
+      'about': about,
+      'availableDays': availableDays,
+      'isAvailable': isAvailable,
+      'licenseNumber': licenseNumber,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  Map<String, dynamic> toFirestoreCreate() {
+    return {
+      ...toFirestore(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
   }
 }
 

@@ -27,14 +27,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   bool _isEditMode = false;
   String? _selectedMemberId;
   String? _connectingSourceId; // For drawing custom connection links
+  String? _draggingMemberId;
+  final Map<String, Offset> _localPositions = {};
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(familyMembersProvider.notifier).loadFamilyMembers('patient_id_margaret');
-      ref.read(remindersProvider.notifier).loadReminders('patient_id_margaret');
+      final uid = ref.read(currentUidProvider);
+      if (uid != null) {
+        ref.read(familyMembersProvider.notifier).loadFamilyMembers(uid);
+        ref.read(remindersProvider.notifier).loadReminders(uid);
+      }
     });
   }
 
@@ -56,8 +61,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final members = ref.watch(familyMembersProvider);
-    final reminders = ref.watch(remindersProvider);
+    final streamMembers = ref.watch(familyMembersStreamProvider).valueOrNull;
+    final streamReminders = ref.watch(remindersStreamProvider).valueOrNull;
+
+    final List<FamilyMemberModel> members = streamMembers ?? ref.watch(familyMembersProvider);
+    final List<ReminderModel> reminders = streamReminders ?? ref.watch(remindersProvider);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -77,6 +85,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             Expanded(
               child: PageView(
                 controller: _pageController,
+                physics: _isEditMode
+                    ? const NeverScrollableScrollPhysics()
+                    : const BouncingScrollPhysics(),
                 onPageChanged: (index) {
                   setState(() => _selectedTab = index);
                 },
@@ -382,7 +393,62 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                     final canvasWidth = constraints.maxWidth;
                     final canvasHeight = constraints.maxHeight;
 
-                    final positions = _getCalculatedPositions(members, canvasWidth, canvasHeight);
+                    if (members.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              LucideIcons.users,
+                              size: 48,
+                              color: isDark ? const Color(0xFF64748B) : AppColors.muted,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'No Family Members Added Yet',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : AppColors.navy,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Add your family members to start building your care tree.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () => _showAddMemberSheet(context, isDark),
+                              icon: const Icon(LucideIcons.plus, size: 16),
+                              label: const Text('Add First Family Member'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryBlue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final calculatedPositions = _getCalculatedPositions(members, canvasWidth, canvasHeight);
+                    for (final m in members) {
+                      if (_draggingMemberId != m.id) {
+                        if (m.positionX != null && m.positionY != null) {
+                          _localPositions[m.id] = Offset(m.positionX!, m.positionY!);
+                        } else if (!_localPositions.containsKey(m.id)) {
+                          _localPositions[m.id] = calculatedPositions[m.id] ?? const Offset(100, 100);
+                        }
+                      }
+                    }
+
+                    final positions = _localPositions;
 
                     return Stack(
                       children: [
@@ -400,10 +466,13 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                         // Interactive Draggable Node Cards
                         ...members.map((m) {
-                          final pos = positions[m.id] ?? const Offset(100, 100);
+                          final pos = positions[m.id] ?? calculatedPositions[m.id] ?? const Offset(100, 100);
                           final isSelected = _selectedMemberId == m.id;
+                          final isDragging = _draggingMemberId == m.id;
 
-                          return Positioned(
+                          return AnimatedPositioned(
+                            duration: isDragging ? Duration.zero : const Duration(milliseconds: 180),
+                            curve: Curves.easeOutQuad,
                             left: pos.dx,
                             top: pos.dy,
                             child: GestureDetector(
@@ -422,15 +491,38 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                   context.push('/patient/family/family-member/${m.id}');
                                 }
                               },
+                              onPanStart: _isEditMode
+                                  ? (_) => setState(() {
+                                        _draggingMemberId = m.id;
+                                        _selectedMemberId = m.id;
+                                        _localPositions[m.id] = pos;
+                                      })
+                                  : null,
                               onPanUpdate: _isEditMode
                                   ? (details) {
-                                      final newX = (pos.dx + details.delta.dx).clamp(0.0, canvasWidth - 120.0);
-                                      final newY = (pos.dy + details.delta.dy).clamp(0.0, canvasHeight - 70.0);
-                                      final updated = m.copyWith(positionX: newX, positionY: newY);
-                                      ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                      final currentPos = _localPositions[m.id] ?? pos;
+                                      final newX = (currentPos.dx + details.delta.dx).clamp(0.0, canvasWidth - 125.0);
+                                      final newY = (currentPos.dy + details.delta.dy).clamp(0.0, canvasHeight - 75.0);
+                                      setState(() {
+                                        _localPositions[m.id] = Offset(newX, newY);
+                                      });
                                     }
                                   : null,
-                              child: Column(
+                              onPanEnd: _isEditMode
+                                  ? (_) {
+                                      final finalPos = _localPositions[m.id];
+                                      setState(() => _draggingMemberId = null);
+                                      if (finalPos != null) {
+                                        final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
+                                        ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                      }
+                                    }
+                                  : null,
+                              child: AnimatedScale(
+                                scale: isSelected ? 1.04 : 1.0,
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeOut,
+                                child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   // Contextual Toolbar above selected node in Edit Mode
@@ -568,8 +660,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                 ],
                               ),
                             ),
-                          );
-                        }),
+                          ),
+                        );
+                      }),
                       ],
                     );
                   },
@@ -634,7 +727,8 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     bool isDark,
   ) {
     final memberNames = members.map((m) => m.name.split(' ')[0]).toList();
-    if (!memberNames.contains('Margaret')) memberNames.insert(0, 'Margaret');
+    final userName = ref.watch(currentUserProvider).valueOrNull?.name.split(' ')[0] ?? 'Self';
+    if (!memberNames.contains(userName)) memberNames.insert(0, userName);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

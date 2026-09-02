@@ -40,11 +40,12 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final appointments = ref.watch(appointmentsProvider);
+    final streamAppts = ref.watch(doctorAppointmentsStreamProvider).valueOrNull;
+    final List<AppointmentModel> appointments = streamAppts ?? ref.watch(appointmentsProvider);
     final patients = ref.watch(patientsProvider);
 
     final selectedDayAppointments = appointments.where((a) => _isSameDay(a.dateTime, _selectedDate)).toList();
-    final pendingRequests = appointments.where((a) => a.status == AppointmentStatus.pending).toList();
+    final pendingRequests = appointments.where((a) => a.status == AppointmentStatus.pending || a.status == AppointmentStatus.requested).toList();
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -349,16 +350,35 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
                   text: 'Decline',
                   foregroundColor: AppColors.danger,
                   borderColor: AppColors.danger.withValues(alpha: 0.5),
-                  onPressed: () => ref.read(appointmentsProvider.notifier).cancelAppointment(appt.id),
+                  onPressed: () async {
+                    final currentDoctor = ref.read(currentDoctorStreamProvider).valueOrNull;
+                    await ref.read(appointmentRepositoryProvider).updateStatus(
+                          appt.patientId,
+                          appt.doctorId,
+                          appt.id,
+                          AppointmentStatus.rejected,
+                          updatedByDoctor: true,
+                          doctorName: currentDoctor?.name,
+                          patientName: appt.patientName,
+                        );
+                  },
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: PrimaryButton(
                   label: 'Accept',
-                  onPressed: () {
-                    final accepted = appt.copyWith(status: AppointmentStatus.scheduled);
-                    ref.read(appointmentsProvider.notifier).bookAppointment(accepted);
+                  onPressed: () async {
+                    final currentDoctor = ref.read(currentDoctorStreamProvider).valueOrNull;
+                    await ref.read(appointmentRepositoryProvider).updateStatus(
+                          appt.patientId,
+                          appt.doctorId,
+                          appt.id,
+                          AppointmentStatus.approved,
+                          updatedByDoctor: true,
+                          doctorName: currentDoctor?.name,
+                          patientName: appt.patientName,
+                        );
                   },
                 ),
               ),
@@ -419,6 +439,8 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
   }
 
   Widget _buildSlotsContainer(BuildContext context, List<PatientModel> patients, bool isDark) {
+    final appointments = ref.watch(doctorAppointmentsStreamProvider).valueOrNull ?? [];
+
     return AppCard(
       padding: const EdgeInsets.all(18),
       borderRadius: 24,
@@ -427,7 +449,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Available Time Slots',
+            'Schedule & Slot Overview',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
@@ -436,7 +458,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tap an open slot to schedule a consultation',
+            'Real-time status of time slots for ${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
             style: TextStyle(
               color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
               fontSize: 12,
@@ -447,31 +469,86 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
             spacing: 10,
             runSpacing: 10,
             children: _customSlots.map((slot) {
+              int hour = int.parse(slot.substring(0, 2));
+              int minute = int.parse(slot.substring(3, 5));
+              if (slot.contains('PM') && hour != 12) hour += 12;
+              if (slot.contains('AM') && hour == 12) hour = 0;
+              final targetDate = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour, minute);
+
+              final appt = appointments.firstWhere(
+                (a) => a.status != AppointmentStatus.cancelled &&
+                    a.dateTime.year == targetDate.year &&
+                    a.dateTime.month == targetDate.month &&
+                    a.dateTime.day == targetDate.day &&
+                    a.dateTime.hour == targetDate.hour &&
+                    a.dateTime.minute == targetDate.minute,
+                orElse: () => Appointment(
+                  id: '',
+                  patientId: '',
+                  doctorId: '',
+                  doctorName: '',
+                  patientName: '',
+                  specialty: '',
+                  dateTime: DateTime(2000),
+                  durationMinutes: 0,
+                  status: AppointmentStatus.completed,
+                ),
+              );
+
+              final isBooked = appt.id.isNotEmpty && (appt.status == AppointmentStatus.approved || appt.status == AppointmentStatus.scheduled);
+              final isPending = appt.id.isNotEmpty && (appt.status == AppointmentStatus.pending || appt.status == AppointmentStatus.requested);
+
+              final statusColor = isBooked
+                  ? AppColors.success
+                  : isPending
+                      ? AppColors.warning
+                      : AppColors.primaryBlue;
+
+              final statusLabel = isBooked
+                  ? 'Booked'
+                  : isPending
+                      ? 'Pending'
+                      : 'Open';
+
               return GestureDetector(
-                onTap: () => _bookPatientSlotModal(context, slot, patients, isDark),
+                onTap: isBooked || isPending
+                    ? null
+                    : () => _bookPatientSlotModal(context, slot, patients, isDark),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                        : AppColors.surfaceBlue,
+                    color: statusColor.withValues(alpha: isDark ? 0.2 : 0.1),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.4),
+                      color: statusColor.withValues(alpha: 0.4),
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(LucideIcons.clock, size: 14, color: AppColors.primaryBlue),
+                      Icon(LucideIcons.clock, size: 14, color: statusColor),
                       const SizedBox(width: 6),
-                      Text(
-                        slot,
-                        style: const TextStyle(
-                          color: AppColors.primaryBlue,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            slot,
+                            style: TextStyle(
+                              color: isDark ? Colors.white : AppColors.navy,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            statusLabel,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

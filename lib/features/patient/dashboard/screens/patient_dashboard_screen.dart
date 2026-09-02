@@ -13,7 +13,6 @@ import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/doctor_card.dart';
 import '../../../../core/widgets/medication_card.dart';
 import '../../../../core/widgets/appointment_card.dart';
-import '../../../../core/widgets/floating_ai_orb.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 
@@ -63,7 +62,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildHeader(context, unreadCount, isDark),
+                  _buildHeader(context, ref, unreadCount, isDark),
                   const SizedBox(height: 20),
                   AppSearchBar(
                     readOnly: true,
@@ -84,16 +83,8 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     _buildNextAppointment(context, nextAppointment),
                     const SizedBox(height: 24),
                   ],
-                  const SizedBox(height: 80), // Padding clearance for floating AI orb
                 ],
               ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.04, end: 0, curve: Curves.easeOutCubic),
-            ),
-            Positioned(
-              bottom: 24,
-              right: 20,
-              child: FloatingAIOrb(
-                onTap: () => context.push('/patient/dashboard/ai-chat'),
-              ),
             ),
           ],
         ),
@@ -101,7 +92,24 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context, int unreadCount, bool isDark) {
+  Widget _buildHeader(BuildContext context, WidgetRef ref, int unreadCount, bool isDark) {
+    final userAsync = ref.watch(currentUserProvider);
+    final patientAsync = ref.watch(currentPatientStreamProvider);
+
+    final fullName = patientAsync.valueOrNull?.name ??
+        userAsync.valueOrNull?.name ??
+        ref.watch(authProvider).user?.name ??
+        'User';
+
+    final firstName = fullName.trim().isEmpty ? 'User' : fullName.trim().split(' ').first;
+
+    final parts = fullName.trim().split(' ').where((p) => p.isNotEmpty).toList();
+    final initials = parts.isEmpty
+        ? 'U'
+        : parts.length == 1
+            ? parts.first[0].toUpperCase()
+            : '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -121,10 +129,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'MC',
-                  style: TextStyle(
+                  initials,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 17,
@@ -148,7 +156,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                 Row(
                   children: [
                     Text(
-                      'Margaret',
+                      firstName,
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,

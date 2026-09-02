@@ -157,7 +157,10 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   Widget _buildHeader(BuildContext context, String? doctorName, bool isDark) {
-    final lastName = doctorName != null ? doctorName.split(' ').last : 'Patel';
+    final streamDoctor = ref.watch(currentDoctorStreamProvider).valueOrNull;
+    final displayName = streamDoctor?.name ?? doctorName ?? 'Dr. Practitioner';
+    final specialty = streamDoctor?.specialty ?? 'General Practice';
+    final hospital = streamDoctor?.hospital ?? 'City Clinic';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -175,11 +178,17 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                   width: 2,
                 ),
               ),
-              child: const ClipOval(
-                child: Image(
-                  image: NetworkImage('https://i.pravatar.cc/150?u=aisha'),
-                  fit: BoxFit.cover,
-                ),
+              child: ClipOval(
+                child: (streamDoctor != null && streamDoctor.avatarUrl.isNotEmpty)
+                    ? Image.network(streamDoctor.avatarUrl, fit: BoxFit.cover)
+                    : Center(
+                        child: Text(
+                          displayName.replaceAll('Dr. ', '').split(' ').first.isNotEmpty
+                              ? displayName.replaceAll('Dr. ', '').split(' ').first[0]
+                              : 'D',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 12),
@@ -189,7 +198,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                 Row(
                   children: [
                     Text(
-                      'Dr. $lastName',
+                      displayName.startsWith('Dr.') ? displayName : 'Dr. $displayName',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -203,7 +212,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Cardiology • City Heart Center',
+                  '$specialty • $hospital',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,

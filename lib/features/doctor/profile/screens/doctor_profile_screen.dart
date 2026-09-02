@@ -1,6 +1,6 @@
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -15,6 +15,11 @@ class DoctorProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final user = ref.watch(currentUserProvider).valueOrNull;
+    final doctor = ref.watch(currentDoctorStreamProvider).valueOrNull;
+    final docName = doctor?.name ?? user?.name ?? 'Dr. Aisha Patel';
+    final specialty = doctor?.specialty ?? 'General Practice';
+    final hospital = doctor?.hospital ?? 'City Clinic';
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -67,11 +72,21 @@ class DoctorProfileScreen extends ConsumerWidget {
                               width: 2,
                             ),
                           ),
-                          child: const ClipOval(
-                            child: Image(
-                              image: NetworkImage('https://i.pravatar.cc/150?u=aisha'),
-                              fit: BoxFit.cover,
-                            ),
+                          child: ClipOval(
+                            child: (doctor != null && doctor.avatarUrl.isNotEmpty)
+                                ? Image.network(doctor.avatarUrl, fit: BoxFit.cover)
+                                : Center(
+                                    child: Text(
+                                      docName.replaceAll('Dr. ', '').split(' ').first.isNotEmpty
+                                          ? docName.replaceAll('Dr. ', '').split(' ').first[0]
+                                          : 'D',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 24,
+                                        color: AppColors.primaryBlue,
+                                      ),
+                                    ),
+                                  ),
                           ),
                         ),
                         Positioned(
@@ -94,7 +109,7 @@ class DoctorProfileScreen extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Dr. Aisha Patel, MD',
+                            docName.startsWith('Dr.') ? docName : 'Dr. $docName',
                             style: TextStyle(
                               fontSize: 19,
                               fontWeight: FontWeight.bold,
@@ -103,9 +118,9 @@ class DoctorProfileScreen extends ConsumerWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          const Text(
-                            'Senior Cardiologist',
-                            style: TextStyle(
+                          Text(
+                            specialty,
+                            style: const TextStyle(
                               color: AppColors.primaryBlue,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
@@ -122,7 +137,7 @@ class DoctorProfileScreen extends ConsumerWidget {
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
-                                  'City Heart Center',
+                                  hospital,
                                   style: TextStyle(
                                     color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                                     fontSize: 12,
@@ -237,9 +252,9 @@ class DoctorProfileScreen extends ConsumerWidget {
               // Log Out Button
               Center(
                 child: TextButton.icon(
-                  onPressed: () {
-                    ref.read(authProvider.notifier).logout();
-                    context.go('/login');
+                  onPressed: () async {
+                    dev.log('[AUTH UI] Doctor requested logout', name: 'DoctorProfileScreen');
+                    await ref.read(authProvider.notifier).logout();
                   },
                   icon: const Icon(LucideIcons.logOut, color: AppColors.danger, size: 18),
                   label: const Text(

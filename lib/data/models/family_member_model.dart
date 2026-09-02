@@ -1,3 +1,5 @@
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+
 enum HydrationStatus { needed, active, done }
 enum WalkingStatus { needed, active, done }
 enum MedicationStatus { needed, active, done }
@@ -65,6 +67,11 @@ class FamilyMember {
   final double? positionX;
   final double? positionY;
   final List<String> connectedToIds;
+  // Extended
+  final String? gender;
+  final int? birthYear;
+  final String? notes;
+  final List<String> parentIds;
 
   const FamilyMember({
     required this.id,
@@ -82,6 +89,10 @@ class FamilyMember {
     this.positionX,
     this.positionY,
     this.connectedToIds = const [],
+    this.gender,
+    this.birthYear,
+    this.notes,
+    this.parentIds = const [],
   });
 
   FamilyMember copyWith({
@@ -100,6 +111,10 @@ class FamilyMember {
     double? positionX,
     double? positionY,
     List<String>? connectedToIds,
+    String? gender,
+    int? birthYear,
+    String? notes,
+    List<String>? parentIds,
   }) {
     return FamilyMember(
       id: id ?? this.id,
@@ -117,6 +132,10 @@ class FamilyMember {
       positionX: positionX ?? this.positionX,
       positionY: positionY ?? this.positionY,
       connectedToIds: connectedToIds ?? this.connectedToIds,
+      gender: gender ?? this.gender,
+      birthYear: birthYear ?? this.birthYear,
+      notes: notes ?? this.notes,
+      parentIds: parentIds ?? this.parentIds,
     );
   }
 
@@ -137,6 +156,10 @@ class FamilyMember {
       'positionX': positionX,
       'positionY': positionY,
       'connectedToIds': connectedToIds,
+      'gender': gender,
+      'birthYear': birthYear,
+      'notes': notes,
+      'parentIds': parentIds,
     };
   }
 
@@ -157,7 +180,71 @@ class FamilyMember {
       positionX: (json['positionX'] as num?)?.toDouble(),
       positionY: (json['positionY'] as num?)?.toDouble(),
       connectedToIds: json['connectedToIds'] != null ? List<String>.from(json['connectedToIds']) : [],
+      gender: json['gender'] as String?,
+      birthYear: json['birthYear'] as int?,
+      notes: json['notes'] as String?,
+      parentIds: json['parentIds'] != null ? List<String>.from(json['parentIds']) : [],
     );
+  }
+
+  factory FamilyMember.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return FamilyMember(
+      id: doc.id,
+      name: data['name'] as String? ?? '',
+      relationship: data['relationship'] as String? ?? '',
+      generation: (data['generation'] as num?)?.toInt() ?? 0,
+      avatarUrl: data['avatarUrl'] as String?,
+      knownConditions: List<String>.from(data['knownConditions'] ?? []),
+      familyHistory: List<String>.from(data['familyHistory'] ?? []),
+      careNeeds: data['careNeeds'] as String?,
+      careTasks: (data['careTasks'] as List<dynamic>? ?? [])
+          .map((t) => CareTask.fromJson(Map<String, dynamic>.from(t as Map)))
+          .toList(),
+      hydration: HydrationStatus.values.firstWhere(
+        (e) => e.name == (data['hydration'] as String? ?? 'done'),
+        orElse: () => HydrationStatus.done,
+      ),
+      walking: WalkingStatus.values.firstWhere(
+        (e) => e.name == (data['walking'] as String? ?? 'done'),
+        orElse: () => WalkingStatus.done,
+      ),
+      medication: MedicationStatus.values.firstWhere(
+        (e) => e.name == (data['medication'] as String? ?? 'done'),
+        orElse: () => MedicationStatus.done,
+      ),
+      positionX: (data['positionX'] as num?)?.toDouble(),
+      positionY: (data['positionY'] as num?)?.toDouble(),
+      connectedToIds: List<String>.from(data['connectedToIds'] ?? []),
+      gender: data['gender'] as String?,
+      birthYear: (data['birthYear'] as num?)?.toInt(),
+      notes: data['notes'] as String?,
+      parentIds: List<String>.from(data['parentIds'] ?? []),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'name': name,
+      'relationship': relationship,
+      'generation': generation,
+      'avatarUrl': avatarUrl,
+      'knownConditions': knownConditions,
+      'familyHistory': familyHistory,
+      'careNeeds': careNeeds,
+      'careTasks': careTasks.map((t) => t.toJson()).toList(),
+      'hydration': hydration.name,
+      'walking': walking.name,
+      'medication': medication.name,
+      'positionX': positionX,
+      'positionY': positionY,
+      'connectedToIds': connectedToIds,
+      'gender': gender,
+      'birthYear': birthYear,
+      'notes': notes,
+      'parentIds': parentIds,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
   }
 }
 

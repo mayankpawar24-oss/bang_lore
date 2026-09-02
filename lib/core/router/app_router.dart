@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -5,6 +6,7 @@ import '../../data/providers/providers.dart';
 import '../../data/models/user_model.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/role_selection_screen.dart';
+import '../../features/auth/screens/register_screen.dart';
 import '../../features/patient/dashboard/screens/patient_dashboard_screen.dart';
 import '../../features/patient/schedule/screens/patient_schedule_screen.dart';
 import '../../features/patient/profile/screens/patient_profile_screen.dart';
@@ -24,22 +26,56 @@ import '../../features/doctor/patients/screens/scan_qr_screen.dart';
 import '../../features/doctor/profile/screens/doctor_profile_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
+  // Watch Firebase auth state stream for realtime auth changes
   final authState = ref.watch(authProvider);
 
   return GoRouter(
     initialLocation: '/login',
     redirect: (context, state) {
-      final isAuth = authState.isAuthenticated;
-      final isLogin = state.matchedLocation == '/login';
-      final isRoleSelect = state.matchedLocation == '/role-select';
+      final loc = state.matchedLocation;
+      final isPublicRoute = loc == '/login' ||
+          loc == '/role-select' ||
+          loc == '/register';
 
-      if (!isAuth) {
-        if (!isLogin && !isRoleSelect) return '/login';
+      dev.log('[ROUTER REDIRECT] Evaluating loc="$loc", status=${authState.status.name}, isAuth=${authState.isAuthenticated}, user=${authState.user?.email}, role=${authState.user?.role.name}', name: 'GoRouter');
+
+      // 1. While loading (initial auth check, Firebase initializing, or role fetching), do NOT redirect anywhere
+      if (authState.isLoading) {
+        dev.log('[ROUTER REDIRECT] Auth loading -> return null', name: 'GoRouter');
         return null;
       }
 
-      if (isLogin) {
-        if (authState.user?.role == UserRole.doctor) return '/doctor/dashboard';
+      // 2. If in error state (e.g. invalid user doc / network error), stay on public route if there, or redirect to /login
+      if (authState.status == AuthStatus.error) {
+        dev.log('[ROUTER REDIRECT] Auth error -> ${isPublicRoute ? "stay on public route" : "redirect /login"}', name: 'GoRouter');
+        if (!isPublicRoute) return '/login';
+        return null;
+      }
+
+      // 3. Unauthenticated -> force login page if on private page
+      if (!authState.isAuthenticated) {
+        if (!isPublicRoute) {
+          dev.log('[ROUTER] redirect after logout to /login (loc="$loc")', name: 'GoRouter');
+          return '/login';
+        }
+        return null;
+      }
+
+      // 4. Authenticated -> route to proper dashboard if on public page
+      final role = authState.user?.role;
+      if (isPublicRoute) {
+        final target = role == UserRole.doctor ? '/doctor/dashboard' : '/patient/dashboard';
+        dev.log('[ROUTER REDIRECT] Authenticated on public route "$loc" -> redirect $target (role: ${role?.name})', name: 'GoRouter');
+        return target;
+      }
+
+      // 5. Role protection
+      if (role == UserRole.doctor && loc.startsWith('/patient')) {
+        dev.log('[ROUTER REDIRECT] Doctor on patient route -> redirect /doctor/dashboard', name: 'GoRouter');
+        return '/doctor/dashboard';
+      }
+      if (role == UserRole.patient && loc.startsWith('/doctor')) {
+        dev.log('[ROUTER REDIRECT] Patient on doctor route -> redirect /patient/dashboard', name: 'GoRouter');
         return '/patient/dashboard';
       }
 
@@ -51,9 +87,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
         path: '/role-select',
         builder: (context, state) => const RoleSelectionScreen(),
       ),
+
+      // ── PATIENT SHELL ──────────────────────────────
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return PatientShellScreen(navigationShell: navigationShell);
@@ -71,7 +113,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ),
                   GoRoute(
                     path: 'doctor/:id',
-                    builder: (context, state) => DoctorDetailScreen(doctorId: state.pathParameters['id']!),
+                    builder: (context, state) =>
+                        DoctorDetailScreen(doctorId: state.pathParameters['id']!),
                   ),
                   GoRoute(
                     path: 'ai-chat',
@@ -89,9 +132,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'book/:doctorId',
-                    builder: (context, state) => BookAppointmentScreen(doctorId: state.pathParameters['doctorId']!),
+                    builder: (context, state) => BookAppointmentScreen(
+                        doctorId: state.pathParameters['doctorId']!),
                   ),
                 ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/patient/ai-chat',
+                builder: (context, state) => const AIChatScreen(),
               ),
             ],
           ),
@@ -103,7 +155,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'family-member/:id',
-                    builder: (context, state) => FamilyMemberDetailScreen(memberId: state.pathParameters['id']!),
+                    builder: (context, state) => FamilyMemberDetailScreen(
+                        memberId: state.pathParameters['id']!),
                   ),
                 ],
               ),
@@ -121,7 +174,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                     routes: [
                       GoRoute(
                         path: 'family-member/:id',
-                        builder: (context, state) => FamilyMemberDetailScreen(memberId: state.pathParameters['id']!),
+                        builder: (context, state) => FamilyMemberDetailScreen(
+                            memberId: state.pathParameters['id']!),
                       ),
                     ],
                   ),
@@ -131,6 +185,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
+
+      // ── DOCTOR SHELL ───────────────────────────────
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return DoctorShellScreen(navigationShell: navigationShell);
@@ -160,7 +216,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(
                     path: 'patient/:id',
-                    builder: (context, state) => PatientDetailScreen(patientId: state.pathParameters['id']!),
+                    builder: (context, state) => PatientDetailScreen(
+                        patientId: state.pathParameters['id']!),
                   ),
                   GoRoute(
                     path: 'scan-qr',

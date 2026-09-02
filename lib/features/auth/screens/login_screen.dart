@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,12 +9,72 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../data/providers/providers.dart';
 
-class LoginScreen extends ConsumerWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _emailController = TextEditingController(text: '');
+  final _passwordController = TextEditingController(text: '');
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty || password.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter email and password.')),
+      );
+      return;
+    }
+    await ref.read(authProvider.notifier).login(email, password);
+    if (!mounted) return;
+    final error = ref.read(authProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _loginDemoPatient() async {
+    await ref.read(authProvider.notifier).loginAsPatient();
+    if (!mounted) return;
+    final error = ref.read(authProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _loginDemoDoctor() async {
+    await ref.read(authProvider.notifier).loginAsDoctor();
+    if (!mounted) return;
+    final error = ref.read(authProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authState = ref.watch(authProvider);
+    final isLoading = authState.isLoading;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -75,7 +135,6 @@ class LoginScreen extends ConsumerWidget {
                 ).animate().fadeIn(delay: 250.ms),
                 const SizedBox(height: 36),
 
-                // Form Inputs Container
                 AppCard(
                   padding: const EdgeInsets.all(20),
                   borderRadius: 24,
@@ -83,11 +142,14 @@ class LoginScreen extends ConsumerWidget {
                   child: Column(
                     children: [
                       TextFormField(
-                        initialValue: 'demo@ardius.care',
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
                         style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
                         decoration: InputDecoration(
                           labelText: 'Email Address',
-                          labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                          labelStyle: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          ),
                           prefixIcon: const Icon(LucideIcons.mail, size: 18, color: AppColors.primaryBlue),
                           filled: true,
                           fillColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -100,13 +162,23 @@ class LoginScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
-                        initialValue: 'password123',
-                        obscureText: true,
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
                         style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          labelStyle: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                          labelStyle: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          ),
                           prefixIcon: const Icon(LucideIcons.lock, size: 18, color: AppColors.primaryBlue),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? LucideIcons.eyeOff : LucideIcons.eye,
+                              size: 18,
+                              color: AppColors.primaryBlue,
+                            ),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
                           filled: true,
                           fillColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
                           border: OutlineInputBorder(
@@ -115,14 +187,26 @@ class LoginScreen extends ConsumerWidget {
                           ),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         ),
+                        onFieldSubmitted: (_) => _login(),
                       ),
                       const SizedBox(height: 20),
-                      PrimaryButton(
-                        label: 'Sign In',
-                        icon: LucideIcons.logIn,
-                        onPressed: () {
-                          context.go('/role-select');
-                        },
+                      isLoading
+                          ? const CircularProgressIndicator(color: AppColors.primaryBlue)
+                          : PrimaryButton(
+                              label: 'Sign In',
+                              icon: LucideIcons.logIn,
+                              onPressed: _login,
+                            ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => context.push('/register'),
+                        child: Text(
+                          "Don't have an account? Register",
+                          style: TextStyle(
+                            color: AppColors.primaryBlue,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -131,11 +215,7 @@ class LoginScreen extends ConsumerWidget {
                 const SizedBox(height: 28),
                 Row(
                   children: [
-                    Expanded(
-                      child: Divider(
-                        color: isDark ? const Color(0xFF334155) : AppColors.border,
-                      ),
-                    ),
+                    Expanded(child: Divider(color: isDark ? const Color(0xFF334155) : AppColors.border)),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
@@ -148,16 +228,11 @@ class LoginScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    Expanded(
-                      child: Divider(
-                        color: isDark ? const Color(0xFF334155) : AppColors.border,
-                      ),
-                    ),
+                    Expanded(child: Divider(color: isDark ? const Color(0xFF334155) : AppColors.border)),
                   ],
                 ).animate().fadeIn(delay: 450.ms),
                 const SizedBox(height: 24),
 
-                // Quick Demo Roles
                 Row(
                   children: [
                     Expanded(
@@ -166,9 +241,7 @@ class LoginScreen extends ConsumerWidget {
                         title: 'Patient Demo',
                         subtitle: 'Margaret Chen',
                         isDark: isDark,
-                        onTap: () {
-                          ref.read(authProvider.notifier).loginAsPatient();
-                        },
+                        onTap: isLoading ? null : _loginDemoPatient,
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -178,9 +251,7 @@ class LoginScreen extends ConsumerWidget {
                         title: 'Doctor Demo',
                         subtitle: 'Dr. Aisha Patel',
                         isDark: isDark,
-                        onTap: () {
-                          ref.read(authProvider.notifier).loginAsDoctor();
-                        },
+                        onTap: isLoading ? null : _loginDemoDoctor,
                       ),
                     ),
                   ],
@@ -199,14 +270,14 @@ class _RoleCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isDark;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _RoleCard({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.isDark,
-    required this.onTap,
+    this.onTap,
   });
 
   @override

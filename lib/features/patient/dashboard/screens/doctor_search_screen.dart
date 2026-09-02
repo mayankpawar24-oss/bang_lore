@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/doctor_card.dart';
+import '../../../../data/models/doctor_model.dart';
 
 class DoctorSearchScreen extends ConsumerStatefulWidget {
   const DoctorSearchScreen({super.key});
@@ -37,7 +38,8 @@ class _DoctorSearchScreenState extends ConsumerState<DoctorSearchScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final doctors = ref.watch(doctorsProvider);
+    final streamDocs = ref.watch(doctorsStreamProvider).valueOrNull;
+    final List<Doctor> doctors = streamDocs ?? ref.watch(doctorsProvider);
 
     final filteredDoctors = doctors.where((doc) {
       if (_selectedSpecialty != 'All' && doc.specialty != _selectedSpecialty) {
