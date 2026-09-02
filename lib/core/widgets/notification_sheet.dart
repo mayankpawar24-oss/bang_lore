@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_colors.dart';
 import '../../data/providers/providers.dart';
 import '../../data/models/notification_model.dart';
+import '../../data/models/user_model.dart';
+import '../../data/models/appointment_model.dart';
+import '../../data/repositories/notification_repository.dart';
 
 class NotificationSheet extends ConsumerWidget {
   const NotificationSheet({super.key});
@@ -20,7 +24,11 @@ class NotificationSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final streamNotifs = ref.watch(notificationsStreamProvider).valueOrNull;
-    final List<NotificationModel> notifications = streamNotifs ?? ref.watch(notificationsProvider);
+    final List<NotificationModel> notifications = streamNotifs ?? [];
+    final currentUid = ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final user = ref.watch(currentUserProvider).valueOrNull ?? ref.watch(authProvider).user;
+    final isDoctor = user?.role == UserRole.doctor;
+    final userType = isDoctor ? UserType.doctor : UserType.patient;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
@@ -77,9 +85,22 @@ class NotificationSheet extends ConsumerWidget {
                       ),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.x, color: AppColors.slate),
-                  onPressed: () => Navigator.pop(context),
+                Row(
+                  children: [
+                    if (notifications.any((n) => !n.isRead))
+                      TextButton(
+                        onPressed: () {
+                          if (currentUid.isNotEmpty) {
+                            ref.read(notificationRepositoryProvider).markAllAsRead(currentUid, userType);
+                          }
+                        },
+                        child: const Text('Mark all read', style: TextStyle(fontSize: 12, color: AppColors.primaryBlue)),
+                      ),
+                    IconButton(
+                      icon: const Icon(LucideIcons.x, color: AppColors.slate),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -108,7 +129,7 @@ class NotificationSheet extends ConsumerWidget {
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final item = notifications[index];
-                      return _buildNotificationCard(context, ref, item);
+                      return _buildNotificationCard(context, ref, item, currentUid, isDoctor, userType, user?.name);
                     },
                   ),
           ),
@@ -117,7 +138,15 @@ class NotificationSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildNotificationCard(BuildContext context, WidgetRef ref, NotificationModel item) {
+  Widget _buildNotificationCard(
+    BuildContext context,
+    WidgetRef ref,
+    NotificationModel item,
+    String currentUid,
+    bool isDoctor,
+    UserType userType,
+    String? currentUserName,
+  ) {
     IconData icon;
     Color iconColor;
 
@@ -143,9 +172,15 @@ class NotificationSheet extends ConsumerWidget {
         iconColor = AppColors.primaryBlue;
     }
 
+    final rawType = (item.rawType ?? item.type.name).toLowerCase();
+    final isAppointmentRequest = isDoctor && (rawType.contains('appointment_request') || (item.type == NotificationType.appointment && item.isPending));
+    final isProfileAccessRequest = !isDoctor && (rawType.contains('profile_access_request') || rawType.contains('access_request') || item.type == NotificationType.permission);
+
     return GestureDetector(
       onTap: () {
-        ref.read(notificationsProvider.notifier).markAsRead(item.id);
+        if (currentUid.isNotEmpty) {
+          ref.read(notificationRepositoryProvider).markAsRead(currentUid, userType, item.id);
+        }
       },
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -206,45 +241,213 @@ class NotificationSheet extends ConsumerWidget {
                     item.message,
                     style: const TextStyle(color: AppColors.slate, fontSize: 13, height: 1.4),
                   ),
-                  if (item.type == NotificationType.permission && item.permissionId != null) ...[
+
+                  // DOCTOR ACTION: Appointment Request (Accept / Decline)
+                  if (isAppointmentRequest) ...[
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryBlue,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    if (item.isPending)
+                      Row(
+                        children: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryBlue,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () async {
+                              final apptId = item.effectiveAppointmentId ?? '';
+                              final patId = item.patientId ?? '';
+                              if (apptId.isNotEmpty) {
+                                await ref.read(appointmentRepositoryProvider).updateStatus(
+                                  patId,
+                                  currentUid,
+                                  apptId,
+                                  AppointmentStatus.approved,
+                                  updatedByDoctor: true,
+                                  doctorName: currentUserName,
+                                );
+                                await ref.read(notificationRepositoryProvider).updateNotificationStatus(
+                                  currentUid,
+                                  UserType.doctor,
+                                  item.id,
+                                  'actioned',
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Appointment accepted and confirmed!'),
+                                      backgroundColor: AppColors.success,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text('Accept', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                           ),
-                          onPressed: () async {
-                            await ref.read(patientRepositoryProvider).approveAccess(
-                              item.permissionId!,
-                              permissions: ['profile', 'vitals', 'medications', 'appointments', 'medicalHistory', 'familyHistory', 'reports', 'aiChat'],
-                            );
-                            ref.read(notificationsProvider.notifier).markAsRead(item.id);
-                          },
-                          child: const Text('Approve', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.danger,
-                            side: const BorderSide(color: AppColors.danger),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.danger,
+                              side: const BorderSide(color: AppColors.danger),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () async {
+                              final apptId = item.effectiveAppointmentId ?? '';
+                              final patId = item.patientId ?? '';
+                              if (apptId.isNotEmpty) {
+                                await ref.read(appointmentRepositoryProvider).updateStatus(
+                                  patId,
+                                  currentUid,
+                                  apptId,
+                                  AppointmentStatus.rejected,
+                                  updatedByDoctor: true,
+                                  doctorName: currentUserName,
+                                );
+                                await ref.read(notificationRepositoryProvider).updateNotificationStatus(
+                                  currentUid,
+                                  UserType.doctor,
+                                  item.id,
+                                  'rejected',
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Appointment request declined.'),
+                                      backgroundColor: AppColors.danger,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: const Text('Decline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           ),
-                          onPressed: () async {
-                            await ref.read(patientRepositoryProvider).denyAccess(item.permissionId!);
-                            ref.read(notificationsProvider.notifier).markAsRead(item.id);
-                          },
-                          child: const Text('Decline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      )
+                    else if (item.isActioned)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                      ],
-                    ),
+                        child: const Text('ACCEPTED', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                      )
+                    else if (item.isRejected)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.danger.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('DECLINED', style: TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
+
+                  // PATIENT ACTION: Profile Access Request (Allow / Decline)
+                  if (isProfileAccessRequest) ...[
+                    const SizedBox(height: 10),
+                    if (item.isPending && item.effectiveRequestId != null)
+                      Row(
+                        children: [
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryBlue,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () async {
+                              final reqId = item.effectiveRequestId!;
+                              await ref.read(patientRepositoryProvider).approveAccess(
+                                reqId,
+                                permissions: const [
+                                  'profile',
+                                  'vitals',
+                                  'medications',
+                                  'appointments',
+                                  'medicalHistory',
+                                  'familyHistory',
+                                  'reports',
+                                  'aiChat',
+                                ],
+                                notificationId: item.id,
+                              );
+                              await ref.read(notificationRepositoryProvider).updateNotificationStatus(
+                                currentUid,
+                                UserType.patient,
+                                item.id,
+                                'actioned',
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Access granted to ${item.doctorName?.isNotEmpty == true ? "Dr. ${item.doctorName}" : "Doctor"}!'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            },
+                            child: const Text('Allow', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.danger,
+                              side: const BorderSide(color: AppColors.danger),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () async {
+                              final reqId = item.effectiveRequestId!;
+                              await ref.read(patientRepositoryProvider).denyAccess(
+                                reqId,
+                                notificationId: item.id,
+                              );
+                              await ref.read(notificationRepositoryProvider).updateNotificationStatus(
+                                currentUid,
+                                UserType.patient,
+                                item.id,
+                                'rejected',
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Access request declined.'),
+                                    backgroundColor: AppColors.danger,
+                                  ),
+                                );
+                              }
+                            },
+                            child: const Text('Decline', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      )
+                    else if (item.isActioned)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('ALLOWED', style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold)),
+                      )
+                    else if (item.isRejected)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.danger.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('DECLINED', style: TextStyle(color: AppColors.danger, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
                   ],
                 ],
               ),
@@ -273,3 +476,4 @@ class NotificationSheet extends ConsumerWidget {
     return '${dt.day}/${dt.month}';
   }
 }
+

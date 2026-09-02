@@ -30,6 +30,7 @@ import '../repositories/ai_chat_repository.dart';
 import '../repositories/notification_repository.dart';
 import '../repositories/ai_repository.dart';
 import '../repositories/report_repository.dart';
+import '../repositories/telegram_repository.dart';
 import '../services/multi_agent_service.dart';
 import '../services/backend_service.dart';
 
@@ -106,6 +107,10 @@ final reportRepositoryProvider = Provider<ReportRepository>((ref) {
   return FirebaseReportRepository();
 });
 
+final telegramRepositoryProvider = Provider<TelegramRepository>((ref) {
+  return FirebaseTelegramRepository();
+});
+
 final backendServiceProvider = Provider<BackendService>((ref) {
   return BackendService();
 });
@@ -130,7 +135,7 @@ final currentUserProvider = StreamProvider<UserModel?>((ref) {
 
 /// Convenience provider for the current user's UID
 final currentUidProvider = Provider<String?>((ref) {
-  return ref.watch(firebaseAuthStateProvider).valueOrNull?.uid;
+  return ref.watch(firebaseAuthStateProvider).valueOrNull?.uid ?? ref.watch(firebaseAuthProvider).currentUser?.uid;
 });
 
 /// Auth state (keeps backward compatibility for router)
@@ -260,9 +265,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    dev.log('[AUTH] logout started', name: 'AuthNotifier');
     state = state.copyWith(status: AuthStatus.loading);
     await _ref.read(authRepositoryProvider).logout();
+    _ref.invalidate(currentUidProvider);
+    _ref.invalidate(currentUserProvider);
+    _ref.invalidate(currentPatientStreamProvider);
+    _ref.invalidate(currentDoctorStreamProvider);
+    _ref.invalidate(appointmentsStreamProvider);
+    _ref.invalidate(doctorAppointmentsStreamProvider);
+    _ref.invalidate(patientsProvider);
+    _ref.invalidate(vitalsStreamProvider);
+    _ref.invalidate(medicationsStreamProvider);
+    _ref.invalidate(reportsStreamProvider);
+    _ref.invalidate(notificationsStreamProvider);
+    _ref.invalidate(telegramStatusStreamProvider);
     state = const AuthState(user: null, status: AuthStatus.unauthenticated);
+    dev.log('[AUTH] logout completed: currentUser is null, state reset to unauthenticated', name: 'AuthNotifier');
   }
 
   String _authError(String code) {
@@ -342,10 +361,11 @@ final vitalsStreamProvider = StreamProvider<List<Vital>>((ref) {
 
 /// Stream of current user's notifications
 final notificationsStreamProvider = StreamProvider<List<NotificationModel>>((ref) {
-  final uid = ref.watch(currentUidProvider);
-  final user = ref.watch(authProvider).user;
-  if (uid == null || user == null) return Stream.value([]);
-  final type = user.role == UserRole.patient ? UserType.patient : UserType.doctor;
+  final uid = ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null || uid.isEmpty) return Stream.value([]);
+  final user = ref.watch(currentUserProvider).valueOrNull ?? ref.watch(authProvider).user;
+  final isDoctor = user?.role == UserRole.doctor;
+  final type = isDoctor ? UserType.doctor : UserType.patient;
   return ref.read(notificationRepositoryProvider).notificationsStream(uid, type);
 });
 
@@ -370,6 +390,18 @@ final doctorAppointmentsStreamProvider = StreamProvider<List<Appointment>>((ref)
   return ref.read(appointmentRepositoryProvider).doctorAppointmentsStream(uid);
 });
 
+/// Stream of appointments for a specific doctor by ID (used by patient booking screen)
+final doctorAppointmentsFamilyStreamProvider = StreamProvider.family<List<Appointment>, String>((ref, doctorId) {
+  if (doctorId.isEmpty) return Stream.value([]);
+  return ref.read(appointmentRepositoryProvider).doctorAppointmentsStream(doctorId);
+});
+
+/// Stream of availability slots for a specific doctor by ID (accessible by patients)
+final doctorAvailabilityStreamProvider = StreamProvider.family<List<Map<String, dynamic>>, String>((ref, doctorId) {
+  if (doctorId.isEmpty) return Stream.value([]);
+  return ref.read(appointmentRepositoryProvider).doctorAvailabilityStream(doctorId);
+});
+
 /// Stream of all registered doctors
 final doctorsStreamProvider = StreamProvider<List<Doctor>>((ref) {
   return ref.read(doctorRepositoryProvider).doctorsStream();
@@ -380,11 +412,109 @@ final allPatientsStreamProvider = StreamProvider<List<Patient>>((ref) {
   return ref.read(patientRepositoryProvider).patientsStream();
 });
 
+/// Real patients associated with this doctor through appointments or approved access permissions
+final doctorAssociatedPatientsStreamProvider = StreamProvider<List<PatientModel>>((ref) {
+  final currentUid = FirebaseAuth.instance.currentUser?.uid ?? ref.watch(currentUidProvider);
+  if (currentUid == null || currentUid.isEmpty) return Stream.value([]);
+
+  final db = FirebaseFirestore.instance;
+
+  return db
+      .collection('appointments')
+      .where('doctorId', isEqualTo: currentUid)
+      .snapshots()
+      .asyncMap((apptSnap) async {
+        final patientMap = <String, PatientModel>{};
+
+        // 1. Collect from appointments
+        for (final doc in apptSnap.docs) {
+          final data = doc.data();
+          final pId = data['patientId'] as String? ?? '';
+          final pName = data['patientName'] as String? ?? 'Patient';
+          final specialty = data['specialty'] as String? ?? 'General Care';
+          final status = data['status'] as String? ?? 'pending';
+          if (pId.isNotEmpty && !patientMap.containsKey(pId)) {
+            patientMap[pId] = PatientModel(
+              id: pId,
+              name: pName,
+              age: 32,
+              condition: specialty,
+              status: status == 'approved' ? 'stable' : 'attention',
+              isAuthorized: false,
+              conditions: [specialty],
+              medicationAdherence: 0.95,
+            );
+          }
+        }
+
+        // 2. Collect from approved access permissions
+        try {
+          final permSnap = await db
+              .collection('accessPermissions')
+              .where('doctorId', isEqualTo: currentUid)
+              .get();
+
+          for (final pDoc in permSnap.docs) {
+            final pData = pDoc.data();
+            final pId = pData['patientId'] as String? ?? '';
+            final pName = pData['patientName'] as String? ?? 'Patient';
+            final isApproved = pData['status'] == 'approved';
+
+            if (pId.isNotEmpty) {
+              if (isApproved) {
+                try {
+                  final pProfileDoc = await db.collection('patients').doc(pId).get();
+                  if (pProfileDoc.exists) {
+                    final profile = PatientModel.fromFirestore(pProfileDoc).copyWith(isAuthorized: true);
+                    patientMap[pId] = profile;
+                    continue;
+                  }
+                } catch (e) {
+                  dev.log('[DOCTOR PATIENT] Profile fetch note: $e', name: 'doctorAssociatedPatientsStreamProvider');
+                }
+              }
+
+              if (patientMap.containsKey(pId)) {
+                patientMap[pId] = patientMap[pId]!.copyWith(isAuthorized: isApproved);
+              } else {
+                patientMap[pId] = PatientModel(
+                  id: pId,
+                  name: pName,
+                  age: 30,
+                  condition: 'Consultation Patient',
+                  status: isApproved ? 'stable' : 'attention',
+                  isAuthorized: isApproved,
+                  conditions: const ['Consultation Patient'],
+                  medicationAdherence: 0.95,
+                );
+              }
+            }
+          }
+        } catch (e) {
+          dev.log('[DOCTOR PATIENT] Access permissions check note: $e', name: 'doctorAssociatedPatientsStreamProvider');
+        }
+
+        return patientMap.values.toList();
+      });
+});
+
 /// Stream of current patient's AI chats
 final aiChatsStreamProvider = StreamProvider<List<AIChat>>((ref) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return Stream.value([]);
   return ref.read(aiChatRepositoryProvider).chatsStream(uid);
+});
+
+/// Stream of a specific patient's AI chats (used by doctor with 'aiChat' permission)
+final patientAiChatsFamilyStreamProvider = StreamProvider.family<List<AIChat>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(aiChatRepositoryProvider).chatsStream(patientId);
+});
+
+/// Stream of messages for a specific patient's chat session
+final patientChatMessagesFamilyStreamProvider = StreamProvider.family<List<AIChatMessage>, ({String patientId, String chatId})>((ref, arg) {
+  if (arg.patientId.isEmpty || arg.chatId.isEmpty) return Stream.value([]);
+  return ref.read(aiChatRepositoryProvider).messagesStream(arg.patientId, arg.chatId);
 });
 
 /// Stream of a specific patient's profile
@@ -397,6 +527,13 @@ final patientPermissionStreamProvider = StreamProvider.family<AccessPermission?,
   final docUid = ref.watch(currentUidProvider);
   if (docUid == null) return Stream.value(null);
   return ref.read(permissionRepositoryProvider).permissionStream(docUid, patientId);
+});
+
+/// Stream of all access permissions for current patient
+final patientAllPermissionsStreamProvider = StreamProvider<List<AccessPermission>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value([]);
+  return ref.read(permissionRepositoryProvider).patientPermissionsStream(uid);
 });
 
 /// Stream of a specific patient's vitals
@@ -414,6 +551,21 @@ final reportsStreamProvider = StreamProvider<List<ReportModel>>((ref) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return Stream.value([]);
   return ref.read(reportRepositoryProvider).reportsStream(uid);
+});
+
+/// Stream of health reports for a specific patient by ID (doctor view)
+final patientReportsFamilyStreamProvider = StreamProvider.family<List<ReportModel>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(reportRepositoryProvider).reportsStream(patientId);
+});
+
+/// Stream of current authenticated user's Telegram connection status
+final telegramStatusStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null || uid.isEmpty) {
+    return Stream.value({'connected': false, 'chatId': null});
+  }
+  return ref.read(telegramRepositoryProvider).telegramStatusStream(uid);
 });
 
 // ════════════════════════════════════════════

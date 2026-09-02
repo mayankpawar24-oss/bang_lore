@@ -26,6 +26,15 @@ class ReportModel {
   final bool sharedWithDoctor;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  // Firebase Storage Document Metadata
+  final String? documentId;
+  final String? fileName;
+  final String? fileType;
+  final String? storagePath;
+  final String? downloadUrl;
+  final String? uploadedBy;
+  final DateTime? uploadedAt;
+  final String? documentCategory;
 
   const ReportModel({
     required this.id,
@@ -42,6 +51,14 @@ class ReportModel {
     this.sharedWithDoctor = true,
     this.createdAt,
     this.updatedAt,
+    this.documentId,
+    this.fileName,
+    this.fileType,
+    this.storagePath,
+    this.downloadUrl,
+    this.uploadedBy,
+    this.uploadedAt,
+    this.documentCategory,
   });
 
   ReportModel copyWith({
@@ -59,6 +76,14 @@ class ReportModel {
     bool? sharedWithDoctor,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? documentId,
+    String? fileName,
+    String? fileType,
+    String? storagePath,
+    String? downloadUrl,
+    String? uploadedBy,
+    DateTime? uploadedAt,
+    String? documentCategory,
   }) {
     return ReportModel(
       id: id ?? this.id,
@@ -75,20 +100,33 @@ class ReportModel {
       sharedWithDoctor: sharedWithDoctor ?? this.sharedWithDoctor,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      documentId: documentId ?? this.documentId,
+      fileName: fileName ?? this.fileName,
+      fileType: fileType ?? this.fileType,
+      storagePath: storagePath ?? this.storagePath,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
+      uploadedBy: uploadedBy ?? this.uploadedBy,
+      uploadedAt: uploadedAt ?? this.uploadedAt,
+      documentCategory: documentCategory ?? this.documentCategory,
     );
   }
 
   factory ReportModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+    final docId = data['documentId'] as String? ?? doc.id;
+    final catName = data['documentCategory'] as String? ?? data['category'] as String? ?? 'other';
+    final uploadedAtDate = (data['uploadedAt'] as Timestamp?)?.toDate();
+
     return ReportModel(
       id: doc.id,
-      patientId: data['patientId'] as String? ?? '',
-      title: data['title'] as String? ?? 'Medical Document',
+      patientId: data['patientId'] as String? ?? data['uploadedBy'] as String? ?? '',
+      title: data['title'] as String? ?? data['fileName'] as String? ?? 'Medical Document',
       category: ReportCategory.values.firstWhere(
-        (e) => e.name == (data['category'] as String? ?? 'other'),
+        (e) => e.name == catName,
         orElse: () => ReportCategory.other,
       ),
       date: (data['date'] as Timestamp?)?.toDate() ??
+          uploadedAtDate ??
           (data['createdAt'] as Timestamp?)?.toDate() ??
           DateTime.now(),
       doctorOrFacility: data['doctorOrFacility'] as String?,
@@ -100,14 +138,30 @@ class ReportModel {
       sharedWithDoctor: data['sharedWithDoctor'] as bool? ?? true,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+      documentId: docId,
+      fileName: data['fileName'] as String?,
+      fileType: data['fileType'] as String?,
+      storagePath: data['storagePath'] as String?,
+      downloadUrl: data['downloadUrl'] as String?,
+      uploadedBy: data['uploadedBy'] as String? ?? data['patientId'] as String?,
+      uploadedAt: uploadedAtDate,
+      documentCategory: catName,
     );
   }
 
   Map<String, dynamic> toFirestore() {
     return {
+      'documentId': documentId ?? id,
       'patientId': patientId,
       'title': title,
       'category': category.name,
+      'documentCategory': documentCategory ?? category.name,
+      'fileName': fileName ?? title,
+      'fileType': fileType ?? 'application/pdf',
+      'storagePath': storagePath,
+      'downloadUrl': downloadUrl,
+      'uploadedBy': uploadedBy ?? patientId,
+      'uploadedAt': uploadedAt != null ? Timestamp.fromDate(uploadedAt!) : FieldValue.serverTimestamp(),
       'date': Timestamp.fromDate(date),
       'doctorOrFacility': doctorOrFacility,
       'summary': summary,
@@ -130,9 +184,17 @@ class ReportModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'documentId': documentId ?? id,
       'patientId': patientId,
       'title': title,
       'category': category.name,
+      'documentCategory': documentCategory ?? category.name,
+      'fileName': fileName,
+      'fileType': fileType,
+      'storagePath': storagePath,
+      'downloadUrl': downloadUrl,
+      'uploadedBy': uploadedBy ?? patientId,
+      'uploadedAt': uploadedAt?.toIso8601String(),
       'date': date.toIso8601String(),
       'doctorOrFacility': doctorOrFacility,
       'summary': summary,
@@ -145,12 +207,13 @@ class ReportModel {
   }
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
+    final catName = json['documentCategory'] as String? ?? json['category'] as String? ?? 'other';
     return ReportModel(
-      id: json['id'] as String? ?? '',
-      patientId: json['patientId'] as String? ?? '',
-      title: json['title'] as String? ?? 'Medical Document',
+      id: json['id'] as String? ?? json['documentId'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? json['uploadedBy'] as String? ?? '',
+      title: json['title'] as String? ?? json['fileName'] as String? ?? 'Medical Document',
       category: ReportCategory.values.firstWhere(
-        (e) => e.name == (json['category'] as String? ?? 'other'),
+        (e) => e.name == catName,
         orElse: () => ReportCategory.other,
       ),
       date: json['date'] != null
@@ -165,6 +228,14 @@ class ReportModel {
           : null,
       followUpInstructions: json['followUpInstructions'] as String?,
       sharedWithDoctor: json['sharedWithDoctor'] as bool? ?? true,
+      documentId: json['documentId'] as String?,
+      fileName: json['fileName'] as String?,
+      fileType: json['fileType'] as String?,
+      storagePath: json['storagePath'] as String?,
+      downloadUrl: json['downloadUrl'] as String?,
+      uploadedBy: json['uploadedBy'] as String?,
+      uploadedAt: json['uploadedAt'] != null ? DateTime.tryParse(json['uploadedAt'] as String) : null,
+      documentCategory: catName,
     );
   }
 }

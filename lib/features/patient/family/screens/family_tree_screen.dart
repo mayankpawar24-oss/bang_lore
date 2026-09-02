@@ -23,6 +23,7 @@ class FamilyTreeScreen extends ConsumerStatefulWidget {
 class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   int _selectedTab = 0; // 0: Tree, 1: Reminders, 2: Features
   final TransformationController _transformationController = TransformationController();
+  final PageController _pageController = PageController();
 
   // Editor State
   bool _isEditMode = false;
@@ -55,11 +56,19 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   @override
   void dispose() {
     _transformationController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
     setState(() => _selectedTab = index);
+    if (_pageController.hasClients) {
+      _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
@@ -84,19 +93,23 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               ),
             ),
             Expanded(
-              child: IndexedStack(
-                index: _selectedTab,
+              child: PageView(
+                controller: _pageController,
+                physics: _draggingMemberId != null ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+                onPageChanged: (index) {
+                  setState(() => _selectedTab = index);
+                },
                 children: [
-                  // Tab 0: Canva-like Interactive Tree Editor (True Bidirectional Pan/Zoom)
+                  // Tab 0: Family Tree Canvas
                   _buildTreeTabContent(context, members, isDark),
 
-                  // Tab 1: Family Reminders (Grouped & CRUD)
+                  // Tab 1: Family Reminders / History (Preserves vertical scrolling)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     child: _buildRemindersTabContent(context, members, reminders, isDark),
                   ),
 
-                  // Tab 2: Family Features (Interactive Modals)
+                  // Tab 2: Family Features / Care Board (Preserves vertical scrolling)
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     child: _buildFeaturesTabContent(context, members, isDark),

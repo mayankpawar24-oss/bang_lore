@@ -11,13 +11,14 @@ class SecondaryButton extends StatefulWidget {
 
   const SecondaryButton({
     super.key,
-    required this.text,
+    String? text,
+    String? label,
     this.onPressed,
     this.isFullWidth = true,
     this.icon,
     this.foregroundColor,
     this.borderColor,
-  });
+  }) : text = text ?? label ?? '';
 
   @override
   State<SecondaryButton> createState() => _SecondaryButtonState();
@@ -41,12 +42,16 @@ class _SecondaryButtonState extends State<SecondaryButton> {
           Icon(widget.icon, color: isDisabled ? AppColors.muted : fg, size: 18),
           const SizedBox(width: 8),
         ],
-        Text(
-          widget.text,
-          style: TextStyle(
-            color: isDisabled ? AppColors.muted : fg,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
+        Flexible(
+          child: Text(
+            widget.text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: isDisabled ? AppColors.muted : fg,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
       ],

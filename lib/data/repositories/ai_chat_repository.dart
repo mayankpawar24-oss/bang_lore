@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/ai_chat_model.dart';
 
 class FirebaseAIChatRepository {
@@ -13,16 +13,22 @@ class FirebaseAIChatRepository {
 
   Stream<List<AIChat>> chatsStream(String patientId) {
     return _chats(patientId)
-        .orderBy('updatedAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => AIChat.fromFirestore(d)).toList());
+        .map((snap) {
+          final list = snap.docs.map((d) => AIChat.fromFirestore(d)).toList();
+          list.sort((a, b) => (b.updatedAt ?? b.createdAt).compareTo(a.updatedAt ?? a.createdAt));
+          return list;
+        });
   }
 
   Stream<List<AIChatMessage>> messagesStream(String patientId, String chatId) {
     return _messages(patientId, chatId)
-        .orderBy('timestamp')
         .snapshots()
-        .map((snap) => snap.docs.map((d) => AIChatMessage.fromFirestore(d)).toList());
+        .map((snap) {
+          final list = snap.docs.map((d) => AIChatMessage.fromFirestore(d)).toList();
+          list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          return list;
+        });
   }
 
   Future<AIChat> createChat(String patientId, {String title = 'New Conversation'}) async {

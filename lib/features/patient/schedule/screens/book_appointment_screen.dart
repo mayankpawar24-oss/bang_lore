@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +6,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
@@ -25,6 +28,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
   DateTime? _selectedDay;
   String? _selectedTime;
   final TextEditingController _notesController = TextEditingController();
+  bool _isSubmitting = false;
 
   final List<String> _timeSlots = [
     '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
@@ -44,8 +48,9 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
     super.dispose();
   }
 
-  bool _isSlotBooked(String timeStr, List<AppointmentModel> appts) {
-    if (_selectedDay == null) return false;
+  int _getSlotState(String timeStr, List<AppointmentModel> myAppts, List<Map<String, dynamic>> docSlots) {
+    // 0: available, 1: pending review, 2: booked/reserved
+    if (_selectedDay == null) return 0;
     int hour = int.parse(timeStr.substring(0, 2));
     int minute = int.parse(timeStr.substring(3, 5));
     if (timeStr.contains('PM') && hour != 12) hour += 12;
@@ -53,15 +58,44 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
 
     final targetDate = DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day, hour, minute);
 
-    return appts.any((a) {
-      if (a.doctorId != widget.doctorId) return false;
-      if (a.status == AppointmentStatus.cancelled || a.status == AppointmentStatus.rejected) return false;
-      return a.dateTime.year == targetDate.year &&
+    // 1. Check doctor availability slots from Firestore
+    for (final s in docSlots) {
+      final ts = s['dateTime'] as Timestamp?;
+      if (ts != null) {
+        final d = ts.toDate();
+        if (d.year == targetDate.year &&
+            d.month == targetDate.month &&
+            d.day == targetDate.day &&
+            d.hour == targetDate.hour &&
+            d.minute == targetDate.minute) {
+          final st = s['status'] as String? ?? 'pending';
+          if (st == 'approved' || st == 'confirmed' || st == 'scheduled') {
+            return 2; // Reserved
+          }
+          return 1; // Pending
+        }
+      }
+    }
+
+    // 2. Check patient's own appointments
+    for (final a in myAppts) {
+      if (a.doctorId != widget.doctorId) continue;
+      if (a.dateTime.year == targetDate.year &&
           a.dateTime.month == targetDate.month &&
           a.dateTime.day == targetDate.day &&
           a.dateTime.hour == targetDate.hour &&
-          a.dateTime.minute == targetDate.minute;
-    });
+          a.dateTime.minute == targetDate.minute) {
+        if (a.status == AppointmentStatus.approved ||
+            a.status == AppointmentStatus.confirmed ||
+            a.status == AppointmentStatus.scheduled) {
+          return 2; // Booked/Approved
+        }
+        if (a.status == AppointmentStatus.pending || a.status == AppointmentStatus.requested) {
+          return 1; // Pending
+        }
+      }
+    }
+    return 0; // Available
   }
 
   @override
@@ -267,11 +301,43 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
               itemBuilder: (context, index) {
                 final time = _timeSlots[index];
                 final isSelected = _selectedTime == time;
-                final docAppts = ref.watch(doctorAppointmentsStreamProvider).valueOrNull ?? [];
-                final isBooked = _isSlotBooked(time, docAppts);
+                final myAppts = ref.watch(appointmentsStreamProvider).valueOrNull ?? [];
+                final docSlots = ref.watch(doctorAvailabilityStreamProvider(widget.doctorId)).valueOrNull ?? [];
+                final slotState = _getSlotState(time, myAppts, docSlots);
+                final isUnavailable = slotState != 0;
+
+                Color bgColor;
+                Color borderColor;
+                Color textColor;
+                String? badgeLabel;
+                Color? badgeColor;
+
+                if (slotState == 2) {
+                  // Booked / Reserved
+                  bgColor = isDark ? const Color(0xFF1E293B) : Colors.grey.shade200;
+                  borderColor = isDark ? const Color(0xFF334155) : Colors.grey.shade300;
+                  textColor = isDark ? const Color(0xFF64748B) : Colors.grey.shade600;
+                  badgeLabel = 'Reserved';
+                  badgeColor = AppColors.danger;
+                } else if (slotState == 1) {
+                  // Pending Request
+                  bgColor = isDark ? const Color(0xFF292524) : const Color(0xFFFEF3C7);
+                  borderColor = AppColors.warning.withValues(alpha: 0.5);
+                  textColor = isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
+                  badgeLabel = 'Pending';
+                  badgeColor = AppColors.warning;
+                } else if (isSelected) {
+                  bgColor = AppColors.primaryBlue;
+                  borderColor = AppColors.primaryBlue;
+                  textColor = Colors.white;
+                } else {
+                  bgColor = isDark ? const Color(0xFF131C2E) : Colors.white;
+                  borderColor = isDark ? Colors.white.withValues(alpha: 0.1) : AppColors.border;
+                  textColor = isDark ? Colors.white : AppColors.navy;
+                }
 
                 return GestureDetector(
-                  onTap: isBooked
+                  onTap: isUnavailable
                       ? null
                       : () {
                           setState(() {
@@ -282,23 +348,13 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
                     duration: const Duration(milliseconds: 150),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: isBooked
-                          ? (isDark ? const Color(0xFF1E293B) : Colors.grey.shade200)
-                          : isSelected
-                              ? AppColors.primaryBlue
-                              : (isDark ? const Color(0xFF131C2E) : Colors.white),
+                      color: bgColor,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: isBooked
-                            ? (isDark ? const Color(0xFF334155) : Colors.grey.shade300)
-                            : isSelected
-                                ? AppColors.primaryBlue
-                                : (isDark
-                                    ? Colors.white.withValues(alpha: 0.1)
-                                    : AppColors.border),
+                        color: borderColor,
                         width: isSelected ? 1.5 : 1,
                       ),
-                      boxShadow: isSelected && !isBooked
+                      boxShadow: isSelected && !isUnavailable
                           ? [
                               BoxShadow(
                                 color: AppColors.primaryBlue.withValues(alpha: 0.3),
@@ -314,21 +370,17 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
                         Text(
                           time,
                           style: TextStyle(
-                            color: isBooked
-                                ? (isDark ? const Color(0xFF64748B) : Colors.grey.shade600)
-                                : isSelected
-                                    ? Colors.white
-                                    : (isDark ? Colors.white : AppColors.navy),
+                            color: textColor,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                             fontSize: 13,
-                            decoration: isBooked ? TextDecoration.lineThrough : null,
+                            decoration: slotState == 2 ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        if (isBooked)
+                        if (badgeLabel != null)
                           Text(
-                            'Reserved',
+                            badgeLabel,
                             style: TextStyle(
-                              color: isDark ? const Color(0xFF64748B) : Colors.grey.shade600,
+                              color: badgeColor,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),
@@ -378,9 +430,11 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
             ).animate().fadeIn().slideY(begin: 0.05),
             const SizedBox(height: 32),
             PrimaryButton(
-              label: 'Request Appointment',
-              onPressed: _selectedDay != null && _selectedTime != null ? () => _bookAppointment(doctor, isDark) : null,
-              icon: LucideIcons.calendarCheck,
+              label: _isSubmitting ? 'Submitting Request...' : 'Request Appointment',
+              onPressed: (_selectedDay != null && _selectedTime != null && !_isSubmitting)
+                  ? () => _bookAppointment(doctor, isDark)
+                  : null,
+              icon: _isSubmitting ? null : LucideIcons.calendarCheck,
             ).animate().fadeIn().slideY(begin: 0.05),
             const SizedBox(height: 32),
           ],
@@ -389,7 +443,7 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
     );
   }
 
-  void _bookAppointment(DoctorModel doctor, bool isDark) {
+  Future<void> _bookAppointment(DoctorModel doctor, bool isDark) async {
     if (_selectedDay == null || _selectedTime == null) return;
     int hour = int.parse(_selectedTime!.substring(0, 2));
     int minute = int.parse(_selectedTime!.substring(3, 5));
@@ -401,8 +455,8 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
       hour, minute,
     );
 
-    final user = ref.read(currentUserProvider).valueOrNull;
-    final currentUid = ref.read(currentUidProvider);
+    final user = ref.read(currentUserProvider).valueOrNull ?? ref.read(authProvider).user;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? ref.read(currentUidProvider);
 
     if (currentUid == null || currentUid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -411,8 +465,14 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
       return;
     }
 
+    final appointmentId = const Uuid().v4();
+    dev.log('[APPOINTMENT] path being read/written: initiate booking for $currentUid with doctor ${doctor.id}', name: 'BookAppointmentScreen');
+    dev.log('[APPOINTMENT] Firebase UID: $currentUid', name: 'BookAppointmentScreen');
+    dev.log('[APPOINTMENT] doctorId: ${doctor.id}', name: 'BookAppointmentScreen');
+    dev.log('[APPOINTMENT] appointmentId: $appointmentId', name: 'BookAppointmentScreen');
+
     final appointment = AppointmentModel(
-      id: const Uuid().v4(),
+      id: appointmentId,
       patientId: currentUid,
       doctorId: doctor.id,
       doctorName: doctor.name,
@@ -421,52 +481,73 @@ class _BookAppointmentScreenState extends ConsumerState<BookAppointmentScreen> {
       dateTime: apptDateTime,
       durationMinutes: 30,
       status: AppointmentStatus.pending,
-      notes: _notesController.text,
+      notes: _notesController.text.trim(),
     );
 
-    ref.read(appointmentsProvider.notifier).bookAppointment(appointment);
+    setState(() => _isSubmitting = true);
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(LucideIcons.checkCircle2, color: AppColors.success, size: 64)
-                .animate()
-                .scale(duration: 400.ms, curve: Curves.easeOutBack),
-            const SizedBox(height: 16),
-            Text(
-              'Appointment Request Sent!',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+    try {
+      await ref.read(appointmentRepositoryProvider).bookAppointment(appointment);
+      await ref.read(appointmentsProvider.notifier).loadAppointments(currentUid);
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(LucideIcons.checkCircle2, color: AppColors.success, size: 64)
+                  .animate()
+                  .scale(duration: 400.ms, curve: Curves.easeOutBack),
+              const SizedBox(height: 16),
+              Text(
+                'Appointment Request Sent!',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your request with ${doctor.name} for ${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year} at ${_selectedTime!} has been submitted. The doctor will review and confirm.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                fontSize: 14,
+              const SizedBox(height: 8),
+              Text(
+                'Your request with ${doctor.name} for ${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year} at ${_selectedTime!} has been submitted. The doctor will review and confirm.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Done',
-              onPressed: () {
-                Navigator.pop(context); // Close dialog
-                context.pop(); // Go back to previous screen
-              },
-            ),
-          ],
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Done',
+                onPressed: () {
+                  Navigator.pop(context); // Close dialog
+                  context.pop(); // Go back to previous screen
+                },
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      dev.log('[APPOINTMENT] exception: $e', error: e, name: 'BookAppointmentScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 }

@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum UserRole { patient, doctor }
 
@@ -9,6 +9,8 @@ class UserModel {
   final UserRole role;
   final String? avatarUrl;
   final String? phone;
+  final String? telegramChatId;
+  final bool telegramConnected;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -19,6 +21,8 @@ class UserModel {
     required this.role,
     this.avatarUrl,
     this.phone,
+    this.telegramChatId,
+    this.telegramConnected = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -30,6 +34,8 @@ class UserModel {
     UserRole? role,
     String? avatarUrl,
     String? phone,
+    String? telegramChatId,
+    bool? telegramConnected,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -40,6 +46,8 @@ class UserModel {
       role: role ?? this.role,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       phone: phone ?? this.phone,
+      telegramChatId: telegramChatId ?? this.telegramChatId,
+      telegramConnected: telegramConnected ?? this.telegramConnected,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -53,6 +61,8 @@ class UserModel {
       'role': role.name,
       'avatarUrl': avatarUrl,
       'phone': phone,
+      'telegramChatId': telegramChatId,
+      'telegramConnected': telegramConnected,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
     };
@@ -66,6 +76,8 @@ class UserModel {
       role: UserRole.values.firstWhere((e) => e.name == json['role']),
       avatarUrl: json['avatarUrl'] as String?,
       phone: json['phone'] as String?,
+      telegramChatId: json['telegramChatId'] as String?,
+      telegramConnected: json['telegramConnected'] as bool? ?? false,
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) : null,
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'] as String) : null,
     );
@@ -73,7 +85,7 @@ class UserModel {
 
   /// Create from Firestore document snapshot
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return UserModel(
       id: doc.id,
       name: data['name'] as String? ?? '',
@@ -84,6 +96,8 @@ class UserModel {
       ),
       avatarUrl: data['photoUrl'] as String?,
       phone: data['phone'] as String?,
+      telegramChatId: data['telegramChatId'] as String?,
+      telegramConnected: data['telegramConnected'] as bool? ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -98,6 +112,8 @@ class UserModel {
       'role': role.name,
       'photoUrl': avatarUrl,
       'phone': phone,
+      'telegramChatId': telegramChatId,
+      'telegramConnected': telegramConnected,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }

@@ -152,11 +152,11 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<void> logout() async {
-    dev.log('[LOGOUT] logout started', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH] logout started', name: 'FirebaseAuthRepository');
     _userCache.clear();
     await _auth.signOut();
-    dev.log('[LOGOUT] Firebase signOut completed: currentUser=${_auth.currentUser}', name: 'FirebaseAuthRepository');
-    dev.log('[LOGOUT] logout state cleared', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH] Firebase signOut completed: currentUser=${_auth.currentUser}', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH] logout state cleared', name: 'FirebaseAuthRepository');
   }
 
   @override

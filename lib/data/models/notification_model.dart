@@ -13,6 +13,15 @@ class NotificationModel {
   final String? appointmentId;
   final String? doctorId;
   final String? patientId;
+  final String? recipientUid;
+  final String? senderUid;
+  final String? rawType;
+  final String? relatedId;
+  final String status;
+  final DateTime? createdAt;
+  final String? doctorName;
+  final String? patientName;
+  final String? requestId;
 
   const NotificationModel({
     required this.id,
@@ -25,7 +34,23 @@ class NotificationModel {
     this.appointmentId,
     this.doctorId,
     this.patientId,
+    this.recipientUid,
+    this.senderUid,
+    this.rawType,
+    this.relatedId,
+    this.status = 'unread',
+    this.createdAt,
+    this.doctorName,
+    this.patientName,
+    this.requestId,
   });
+
+  String get notificationId => id;
+  String? get effectiveRequestId => requestId ?? permissionId ?? relatedId;
+  String? get effectiveAppointmentId => appointmentId ?? relatedId;
+  bool get isPending => status == 'pending';
+  bool get isActioned => status == 'actioned' || status == 'approved';
+  bool get isRejected => status == 'rejected';
 
   NotificationModel copyWith({
     String? id,
@@ -38,6 +63,15 @@ class NotificationModel {
     String? appointmentId,
     String? doctorId,
     String? patientId,
+    String? recipientUid,
+    String? senderUid,
+    String? rawType,
+    String? relatedId,
+    String? status,
+    DateTime? createdAt,
+    String? doctorName,
+    String? patientName,
+    String? requestId,
   }) {
     return NotificationModel(
       id: id ?? this.id,
@@ -50,42 +84,44 @@ class NotificationModel {
       appointmentId: appointmentId ?? this.appointmentId,
       doctorId: doctorId ?? this.doctorId,
       patientId: patientId ?? this.patientId,
+      recipientUid: recipientUid ?? this.recipientUid,
+      senderUid: senderUid ?? this.senderUid,
+      rawType: rawType ?? this.rawType,
+      relatedId: relatedId ?? this.relatedId,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      doctorName: doctorName ?? this.doctorName,
+      patientName: patientName ?? this.patientName,
+      requestId: requestId ?? this.requestId,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'notificationId': id,
       'title': title,
       'message': message,
       'timestamp': timestamp.toIso8601String(),
-      'type': type.name,
+      'type': rawType ?? type.name,
       'isRead': isRead,
       'permissionId': permissionId,
       'appointmentId': appointmentId,
       'doctorId': doctorId,
       'patientId': patientId,
+      'recipientUid': recipientUid,
+      'senderUid': senderUid,
+      'relatedId': relatedId ?? appointmentId ?? permissionId,
+      'status': status,
+      'createdAt': createdAt?.toIso8601String(),
+      'doctorName': doctorName,
+      'patientName': patientName,
+      'requestId': requestId,
     };
   }
 
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
-    return NotificationModel(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      message: json['message'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      type: NotificationType.values.firstWhere((e) => e.name == json['type']),
-      isRead: json['isRead'] as bool,
-      permissionId: json['permissionId'] as String?,
-      appointmentId: json['appointmentId'] as String?,
-      doctorId: json['doctorId'] as String?,
-      patientId: json['patientId'] as String?,
-    );
-  }
-
-  factory NotificationModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    final typeStr = (data['type'] as String? ?? 'general').toLowerCase();
+    final typeStr = (json['type'] as String? ?? 'general').toLowerCase();
     NotificationType nType = NotificationType.general;
     if (typeStr.contains('appointment')) {
       nType = NotificationType.appointment;
@@ -97,19 +133,88 @@ class NotificationModel {
       nType = NotificationType.sos;
     }
 
+    final parsedTimestamp = json['timestamp'] != null
+        ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+        : DateTime.now();
+    final parsedCreatedAt = json['createdAt'] != null
+        ? DateTime.tryParse(json['createdAt'] as String)
+        : null;
+
+    final isReadVal = json['isRead'] as bool? ?? false;
+    final statusVal = json['status'] as String? ?? (isReadVal ? 'read' : 'unread');
+
+    return NotificationModel(
+      id: json['id'] as String? ?? json['notificationId'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      timestamp: parsedTimestamp,
+      type: nType,
+      isRead: isReadVal,
+      permissionId: json['permissionId'] as String?,
+      appointmentId: json['appointmentId'] as String?,
+      doctorId: json['doctorId'] as String?,
+      patientId: json['patientId'] as String?,
+      recipientUid: json['recipientUid'] as String?,
+      senderUid: json['senderUid'] as String?,
+      rawType: json['type'] as String?,
+      relatedId: json['relatedId'] as String?,
+      status: statusVal,
+      createdAt: parsedCreatedAt,
+      doctorName: json['doctorName'] as String?,
+      patientName: json['patientName'] as String?,
+      requestId: json['requestId'] as String?,
+    );
+  }
+
+  factory NotificationModel.fromFirestore(DocumentSnapshot doc) {
+    final data = (doc.data() as Map<String, dynamic>?) ?? {};
+    final rawTypeStr = (data['type'] as String? ?? 'general').toLowerCase();
+
+    NotificationType nType = NotificationType.general;
+    if (rawTypeStr.contains('appointment')) {
+      nType = NotificationType.appointment;
+    } else if (rawTypeStr.contains('permission') || rawTypeStr.contains('access')) {
+      nType = NotificationType.permission;
+    } else if (rawTypeStr.contains('medication')) {
+      nType = NotificationType.medication;
+    } else if (rawTypeStr.contains('sos')) {
+      nType = NotificationType.sos;
+    }
+
+    final isReadVal = data['isRead'] as bool? ?? false;
+    final statusVal = data['status'] as String? ?? (isReadVal ? 'read' : 'unread');
+
+    final dt = (data['timestamp'] as Timestamp?)?.toDate() ??
+        (data['createdAt'] as Timestamp?)?.toDate() ??
+        DateTime.now();
+    final cAt = (data['createdAt'] as Timestamp?)?.toDate();
+
+    final permId = data['permissionId'] as String? ?? data['requestId'] as String?;
+    final apptId = data['appointmentId'] as String? ?? data['relatedId'] as String?;
+    final reqId = data['requestId'] as String? ?? data['permissionId'] as String?;
+    final relId = data['relatedId'] as String? ?? apptId ?? permId;
+
     return NotificationModel(
       id: doc.id,
       title: data['title'] as String? ?? '',
       message: data['message'] as String? ?? '',
-      timestamp: (data['timestamp'] as Timestamp?)?.toDate() ??
-          (data['createdAt'] as Timestamp?)?.toDate() ??
-          DateTime.now(),
+      timestamp: dt,
       type: nType,
-      isRead: data['isRead'] as bool? ?? false,
-      permissionId: data['permissionId'] as String?,
-      appointmentId: data['appointmentId'] as String?,
+      isRead: isReadVal,
+      permissionId: permId,
+      appointmentId: apptId,
       doctorId: data['doctorId'] as String?,
       patientId: data['patientId'] as String?,
+      recipientUid: data['recipientUid'] as String?,
+      senderUid: data['senderUid'] as String?,
+      rawType: data['type'] as String?,
+      relatedId: relId,
+      status: statusVal,
+      createdAt: cAt,
+      doctorName: data['doctorName'] as String?,
+      patientName: data['patientName'] as String?,
+      requestId: reqId,
     );
   }
 }
+

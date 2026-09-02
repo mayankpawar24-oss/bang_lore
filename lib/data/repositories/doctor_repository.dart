@@ -11,6 +11,7 @@ abstract class DoctorRepository {
   Stream<List<Doctor>> doctorsStream();
   Stream<List<Map<String, dynamic>>> availabilityStream(String doctorId);
   Future<void> setAvailabilitySlot(String doctorId, Map<String, dynamic> slotData);
+  Future<void> deleteAvailabilitySlot(String doctorId, String slotId);
 }
 
 class FirebaseDoctorRepository implements DoctorRepository {
@@ -50,6 +51,11 @@ class FirebaseDoctorRepository implements DoctorRepository {
       ...slotData,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  @override
+  Future<void> deleteAvailabilitySlot(String doctorId, String slotId) async {
+    await _doctors.doc(doctorId).collection('availability').doc(slotId).delete();
   }
 
   @override
@@ -179,4 +185,7 @@ class MockDoctorRepository implements DoctorRepository {
 
   @override
   Future<void> setAvailabilitySlot(String doctorId, Map<String, dynamic> slotData) async {}
+
+  @override
+  Future<void> deleteAvailabilitySlot(String doctorId, String slotId) async {}
 }

@@ -25,7 +25,7 @@ service cloud.firestore {
 
     match /patients/{patientId} {
       allow read, write: if isSignedIn() && request.auth.uid == patientId;
-      allow read: if isApprovedDoctor(patientId);
+      allow read: if isSignedIn();
 
       match /vitals/{vitalId} {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
@@ -40,7 +40,8 @@ service cloud.firestore {
       match /appointments/{appId} {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
         allow read: if hasPermission(patientId, 'appointments');
-        allow read, write: if isSignedIn() && resource.data.doctorId == request.auth.uid;
+        allow create: if isSignedIn() && request.resource.data.doctorId == request.auth.uid;
+        allow read, update, delete: if isSignedIn() && resource.data.doctorId == request.auth.uid;
       }
 
       match /reminders/{remId} {
@@ -60,7 +61,7 @@ service cloud.firestore {
 
       match /aiChats/{chatId} {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
-        allow read: if hasPermission(patientId, 'aiChat') && resource.data.sharedWithDoctor == true;
+        allow read: if hasPermission(patientId, 'aiChat');
 
         match /messages/{msgId} {
           allow read, write: if isSignedIn() && request.auth.uid == patientId;
@@ -70,11 +71,28 @@ service cloud.firestore {
 
       match /symptoms/{symptomId} {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
-        allow read: if hasPermission(patientId, 'reports') && resource.data.sharedWithDoctor == true;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /medicalDocuments/{docId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /reports/{reportId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /accessRequests/{requestId} {
+        allow read: if isSignedIn() && (request.auth.uid == patientId || request.auth.uid == resource.data.doctorId);
+        allow create: if isSignedIn() && request.auth.uid == request.resource.data.doctorId;
+        allow update: if isSignedIn() && (request.auth.uid == patientId || request.auth.uid == resource.data.doctorId);
       }
 
       match /notifications/{notifId} {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow create: if isSignedIn();
       }
     }
 
@@ -84,15 +102,22 @@ service cloud.firestore {
 
       match /appointments/{appId} {
         allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn() && request.auth.uid == request.resource.data.patientId && request.resource.data.doctorId == doctorId;
+        allow read, update, delete: if isSignedIn() && (resource.data.patientId == request.auth.uid || resource.data.doctorId == request.auth.uid);
       }
 
       match /availability/{slotId} {
         allow read: if isSignedIn();
-        allow write: if isSignedIn() && (request.auth.uid == doctorId || resource.data.bookedByPatientId == request.auth.uid || request.resource.data.bookedByPatientId == request.auth.uid);
+        allow create, update: if isSignedIn() && (
+          request.auth.uid == doctorId ||
+          request.resource.data.bookedByPatientId == request.auth.uid
+        );
+        allow delete: if isSignedIn() && (request.auth.uid == doctorId || resource.data.bookedByPatientId == request.auth.uid);
       }
 
       match /notifications/{notifId} {
         allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn();
       }
     }
 
@@ -105,7 +130,7 @@ service cloud.firestore {
 
     match /accessPermissions/{permId} {
       allow read: if isSignedIn() &&
-        (request.auth.uid == resource.data.doctorId || request.auth.uid == resource.data.patientId);
+        (resource == null || request.auth.uid == resource.data.doctorId || request.auth.uid == resource.data.patientId);
       allow create: if isSignedIn() &&
         request.auth.uid == request.resource.data.doctorId;
       allow update: if isSignedIn() &&

@@ -1,3 +1,5 @@
+import 'dart:developer' as dev;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -75,7 +77,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
               const SizedBox(height: 20),
 
               // 2. Today's Insights & AI Care Tip
-              _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports),
+              _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports, streamAppts),
               const SizedBox(height: 24),
 
               // 3. Quick Action Row
@@ -318,11 +320,25 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     List<Vital> vitals,
     List<MedicationModel> meds,
     List<ReportModel> reports,
+    List<AppointmentModel> appointments,
   ) {
     String insightText = 'Your baseline health parameters are steady. Maintain daily hydration and active movement.';
     String traditionalNuskha = 'Warm ginger & honey water is traditionally suggested to soothe throat and support digestion.';
 
-    if (vitals.isNotEmpty) {
+    // 1. Check if an approved appointment is scheduled for today
+    final now = DateTime.now();
+    final todayApprovedAppts = appointments.where((a) {
+      final isToday = a.dateTime.year == now.year && a.dateTime.month == now.month && a.dateTime.day == now.day;
+      final isApproved = a.status == AppointmentStatus.approved || a.status == AppointmentStatus.confirmed;
+      return isToday && isApproved;
+    }).toList();
+
+    if (todayApprovedAppts.isNotEmpty) {
+      final appt = todayApprovedAppts.first;
+      final timeFormatted = DateFormat('hh:mm a').format(appt.dateTime);
+      insightText = 'You have a confirmed consultation today with ${appt.doctorName} at $timeFormatted. Have your recent vitals and questions ready.';
+      traditionalNuskha = 'Keep a brief list of active symptoms and medications handy for your consultation.';
+    } else if (vitals.isNotEmpty) {
       final latest = vitals.first;
       if (latest.heartRate != null && latest.heartRate! > 95) {
         insightText = 'Your heart rate was slightly elevated (${latest.heartRate} bpm). Ensure adequate rest and avoid heavy caffeine today.';
@@ -685,6 +701,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     ReportCategory selectedCategory = ReportCategory.lab;
     DateTime selectedDate = DateTime.now();
     DateTime? followUpDate;
+    List<int>? attachedFileBytes;
+    String? attachedFileName;
+    String? attachedFileType;
+    bool isUploading = false;
 
     showModalBottomSheet(
       context: context,
@@ -714,15 +734,113 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.navy),
                   ),
                   const SizedBox(height: 4),
-                  Text('Ingest medical records for continuous AI analysis and timeline tracking.', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12)),
+                  Text('Encrypted upload to Firebase Storage & automated Care Timeline ingestion.', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12)),
                   const SizedBox(height: 16),
+
+                  // File Picker Attachment Button
+                  GestureDetector(
+                    onTap: isUploading
+                        ? null
+                        : () async {
+                            try {
+                              final file = await FilePicker.pickFile(
+                                type: FileType.any,
+                              );
+                              if (file != null) {
+                                final bytes = await file.readAsBytes();
+                                setModalState(() {
+                                  attachedFileBytes = bytes;
+                                  attachedFileName = file.name;
+                                  attachedFileType = file.extension != null ? 'application/${file.extension}' : 'application/pdf';
+                                  if (titleController.text.trim().isEmpty) {
+                                    // Auto-populate title from filename without extension
+                                    final nameWithoutExt = file.name.split('.').first;
+                                    titleController.text = nameWithoutExt.replaceAll('_', ' ');
+                                  }
+                                });
+                              }
+                            } catch (e) {
+                              dev.log('[STORAGE] FilePicker error: $e', error: e, name: 'PatientDashboard');
+                            }
+                          },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: attachedFileName != null
+                              ? AppColors.primaryBlue
+                              : (isDark ? const Color(0xFF334155) : AppColors.border),
+                          width: attachedFileName != null ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: (attachedFileName != null ? AppColors.primaryBlue : AppColors.muted).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              attachedFileName != null ? LucideIcons.fileCheck : LucideIcons.uploadCloud,
+                              color: attachedFileName != null ? AppColors.primaryBlue : AppColors.muted,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  attachedFileName ?? 'Attach Medical File (PDF, Image, EMR)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: isDark ? Colors.white : AppColors.navy,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  attachedFileBytes != null
+                                      ? '${(attachedFileBytes!.length / 1024).toStringAsFixed(1)} KB • Ready for Firebase Storage'
+                                      : 'Tap to select document from device',
+                                  style: TextStyle(
+                                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (attachedFileName != null)
+                            IconButton(
+                              icon: const Icon(LucideIcons.x, size: 18, color: AppColors.muted),
+                              onPressed: () {
+                                setModalState(() {
+                                  attachedFileBytes = null;
+                                  attachedFileName = null;
+                                  attachedFileType = null;
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   
                   // Category Dropdown
                   DropdownButtonFormField<ReportCategory>(
                     initialValue: selectedCategory,
                     dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                     decoration: InputDecoration(
-                      labelText: 'Document Type',
+                      labelText: 'Document Category',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
@@ -734,6 +852,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                       DropdownMenuItem(value: ReportCategory.treatment, child: Text('Treatment Report')),
                       DropdownMenuItem(value: ReportCategory.doctorNote, child: Text('Doctor Consultation Note')),
                       DropdownMenuItem(value: ReportCategory.fhir, child: Text('FHIR Health Bundle')),
+                      DropdownMenuItem(value: ReportCategory.other, child: Text('Other Medical Document')),
                     ],
                     onChanged: (val) {
                       if (val != null) setModalState(() => selectedCategory = val);
@@ -744,7 +863,8 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   TextField(
                     controller: titleController,
                     decoration: InputDecoration(
-                      labelText: 'Document Title (e.g. Complete Blood Count, Hospital Discharge)',
+                      labelText: 'Document Title *',
+                      hintText: 'e.g. Complete Blood Count, Hospital Discharge',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     ),
@@ -799,35 +919,63 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   const SizedBox(height: 16),
 
                   PrimaryButton(
-                    label: 'Save & Ingest Record',
-                    icon: LucideIcons.check,
-                    onPressed: () async {
-                      if (uid == null || titleController.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a document title')));
-                        return;
-                      }
+                    label: isUploading ? 'Uploading to Firebase Storage...' : 'Save & Ingest Record',
+                    icon: isUploading ? null : LucideIcons.check,
+                    onPressed: isUploading
+                        ? null
+                        : () async {
+                            if (uid == null || titleController.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please enter a document title')),
+                              );
+                              return;
+                            }
 
-                      final report = ReportModel(
-                        id: '',
-                        patientId: uid,
-                        title: titleController.text.trim(),
-                        category: selectedCategory,
-                        date: selectedDate,
-                        doctorOrFacility: facilityController.text.trim().isNotEmpty ? facilityController.text.trim() : null,
-                        summary: summaryController.text.trim().isNotEmpty ? summaryController.text.trim() : null,
-                        followUpDate: followUpDate,
-                        followUpInstructions: followUpDate != null ? 'Follow up regarding ${titleController.text.trim()}' : null,
-                        sharedWithDoctor: true,
-                      );
+                            setModalState(() => isUploading = true);
 
-                      await ref.read(reportRepositoryProvider).uploadReport(report);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Record uploaded and added to Care Timeline!')),
-                        );
-                      }
-                    },
+                            final report = ReportModel(
+                              id: '',
+                              patientId: uid,
+                              title: titleController.text.trim(),
+                              category: selectedCategory,
+                              date: selectedDate,
+                              doctorOrFacility: facilityController.text.trim().isNotEmpty ? facilityController.text.trim() : null,
+                              summary: summaryController.text.trim().isNotEmpty ? summaryController.text.trim() : null,
+                              followUpDate: followUpDate,
+                              followUpInstructions: followUpDate != null ? 'Follow up regarding ${titleController.text.trim()}' : null,
+                              sharedWithDoctor: true,
+                            );
+
+                            try {
+                              await ref.read(reportRepositoryProvider).uploadReport(
+                                    report,
+                                    fileBytes: attachedFileBytes,
+                                    fileName: attachedFileName,
+                                    fileType: attachedFileType,
+                                  );
+
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Record uploaded to Firebase Storage and added to Care Timeline!'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              dev.log('[STORAGE] [FIRESTORE] Document upload failed: $e', error: e, name: 'PatientDashboard');
+                              setModalState(() => isUploading = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Upload failed: $e'),
+                                    backgroundColor: AppColors.danger,
+                                  ),
+                                );
+                              }
+                            }
+                          },
                   ),
                 ],
               ),

@@ -15,11 +15,14 @@ class DoctorProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final user = ref.watch(currentUserProvider).valueOrNull;
+    final user = ref.watch(currentUserProvider).valueOrNull ?? ref.watch(authProvider).user;
     final doctor = ref.watch(currentDoctorStreamProvider).valueOrNull;
-    final docName = doctor?.name ?? user?.name ?? 'Dr. Aisha Patel';
+    final docName = doctor?.name ?? user?.name ?? 'Doctor';
     final specialty = doctor?.specialty ?? 'General Practice';
     final hospital = doctor?.hospital ?? 'City Clinic';
+    final phone = doctor?.phone.isNotEmpty == true ? doctor!.phone : (user?.phone ?? '+91 98765 43210');
+    final email = user?.email ?? 'doctor@continuum.health';
+    final uid = user?.id ?? '';
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -175,7 +178,7 @@ class DoctorProfileScreen extends ConsumerWidget {
                     ),
                   ],
                 ),
-              ).animate().fadeIn().slideY(begin: -0.05),
+              ).animate().fadeIn(),
               const SizedBox(height: 20),
 
               // Quick Actions Row
@@ -210,10 +213,24 @@ class DoctorProfileScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildInfoTile('Medical License', 'MD-94827104 (Active)', LucideIcons.shieldCheck, AppColors.success, isDark),
-              _buildInfoTile('Experience', '15 Years (Interventional Cardiology)', LucideIcons.award, AppColors.primaryBlue, isDark),
-              _buildInfoTile('Education', 'Harvard Medical School (Class of 2011)', LucideIcons.graduationCap, const Color(0xFF8B5CF6), isDark),
-              _buildInfoTile('Contact Phone', '+1 (555) 019-2831', LucideIcons.phone, AppColors.accentCyan, isDark),
+              _buildInfoTile('Email Address', email, LucideIcons.mail, AppColors.primaryBlue, isDark),
+              _buildInfoTile('Contact Phone', phone, LucideIcons.phone, AppColors.accentCyan, isDark),
+              _buildInfoTile('Clinical Specialty', '$specialty • $hospital', LucideIcons.building2, const Color(0xFF8B5CF6), isDark),
+              _buildInfoTile('Practitioner UID', uid.isNotEmpty ? uid : 'Verified Account', LucideIcons.shieldCheck, AppColors.success, isDark),
+
+              const SizedBox(height: 24),
+
+              // Telegram Notifications Section
+              Text(
+                'Telegram Notifications',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildTelegramCard(context, ref, isDark),
 
               const SizedBox(height: 24),
 
@@ -446,6 +463,407 @@ class DoctorProfileScreen extends ConsumerWidget {
             PrimaryButton(label: 'Done', onPressed: () => Navigator.pop(context)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTelegramCard(BuildContext context, WidgetRef ref, bool isDark) {
+    final telegramStatus = ref.watch(telegramStatusStreamProvider).valueOrNull;
+    final isConnected = telegramStatus?['connected'] == true;
+    final chatId = telegramStatus?['chatId'] as String?;
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0088CC).withValues(alpha: isDark ? 0.25 : 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(LucideIcons.send, color: Color(0xFF0088CC), size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isConnected ? 'Telegram Connected' : 'Connect Telegram',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isConnected
+                          ? (chatId != null && chatId.isNotEmpty ? 'Active (Chat ID: $chatId)' : 'Active (Alerts enabled)')
+                          : 'Get real-time appointment request & approval alerts',
+                      style: TextStyle(
+                        color: isConnected
+                            ? AppColors.success
+                            : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                        fontSize: 12,
+                        fontWeight: isConnected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'CONNECTED',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              if (isConnected) ...[
+                Expanded(
+                  child: SecondaryButton(
+                    label: 'Disconnect',
+                    icon: LucideIcons.xCircle,
+                    foregroundColor: AppColors.danger,
+                    borderColor: AppColors.danger.withValues(alpha: 0.5),
+                    onPressed: () async {
+                      final uid = ref.read(currentUidProvider) ?? '';
+                      try {
+                        dev.log('[TELEGRAM] Doctor disconnecting Telegram $uid', name: 'DoctorProfileScreen');
+                        await ref.read(telegramRepositoryProvider).disconnectTelegram(uid);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Telegram disconnected.'),
+                              backgroundColor: AppColors.primaryBlue,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        dev.log('[TELEGRAM] Doctor disconnect failed: $e', error: e, name: 'DoctorProfileScreen');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to disconnect: $e'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: PrimaryButton(
+                  text: isConnected ? 'Manage Settings' : 'Connect Telegram',
+                  icon: isConnected ? LucideIcons.settings : LucideIcons.send,
+                  onPressed: () => _showTelegramModal(context, ref, isDark),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTelegramModal(BuildContext context, WidgetRef ref, bool isDark) {
+    dev.log('[TELEGRAM] Opening doctor Telegram modal', name: 'DoctorProfileScreen');
+    final currentUid = ref.read(currentUidProvider) ?? '';
+    final telegramStatus = ref.read(telegramStatusStreamProvider).valueOrNull;
+    final isConnected = telegramStatus?['connected'] == true;
+    final existingChatId = telegramStatus?['chatId'] as String? ?? '';
+
+    final chatIdController = TextEditingController(text: existingChatId);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0088CC).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(LucideIcons.send, color: Color(0xFF0088CC), size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Telegram Doctor Alerts',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                          Text(
+                            isConnected ? 'Status: Connected' : 'Status: Not Connected',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isConnected ? AppColors.success : AppColors.warning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Receive instant alerts on Telegram when patients request appointments, cancel bookings, or share emergency updates.',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Button to open Continuum Health Bot directly
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark ? const Color(0xFF334155) : AppColors.border,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Connect via Continuum Telegram Bot',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Opens Telegram and associates your chat with your doctor account (UID: ${currentUid.length > 8 ? currentUid.substring(0, 8) : currentUid}...).',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            dev.log('[TELEGRAM] Doctor tapped Open Telegram Bot', name: 'DoctorProfileScreen');
+                            final launched = await ref.read(telegramRepositoryProvider).openTelegramBot(currentUid);
+                            if (!launched && ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Could not open Telegram automatically. You can enter your Chat ID below.'),
+                                  backgroundColor: AppColors.warning,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(LucideIcons.externalLink, size: 16, color: Colors.white),
+                          label: const Text(
+                            'Open Continuum Bot in Telegram',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0088CC),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Manual / Confirmation Chat ID Entry
+                Text(
+                  'Telegram Chat ID',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: chatIdController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. 123456789 (from @userinfobot or bot)',
+                    hintStyle: TextStyle(
+                      color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400,
+                      fontSize: 13,
+                    ),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : AppColors.border,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(
+                        color: isDark ? const Color(0xFF334155) : AppColors.border,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFF0088CC), width: 1.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Actions: Save / Disconnect
+                Row(
+                  children: [
+                    if (isConnected) ...[
+                      Expanded(
+                        child: SecondaryButton(
+                          label: 'Disconnect',
+                          icon: LucideIcons.xCircle,
+                          foregroundColor: AppColors.danger,
+                          borderColor: AppColors.danger.withValues(alpha: 0.5),
+                          onPressed: () async {
+                            try {
+                              dev.log('[TELEGRAM] Disconnecting doctor $currentUid', name: 'DoctorProfileScreen');
+                              await ref.read(telegramRepositoryProvider).disconnectTelegram(currentUid);
+                              if (ctx.mounted) {
+                                Navigator.pop(ctx);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Telegram disconnected.'),
+                                    backgroundColor: AppColors.primaryBlue,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              dev.log('[TELEGRAM] Doctor disconnect failed: $e', error: e, name: 'DoctorProfileScreen');
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed to disconnect: $e'),
+                                    backgroundColor: AppColors.danger,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: PrimaryButton(
+                        text: isConnected ? 'Update Chat ID' : 'Save Connection',
+                        icon: LucideIcons.check,
+                        onPressed: () async {
+                          final chatId = chatIdController.text.trim();
+                          if (chatId.isEmpty) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter a valid Telegram Chat ID.'),
+                                backgroundColor: AppColors.danger,
+                              ),
+                            );
+                            return;
+                          }
+                          try {
+                            dev.log('[TELEGRAM] Saving Chat ID $chatId for doctor $currentUid', name: 'DoctorProfileScreen');
+                            await ref.read(telegramRepositoryProvider).connectTelegram(currentUid, chatId);
+                            if (ctx.mounted) {
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Telegram notifications connected successfully!'),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            dev.log('[TELEGRAM] Doctor connection error: $e', error: e, name: 'DoctorProfileScreen');
+                            if (ctx.mounted) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                SnackBar(
+                                  content: Text('Connection failed: $e'),
+                                  backgroundColor: AppColors.danger,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

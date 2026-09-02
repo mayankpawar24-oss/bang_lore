@@ -3,11 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
+import 'dart:developer' as dev;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/secondary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
@@ -36,17 +41,28 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final patients = ref.watch(patientsProvider);
-    final appointments = ref.watch(appointmentsProvider);
+    final realAssociatedPatients = ref.watch(doctorAssociatedPatientsStreamProvider).valueOrNull;
+    final List<PatientModel> patients = realAssociatedPatients ?? ref.watch(patientsProvider);
+    final streamAppts = ref.watch(doctorAppointmentsStreamProvider).valueOrNull;
+    final List<AppointmentModel> appointments = streamAppts ?? ref.watch(appointmentsProvider);
     final authState = ref.watch(authProvider);
 
     final activePatients = patients.where((p) => p.isAuthorized).toList();
-    final needsAttention = activePatients.where((p) => p.status == 'attention' || p.status == 'critical').toList();
+    final needsAttention = patients.where((p) => p.status == 'attention' || p.status == 'critical').toList();
 
     final now = DateTime.now();
     final todayAppointments = appointments.where((a) {
-      return a.dateTime.year == now.year && a.dateTime.month == now.month && a.dateTime.day == now.day;
+      final isToday = a.dateTime.year == now.year && a.dateTime.month == now.month && a.dateTime.day == now.day;
+      final isApproved = a.status == AppointmentStatus.approved || a.status == AppointmentStatus.confirmed || a.status == AppointmentStatus.scheduled;
+      return isToday && isApproved;
     }).toList();
+
+    final pendingRequests = appointments.where((a) {
+      return a.status == AppointmentStatus.pending || a.status == AppointmentStatus.requested;
+    }).toList();
+
+    final notifications = ref.watch(notificationsStreamProvider).valueOrNull ?? [];
+    final unreadNotifs = notifications.where((n) => !n.isRead).length;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
@@ -63,7 +79,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(context, authState.user?.name, isDark),
+                _buildHeader(context, authState.user?.name, isDark, unreadNotifs),
                 const SizedBox(height: 20),
 
                 // Stat Cards Grid (2x2)
@@ -78,7 +94,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                     _buildStatCard('Active Patients', activePatients.length.toString(), LucideIcons.users, AppColors.primaryBlue, isDark),
                     _buildStatCard('Appts Today', todayAppointments.length.toString(), LucideIcons.calendar, AppColors.success, isDark),
                     _buildStatCard('Needs Attention', needsAttention.length.toString(), LucideIcons.alertTriangle, AppColors.warning, isDark),
-                    _buildStatCard('Available Slots', '8', LucideIcons.clock, AppColors.accentCyan, isDark),
+                    _buildStatCard('Pending Requests', pendingRequests.length.toString(), LucideIcons.clock, pendingRequests.isNotEmpty ? AppColors.warning : AppColors.accentCyan, isDark),
                   ],
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
                 const SizedBox(height: 24),
@@ -106,6 +122,43 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+
+                // PENDING APPOINTMENT REQUESTS
+                if (pendingRequests.isNotEmpty) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'PENDING APPOINTMENT REQUESTS',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          '${pendingRequests.length} pending',
+                          style: const TextStyle(
+                            color: AppColors.warning,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...pendingRequests.map((req) => _buildPendingRequestCard(context, req, isDark)),
+                  const SizedBox(height: 24),
+                ],
 
                 // Patients Needing Attention Section
                 if (needsAttention.isNotEmpty) ...[
@@ -156,7 +209,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, String? doctorName, bool isDark) {
+  Widget _buildHeader(BuildContext context, String? doctorName, bool isDark, int unreadCount) {
     final streamDoctor = ref.watch(currentDoctorStreamProvider).valueOrNull;
     final displayName = streamDoctor?.name ?? doctorName ?? 'Dr. Practitioner';
     final specialty = streamDoctor?.specialty ?? 'General Practice';
@@ -171,23 +224,32 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
               width: 50,
               height: 50,
               decoration: BoxDecoration(
+                gradient: AppColors.blueToIndigo,
                 shape: BoxShape.circle,
-                color: isDark ? const Color(0xFF1E293B) : AppColors.softBlue,
-                border: Border.all(
-                  color: isDark ? const Color(0xFF334155) : Colors.white,
-                  width: 2,
-                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: ClipOval(
-                child: (streamDoctor != null && streamDoctor.avatarUrl.isNotEmpty)
-                    ? Image.network(streamDoctor.avatarUrl, fit: BoxFit.cover)
-                    : Center(
-                        child: Text(
-                          displayName.replaceAll('Dr. ', '').split(' ').first.isNotEmpty
-                              ? displayName.replaceAll('Dr. ', '').split(' ').first[0]
-                              : 'D',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+              child: Center(
+                child: displayName.isNotEmpty
+                    ? Text(
+                        displayName.replaceFirst('Dr. ', '').trim().isNotEmpty
+                            ? displayName.replaceFirst('Dr. ', '').trim()[0].toUpperCase()
+                            : 'D',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
                         ),
+                      )
+                    : const Icon(
+                        LucideIcons.user,
+                        color: Colors.white,
+                        size: 24,
                       ),
               ),
             ),
@@ -254,37 +316,181 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
                     size: 20,
                   ),
                 ),
-                Positioned(
-                  top: -3,
-                  right: -3,
-                  child: Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: AppColors.danger,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
-                        width: 2,
+                if (unreadCount > 0)
+                  Positioned(
+                    top: -3,
+                    right: -3,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
+                          width: 2,
+                        ),
                       ),
-                    ),
-                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                    child: const Center(
-                      child: Text(
-                        '3',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Center(
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPendingRequestCard(BuildContext context, AppointmentModel appt, bool isDark) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
+      borderColor: AppColors.warning.withValues(alpha: 0.4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
+                child: Text(
+                  appt.patientName.isNotEmpty ? appt.patientName[0].toUpperCase() : 'P',
+                  style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      appt.patientName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${DateFormat('EEEE, MMM d, yyyy').format(appt.dateTime)} at ${_formatTime(appt.dateTime)}',
+                      style: const TextStyle(
+                        color: AppColors.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'PENDING',
+                  style: TextStyle(
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (appt.notes != null && appt.notes!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Notes: ${appt.notes}',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: SecondaryButton(
+                  label: 'Reject',
+                  icon: LucideIcons.x,
+                  onPressed: () async {
+                    final currentDoctor = ref.read(currentDoctorStreamProvider).valueOrNull;
+                    await ref.read(appointmentRepositoryProvider).updateStatus(
+                          appt.patientId,
+                          appt.doctorId,
+                          appt.id,
+                          AppointmentStatus.rejected,
+                          updatedByDoctor: true,
+                          doctorName: currentDoctor?.name,
+                          patientName: appt.patientName,
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Appointment request from ${appt.patientName} rejected.'),
+                          backgroundColor: AppColors.danger,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PrimaryButton(
+                  label: 'Accept',
+                  icon: LucideIcons.check,
+                  onPressed: () async {
+                    final currentDoctor = ref.read(currentDoctorStreamProvider).valueOrNull;
+                    await ref.read(appointmentRepositoryProvider).updateStatus(
+                          appt.patientId,
+                          appt.doctorId,
+                          appt.id,
+                          AppointmentStatus.approved,
+                          updatedByDoctor: true,
+                          doctorName: currentDoctor?.name,
+                          patientName: appt.patientName,
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Appointment with ${appt.patientName} approved!'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -500,8 +706,13 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   // Modals for Quick Actions
+  // Modals for Quick Actions
   void _showAddAppointmentModal(BuildContext context, bool isDark) {
+    final currentDoctorUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final doctorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Doctor';
     final patientCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -522,7 +733,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Book Doctor Appointment',
+              'Schedule Patient Consultation',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -533,34 +744,68 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             TextField(
               controller: patientCtrl,
               decoration: const InputDecoration(
-                labelText: 'Patient Name',
-                hintText: 'e.g. Margaret Chen',
+                labelText: 'Patient Name or ID',
+                hintText: 'e.g. John Doe',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notesCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Consultation Reason / Notes',
+                hintText: 'e.g. Follow-up consultation',
               ),
             ),
             const SizedBox(height: 24),
             PrimaryButton(
-              label: 'Confirm Appointment Slot',
-              onPressed: () {
-                if (patientCtrl.text.isNotEmpty) {
-                  final appt = AppointmentModel(
-                    id: const Uuid().v4(),
-                    patientId: 'p_margaret_01',
-                    doctorId: 'd_aisha_01',
-                    doctorName: 'Dr. Aisha Patel',
-                    patientName: patientCtrl.text,
-                    specialty: 'Cardiology Follow-up',
-                    dateTime: DateTime.now().add(const Duration(hours: 3)),
-                    durationMinutes: 30,
-                    status: AppointmentStatus.scheduled,
-                  );
-                  ref.read(appointmentsProvider.notifier).bookAppointment(appt);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Appointment scheduled!'),
-                      backgroundColor: AppColors.primaryBlue,
-                    ),
-                  );
+              label: 'Confirm & Schedule',
+              onPressed: () async {
+                final patientName = patientCtrl.text.trim();
+                if (patientName.isEmpty) return;
+
+                final apptId = const Uuid().v4();
+                final patientId = patientName.toLowerCase().replaceAll(' ', '_');
+                final apptDateTime = DateTime.now().add(const Duration(hours: 2));
+
+                dev.log('[APPOINTMENT] path being read/written: appointments/$apptId', name: 'DoctorDashboardScreen');
+                dev.log('[APPOINTMENT] Firebase UID: $currentDoctorUid', name: 'DoctorDashboardScreen');
+                dev.log('[APPOINTMENT] doctorId: $currentDoctorUid', name: 'DoctorDashboardScreen');
+                dev.log('[APPOINTMENT] appointmentId: $apptId', name: 'DoctorDashboardScreen');
+
+                final appt = AppointmentModel(
+                  id: apptId,
+                  patientId: patientId,
+                  doctorId: currentDoctorUid,
+                  doctorName: doctorName,
+                  patientName: patientName,
+                  specialty: 'Medical Consultation',
+                  dateTime: apptDateTime,
+                  durationMinutes: 30,
+                  status: AppointmentStatus.approved,
+                  notes: notesCtrl.text.trim(),
+                );
+
+                try {
+                  await ref.read(appointmentRepositoryProvider).bookAppointment(appt);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Consultation scheduled for $patientName!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  dev.log('[APPOINTMENT] exception: $e', name: 'DoctorDashboardScreen');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: AppColors.danger,
+                      ),
+                    );
+                  }
                 }
               },
             ),
@@ -571,39 +816,84 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   void _showAddPatientModal(BuildContext context, bool isDark) {
+    final currentDoctorUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final idCtrl = TextEditingController();
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Add New Patient',
+              'Add Patient & Request Access',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: isDark ? Colors.white : AppColors.navy,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Enter patient UID or identifier to request health record access.',
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                fontSize: 13,
+              ),
+            ),
             const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Patient Full Name')),
-            const SizedBox(height: 12),
-            const TextField(decoration: InputDecoration(labelText: 'Primary Condition')),
+            TextField(
+              controller: idCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Patient UID / ID',
+                hintText: 'Enter patient user ID',
+              ),
+            ),
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Send Access Request',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Access request sent to patient!'),
-                    backgroundColor: AppColors.primaryBlue,
-                  ),
-                );
+              onPressed: () async {
+                final patientId = idCtrl.text.trim();
+                if (patientId.isEmpty) return;
+
+                dev.log('[ACCESS] Requesting access from doctor $currentDoctorUid to patient $patientId', name: 'DoctorDashboardScreen');
+                try {
+                  await ref.read(patientRepositoryProvider).requestAccess(
+                    currentDoctorUid,
+                    patientId,
+                    permissions: const ['profile', 'vitals', 'medications', 'appointments', 'medicalHistory', 'reports'],
+                  );
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Access request sent to patient $patientId!'),
+                        backgroundColor: AppColors.primaryBlue,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  dev.log('[ACCESS] exception: $e', name: 'DoctorDashboardScreen');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: AppColors.danger,
+                      ),
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -613,18 +903,29 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   void _showSendAlertModal(BuildContext context, bool isDark) {
+    final currentDoctorUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final doctorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Doctor';
+    final alertCtrl = TextEditingController();
+    final patientIdCtrl = TextEditingController();
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Send Patient Alert Notification',
+              'Send Patient Clinical Alert',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -632,23 +933,63 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
+            TextField(
+              controller: patientIdCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Target Patient ID',
+                hintText: 'e.g. Patient UID',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: alertCtrl,
+              decoration: const InputDecoration(
                 labelText: 'Alert Message',
-                hintText: 'e.g. Please check your blood pressure now.',
+                hintText: 'e.g. Please check your blood pressure immediately.',
               ),
             ),
             const SizedBox(height: 24),
             PrimaryButton(
-              label: 'Broadcast Alert',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Alert broadcasted to patient app!'),
-                    backgroundColor: AppColors.danger,
-                  ),
-                );
+              label: 'Send Real-Time Alert',
+              onPressed: () async {
+                final targetPatientId = patientIdCtrl.text.trim();
+                final message = alertCtrl.text.trim();
+                if (targetPatientId.isEmpty || message.isEmpty) return;
+
+                dev.log('[NOTIFICATION] Sending alert to patients/$targetPatientId/notifications', name: 'DoctorDashboardScreen');
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('patients')
+                      .doc(targetPatientId)
+                      .collection('notifications')
+                      .add({
+                    'title': 'Doctor Clinical Alert',
+                    'message': message,
+                    'type': 'doctor_alert',
+                    'doctorId': currentDoctorUid,
+                    'doctorName': doctorName,
+                    'isRead': false,
+                    'timestamp': FieldValue.serverTimestamp(),
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Clinical alert sent to patient!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  dev.log('[NOTIFICATION] exception: $e', name: 'DoctorDashboardScreen');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Alert failed: $e'), backgroundColor: AppColors.danger),
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -658,18 +999,27 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
   }
 
   void _showAddReminderModal(BuildContext context, bool isDark) {
+    final currentDoctorUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final noteCtrl = TextEditingController();
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          left: 24,
+          right: 24,
+          top: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Add Doctor Follow-up Reminder',
+              'Add Doctor Clinical Reminder',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -677,8 +1027,9 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
+            TextField(
+              controller: noteCtrl,
+              decoration: const InputDecoration(
                 labelText: 'Reminder Note',
                 hintText: 'e.g. Follow up on ECG report',
               ),
@@ -686,14 +1037,37 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             const SizedBox(height: 24),
             PrimaryButton(
               label: 'Save Doctor Reminder',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Follow-up reminder set!'),
-                    backgroundColor: AppColors.primaryBlue,
-                  ),
-                );
+              onPressed: () async {
+                final note = noteCtrl.text.trim();
+                if (note.isEmpty) return;
+
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('doctors')
+                      .doc(currentDoctorUid)
+                      .collection('notifications')
+                      .add({
+                    'title': 'Clinical Reminder',
+                    'message': note,
+                    'type': 'doctor_reminder',
+                    'doctorId': currentDoctorUid,
+                    'isRead': false,
+                    'timestamp': FieldValue.serverTimestamp(),
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Follow-up reminder saved to notifications!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  dev.log('[NOTIFICATION] exception: $e', name: 'DoctorDashboardScreen');
+                }
               },
             ),
           ],
@@ -714,28 +1088,31 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Recent Medical Reports',
+              'Patient Medical Reports',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: isDark ? Colors.white : AppColors.navy,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Access permitted patient records by selecting any authorized patient below.',
+              style: TextStyle(
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                fontSize: 13,
+              ),
+            ),
             const SizedBox(height: 16),
             ListTile(
-              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
-              title: Text('Margaret Chen - Blood Test (Aug 15)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-              trailing: const Icon(LucideIcons.download),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
-              title: Text('Margaret Chen - ECG Trace (Aug 10)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-              trailing: const Icon(LucideIcons.download),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
-              title: Text('Emily Davis - Chest X-Ray (Aug 12)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-              trailing: const Icon(LucideIcons.download),
+              leading: const Icon(LucideIcons.users, color: AppColors.primaryBlue),
+              title: Text('View Authorized Patients', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+              subtitle: const Text('Navigate to full patient brief and reports'),
+              trailing: const Icon(LucideIcons.chevronRight),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/doctor/patients');
+              },
             ),
           ],
         ),

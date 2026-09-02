@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Doctor {
   final String id;
@@ -105,7 +105,7 @@ class Doctor {
   }
 
   factory Doctor.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
     return Doctor(
       id: doc.id,
       name: data['name'] as String? ?? '',

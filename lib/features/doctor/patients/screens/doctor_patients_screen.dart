@@ -42,7 +42,7 @@ class _DoctorPatientsScreenState extends ConsumerState<DoctorPatientsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final streamPatients = ref.watch(allPatientsStreamProvider).valueOrNull;
+    final streamPatients = ref.watch(doctorAssociatedPatientsStreamProvider).valueOrNull;
     final List<PatientModel> patients = streamPatients ?? ref.watch(patientsProvider);
     final authState = ref.watch(authProvider);
 

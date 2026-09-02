@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:developer' as dev;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
@@ -40,9 +43,11 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentDoctorUid = FirebaseAuth.instance.currentUser?.uid ?? ref.watch(currentUidProvider) ?? '';
     final streamAppts = ref.watch(doctorAppointmentsStreamProvider).valueOrNull;
     final List<AppointmentModel> appointments = streamAppts ?? ref.watch(appointmentsProvider);
-    final patients = ref.watch(patientsProvider);
+    final realAssociatedPatients = ref.watch(doctorAssociatedPatientsStreamProvider).valueOrNull;
+    final List<PatientModel> patients = realAssociatedPatients ?? ref.watch(patientsProvider);
 
     final selectedDayAppointments = appointments.where((a) => _isSameDay(a.dateTime, _selectedDate)).toList();
     final pendingRequests = appointments.where((a) => a.status == AppointmentStatus.pending || a.status == AppointmentStatus.requested).toList();
@@ -147,12 +152,17 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
               const SizedBox(height: 24),
 
               // Availability & Time Slots Section
-              const SectionHeader(
+              SectionHeader(
                 title: 'Availability & Slots',
-                subtitle: 'Tap open slots to book a patient consultation',
+                subtitle: 'Tap open slots to manage or schedule consultations',
+                trailing: IconButton(
+                  icon: const Icon(LucideIcons.plusCircle, color: AppColors.primaryBlue),
+                  tooltip: 'Add Time Slot',
+                  onPressed: () => _showAddSlotModal(context, currentDoctorUid, isDark),
+                ),
               ),
               const SizedBox(height: 14),
-              _buildSlotsContainer(context, patients, isDark),
+              _buildSlotsContainer(context, currentDoctorUid, patients, isDark),
 
               const SizedBox(height: 40),
             ],
@@ -438,8 +448,26 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
     );
   }
 
-  Widget _buildSlotsContainer(BuildContext context, List<PatientModel> patients, bool isDark) {
+  Widget _buildSlotsContainer(BuildContext context, String doctorUid, List<PatientModel> patients, bool isDark) {
     final appointments = ref.watch(doctorAppointmentsStreamProvider).valueOrNull ?? [];
+    final firestoreSlots = ref.watch(doctorAvailabilityStreamProvider(doctorUid)).valueOrNull ?? [];
+
+    // Extract time strings for the selected date from firestore
+    final daySlots = <String>{..._customSlots};
+    for (final s in firestoreSlots) {
+      final ts = s['dateTime'] as Timestamp?;
+      if (ts != null) {
+        final d = ts.toDate();
+        if (d.year == _selectedDate.year && d.month == _selectedDate.month && d.day == _selectedDate.day) {
+          final hour = d.hour == 0 ? 12 : (d.hour > 12 ? d.hour - 12 : d.hour);
+          final minute = d.minute.toString().padLeft(2, '0');
+          final ampm = d.hour >= 12 ? 'PM' : 'AM';
+          daySlots.add('${hour.toString().padLeft(2, '0')}:$minute $ampm');
+        }
+      }
+    }
+
+    final sortedSlots = daySlots.toList()..sort();
 
     return AppCard(
       padding: const EdgeInsets.all(18),
@@ -448,13 +476,39 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Schedule & Slot Overview',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: isDark ? Colors.white : AppColors.navy,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Schedule & Slot Overview',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
+              InkWell(
+                onTap: () => _showAddSlotModal(context, doctorUid, isDark),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(
+                    children: const [
+                      Icon(LucideIcons.plus, size: 14, color: AppColors.primaryBlue),
+                      SizedBox(width: 4),
+                      Text(
+                        'Add Slot',
+                        style: TextStyle(
+                          color: AppColors.primaryBlue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -468,7 +522,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
           Wrap(
             spacing: 10,
             runSpacing: 10,
-            children: _customSlots.map((slot) {
+            children: sortedSlots.map((slot) {
               int hour = int.parse(slot.substring(0, 2));
               int minute = int.parse(slot.substring(3, 5));
               if (slot.contains('PM') && hour != 12) hour += 12;
@@ -477,6 +531,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
 
               final appt = appointments.firstWhere(
                 (a) => a.status != AppointmentStatus.cancelled &&
+                    a.status != AppointmentStatus.rejected &&
                     a.dateTime.year == targetDate.year &&
                     a.dateTime.month == targetDate.month &&
                     a.dateTime.day == targetDate.day &&
@@ -513,7 +568,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
               return GestureDetector(
                 onTap: isBooked || isPending
                     ? null
-                    : () => _bookPatientSlotModal(context, slot, patients, isDark),
+                    : () => _bookPatientSlotModal(context, slot, doctorUid, patients, isDark),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -561,8 +616,102 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
     );
   }
 
-  void _bookPatientSlotModal(BuildContext context, String timeSlot, List<PatientModel> patients, bool isDark) {
-    String selectedPatient = patients.isNotEmpty ? patients.first.name : 'Margaret Chen';
+  void _showAddSlotModal(BuildContext context, String doctorUid, bool isDark) {
+    TimeOfDay selectedTime = const TimeOfDay(hour: 11, minute: 0);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add Doctor Time Slot',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Date: ${_formatDateStr(_selectedDate)}',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(LucideIcons.clock, color: AppColors.primaryBlue),
+                title: const Text('Slot Time', style: TextStyle(fontWeight: FontWeight.bold)),
+                trailing: Chip(
+                  label: Text(selectedTime.format(context), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                ),
+                onTap: () async {
+                  final picked = await showTimePicker(context: context, initialTime: selectedTime);
+                  if (picked != null) {
+                    setModalState(() => selectedTime = picked);
+                  }
+                },
+              ),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Save Time Slot to Firestore',
+                onPressed: () async {
+                  final targetDate = DateTime(
+                    _selectedDate.year,
+                    _selectedDate.month,
+                    _selectedDate.day,
+                    selectedTime.hour,
+                    selectedTime.minute,
+                  );
+                  final slotKey = '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}_${targetDate.hour.toString().padLeft(2, '0')}-${targetDate.minute.toString().padLeft(2, '0')}';
+
+                  dev.log('[DOCTOR AVAILABILITY] Setting slot $slotKey for doctor $doctorUid', name: 'DoctorCalendarScreen');
+                  await ref.read(doctorRepositoryProvider).setAvailabilitySlot(doctorUid, {
+                    'id': slotKey,
+                    'slotId': slotKey,
+                    'dateTime': Timestamp.fromDate(targetDate),
+                    'status': 'open',
+                  });
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Availability slot added!'), backgroundColor: AppColors.success),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _bookPatientSlotModal(BuildContext context, String timeSlot, String doctorUid, List<PatientModel> patients, bool isDark) {
+    final patientList = patients.isNotEmpty ? patients : [
+      const PatientModel(
+        id: 'consultation_patient',
+        name: 'New Consultation Patient',
+        age: 30,
+        condition: 'General Practice',
+        status: 'stable',
+        isAuthorized: true,
+        conditions: ['General Practice'],
+        medicationAdherence: 1.0,
+      ),
+    ];
+    String selectedPatientId = patientList.first.id;
 
     showModalBottomSheet(
       context: context,
@@ -585,7 +734,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Schedule Slot ($timeSlot)',
+                'Schedule Consultation ($timeSlot)',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -612,42 +761,63 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
-                children: patients.map((p) => ChoiceChip(
+                children: patientList.map((p) => ChoiceChip(
                   label: Text(p.name),
-                  selected: selectedPatient == p.name,
+                  selected: selectedPatientId == p.id,
                   selectedColor: AppColors.primaryBlue,
                   labelStyle: TextStyle(
-                    color: selectedPatient == p.name ? Colors.white : (isDark ? Colors.white : AppColors.primaryBlue),
+                    color: selectedPatientId == p.id ? Colors.white : (isDark ? Colors.white : AppColors.primaryBlue),
                     fontWeight: FontWeight.bold,
                   ),
                   onSelected: (val) {
-                    if (val) setModalState(() => selectedPatient = p.name);
+                    if (val) setModalState(() => selectedPatientId = p.id);
                   },
                 )).toList(),
               ),
               const SizedBox(height: 24),
               PrimaryButton(
                 label: 'Confirm Consultation Slot',
-                onPressed: () {
+                onPressed: () async {
+                  int hour = int.parse(timeSlot.substring(0, 2));
+                  int minute = int.parse(timeSlot.substring(3, 5));
+                  if (timeSlot.contains('PM') && hour != 12) hour += 12;
+                  if (timeSlot.contains('AM') && hour == 12) hour = 0;
+                  final targetDate = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour, minute);
+
+                  final selectedPatientObj = patientList.firstWhere((p) => p.id == selectedPatientId);
+                  final doctorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Doctor';
+
                   final newAppt = AppointmentModel(
                     id: const Uuid().v4(),
-                    patientId: 'p_margaret_01',
-                    doctorId: 'd_aisha_01',
-                    doctorName: 'Dr. Aisha Patel',
-                    patientName: selectedPatient,
-                    specialty: 'Cardiology Consultation',
-                    dateTime: _selectedDate,
+                    patientId: selectedPatientObj.id,
+                    doctorId: doctorUid,
+                    doctorName: doctorName,
+                    patientName: selectedPatientObj.name,
+                    specialty: 'Clinical Consultation',
+                    dateTime: targetDate,
                     durationMinutes: 30,
-                    status: AppointmentStatus.scheduled,
+                    status: AppointmentStatus.approved,
                   );
-                  ref.read(appointmentsProvider.notifier).bookAppointment(newAppt);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Consultation booked for $selectedPatient at $timeSlot!'),
-                      backgroundColor: AppColors.primaryBlue,
-                    ),
-                  );
+
+                  try {
+                    await ref.read(appointmentRepositoryProvider).bookAppointment(newAppt);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Consultation booked for ${selectedPatientObj.name} at $timeSlot!'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    dev.log('[APPOINTMENT] exception: $e', name: 'DoctorCalendarScreen');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+                      );
+                    }
+                  }
                 },
               ),
             ],

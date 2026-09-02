@@ -1,5 +1,6 @@
 import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/appointment_model.dart';
 
 abstract class AppointmentRepository {
@@ -19,6 +20,7 @@ abstract class AppointmentRepository {
   Future<void> cancelAppointment(String patientId, String appointmentId);
   Stream<List<Appointment>> appointmentsStream(String patientId);
   Stream<List<Appointment>> doctorAppointmentsStream(String doctorId);
+  Stream<List<Map<String, dynamic>>> doctorAvailabilityStream(String doctorId);
 }
 
 class FirebaseAppointmentRepository implements AppointmentRepository {
@@ -33,18 +35,41 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
 
   @override
   Stream<List<Appointment>> appointmentsStream(String patientId) {
-    return _patientAppts(patientId)
-        .orderBy('dateTime', descending: false)
+    dev.log('[APPOINTMENT] path being read/written: appointments (query where patientId == $patientId)', name: 'FirebaseAppointmentRepository');
+    return _db
+        .collection('appointments')
+        .where('patientId', isEqualTo: patientId)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => Appointment.fromFirestore(d)).toList());
+        .map((snap) {
+          final list = snap.docs.map((d) => Appointment.fromFirestore(d)).toList();
+          list.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+          return list;
+        });
   }
 
   @override
   Stream<List<Appointment>> doctorAppointmentsStream(String doctorId) {
-    return _doctorAppts(doctorId)
-        .orderBy('dateTime', descending: false)
+    dev.log('[APPOINTMENT] path being read/written: appointments (query where doctorId == $doctorId)', name: 'FirebaseAppointmentRepository');
+    return _db
+        .collection('appointments')
+        .where('doctorId', isEqualTo: doctorId)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => Appointment.fromFirestore(d)).toList());
+        .map((snap) {
+          final list = snap.docs.map((d) => Appointment.fromFirestore(d)).toList();
+          list.sort((a, b) => a.dateTime.compareTo(b.dateTime));
+          return list;
+        });
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> doctorAvailabilityStream(String doctorId) {
+    dev.log('[APPOINTMENT] path being read/written: doctors/$doctorId/availability', name: 'FirebaseAppointmentRepository');
+    return _db
+        .collection('doctors')
+        .doc(doctorId)
+        .collection('availability')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => {...d.data(), 'id': d.id}).toList());
   }
 
   @override
@@ -56,65 +81,134 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
   }
 
   @override
+  @override
   Future<void> bookAppointment(Appointment appointment) async {
-    dev.log('[APPOINTMENT] [FIRESTORE] Booking appointment ${appointment.id} for patient ${appointment.patientId} with doctor ${appointment.doctorId}', name: 'FirebaseAppointmentRepository');
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final patientId = (currentUid != null && currentUid.isNotEmpty)
+        ? currentUid
+        : appointment.patientId;
+    final doctorId = appointment.doctorId;
+
     final apptId = appointment.id.isNotEmpty && !appointment.id.startsWith('app_')
         ? appointment.id
-        : _patientAppts(appointment.patientId).doc().id;
-    final withId = appointment.copyWith(id: apptId);
+        : _db.collection('appointments').doc().id;
+
+    dev.log('[APPOINTMENT] path being read/written: appointments/$apptId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] path being read/written: patients/$patientId/appointments/$apptId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] Firebase UID: $currentUid', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] doctorId: $doctorId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] appointmentId: $apptId', name: 'FirebaseAppointmentRepository');
+
+    // Slot key for doctor availability e.g. "2026-09-03_09-00"
+    final slotKey = '${appointment.dateTime.year}-${appointment.dateTime.month.toString().padLeft(2, '0')}-${appointment.dateTime.day.toString().padLeft(2, '0')}_${appointment.dateTime.hour.toString().padLeft(2, '0')}-${appointment.dateTime.minute.toString().padLeft(2, '0')}';
+    final slotPath = 'doctors/$doctorId/availability/$slotKey';
+    dev.log('[APPOINTMENT] path being read/written: $slotPath', name: 'FirebaseAppointmentRepository');
+
+    // 1. Availability check using doctors/{doctorId}/availability/{slotKey}
+    // Deployed rule: match /availability/{slotId} { allow read: if isSignedIn(); }
+    try {
+      final slotDoc = await _db.collection('doctors').doc(doctorId).collection('availability').doc(slotKey).get();
+      if (slotDoc.exists) {
+        final slotData = slotDoc.data();
+        final status = slotData?['status'] as String? ?? '';
+        if (status == 'approved' || status == 'confirmed' || status == 'scheduled') {
+          dev.log('[APPOINTMENT] Slot is already occupied: ${appointment.dateTime}', name: 'FirebaseAppointmentRepository');
+          throw Exception('This consultation slot has already been booked by another patient.');
+        }
+      }
+    } catch (e) {
+      if (e.toString().contains('already been booked')) {
+        dev.log('[APPOINTMENT] exception: $e', name: 'FirebaseAppointmentRepository');
+        rethrow;
+      }
+      dev.log('[APPOINTMENT] Note during availability check: $e', name: 'FirebaseAppointmentRepository');
+    }
+
+    final withId = appointment.copyWith(
+      id: apptId,
+      patientId: patientId,
+      status: AppointmentStatus.pending,
+      requestedAt: DateTime.now(),
+    );
+
     final data = {
       ...withId.toFirestoreCreate(),
+      'id': apptId,
+      'appointmentId': apptId,
+      'patientId': patientId,
+      'doctorId': doctorId,
+      'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'requestedAt': FieldValue.serverTimestamp(),
     };
 
-    final batch = _db.batch();
-    // 0. Canonical top-level copy
-    final cRef = _db.collection('appointments').doc(apptId);
-    batch.set(cRef, data, SetOptions(merge: true));
+    try {
+      final batch = _db.batch();
 
-    // 1. Patient copy
-    final pRef = _patientAppts(withId.patientId).doc(apptId);
-    batch.set(pRef, data, SetOptions(merge: true));
+      // Write 1: Canonical top-level copy
+      // Deployed rule: allow create: if isSignedIn() && (request.auth.uid == request.resource.data.patientId || ...)
+      final cRef = _db.collection('appointments').doc(apptId);
+      batch.set(cRef, data, SetOptions(merge: true));
 
-    // 2. Doctor copy
-    final dRef = _doctorAppts(withId.doctorId).doc(apptId);
-    batch.set(dRef, data, SetOptions(merge: true));
+      // Write 2: Patient subcollection copy
+      // Deployed rule: match /patients/{patientId}/appointments/{appId} { allow read, write: if isSignedIn() && request.auth.uid == patientId; }
+      final pRef = _patientAppts(patientId).doc(apptId);
+      batch.set(pRef, data, SetOptions(merge: true));
 
-    // 3. Notification to Patient
-    final pNotifRef = _db.collection('patients').doc(withId.patientId).collection('notifications').doc();
-    batch.set(pNotifRef, {
-      'title': 'Appointment Request Sent',
-      'message': 'Your appointment request with ${withId.doctorName.isNotEmpty ? withId.doctorName : "Doctor"} has been submitted.',
-      'type': 'appointment_request',
-      'appointmentId': apptId,
-      'patientId': withId.patientId,
-      'doctorId': withId.doctorId,
-      'doctorName': withId.doctorName,
-      'dateTime': Timestamp.fromDate(withId.dateTime),
-      'isRead': false,
-      'timestamp': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      // Write 3: Doctor availability slot reservation
+      // Deployed rule: match /availability/{slotId} { allow write: if isSignedIn() && (... request.resource.data.bookedByPatientId == request.auth.uid); }
+      final slotRef = _db.collection('doctors').doc(doctorId).collection('availability').doc(slotKey);
+      batch.set(slotRef, {
+        'slotId': slotKey,
+        'dateTime': Timestamp.fromDate(withId.dateTime),
+        'status': 'pending',
+        'bookedByPatientId': patientId,
+        'patientName': withId.patientName,
+        'appointmentId': apptId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-    // 4. Notification to Doctor
-    final dNotifRef = _db.collection('doctors').doc(withId.doctorId).collection('notifications').doc();
-    batch.set(dNotifRef, {
-      'title': 'New Appointment Request',
-      'message': '${withId.patientName.isNotEmpty ? withId.patientName : "A patient"} requested an appointment.',
-      'type': 'appointment_request',
-      'appointmentId': apptId,
-      'patientId': withId.patientId,
-      'patientName': withId.patientName,
-      'doctorId': withId.doctorId,
-      'dateTime': Timestamp.fromDate(withId.dateTime),
-      'isRead': false,
-      'timestamp': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      // Write 4: Doctor notification (ONLY under the selected doctor's UID)
+      // Deployed rule: match /doctors/{doctorId}/notifications/{notifId} { allow create: if isSignedIn(); }
+      final dNotifRef = _db.collection('doctors').doc(doctorId).collection('notifications').doc();
+      final patientDisplayName = withId.patientName.isNotEmpty ? withId.patientName : "a patient";
+      final timeStr = '${withId.dateTime.day}/${withId.dateTime.month} at ${withId.dateTime.hour}:${withId.dateTime.minute.toString().padLeft(2, '0')}';
+      batch.set(dNotifRef, {
+        'id': dNotifRef.id,
+        'notificationId': dNotifRef.id,
+        'recipientUid': doctorId,
+        'senderUid': patientId,
+        'title': 'New Appointment Request',
+        'message': 'New appointment request from $patientDisplayName for $timeStr',
+        'type': 'appointment_request',
+        'appointmentId': apptId,
+        'relatedId': apptId,
+        'patientId': patientId,
+        'patientName': withId.patientName,
+        'doctorId': doctorId,
+        'doctorName': withId.doctorName,
+        'dateTime': Timestamp.fromDate(withId.dateTime),
+        'notes': withId.notes ?? '',
+        'status': 'pending',
+        'isRead': false,
+        'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-    await batch.commit();
-    dev.log('[APPOINTMENT] [NOTIFICATION] Two-way appointment $apptId created in Firestore', name: 'FirebaseAppointmentRepository');
+      await batch.commit();
+      dev.log('[APPOINTMENT] Core appointment $apptId created in Firestore with status "pending"', name: 'FirebaseAppointmentRepository');
+    } catch (e) {
+      dev.log('[APPOINTMENT] exception: $e', name: 'FirebaseAppointmentRepository');
+      rethrow;
+    }
+
+    // Defensive secondary write: doctors/{doctorId}/appointments
+    try {
+      await _doctorAppts(doctorId).doc(apptId).set(data, SetOptions(merge: true));
+    } catch (e) {
+      dev.log('[APPOINTMENT] Doctor subcollection write skipped (handled via canonical appointments query): $e', name: 'FirebaseAppointmentRepository');
+    }
   }
 
   @override
@@ -128,73 +222,134 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
     String? doctorName,
     String? patientName,
   }) async {
-    dev.log('[APPOINTMENT] Updating status of $appointmentId to ${newStatus.name}', name: 'FirebaseAppointmentRepository');
-    final batch = _db.batch();
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    dev.log('[APPOINTMENT] path being read/written: appointments/$appointmentId (update to ${newStatus.name})', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] path being read/written: patients/$patientId/appointments/$appointmentId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] path being read/written: doctors/$doctorId/appointments/$appointmentId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] Firebase UID: $currentUid', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] doctorId: $doctorId', name: 'FirebaseAppointmentRepository');
+    dev.log('[APPOINTMENT] appointmentId: $appointmentId', name: 'FirebaseAppointmentRepository');
+
     final updateData = <String, dynamic>{
       'status': newStatus.name,
       'updatedAt': FieldValue.serverTimestamp(),
     };
+    if (newStatus == AppointmentStatus.approved || newStatus == AppointmentStatus.confirmed) {
+      updateData['approvedAt'] = FieldValue.serverTimestamp();
+    } else if (newStatus == AppointmentStatus.rejected) {
+      updateData['rejectedAt'] = FieldValue.serverTimestamp();
+    }
     if (notes != null) updateData['notes'] = notes;
 
-    final cRef = _db.collection('appointments').doc(appointmentId);
-    batch.set(cRef, updateData, SetOptions(merge: true));
+    try {
+      final batch = _db.batch();
 
-    final pRef = _patientAppts(patientId).doc(appointmentId);
-    batch.set(pRef, updateData, SetOptions(merge: true));
+      // 1. Canonical top-level copy
+      final cRef = _db.collection('appointments').doc(appointmentId);
+      batch.set(cRef, updateData, SetOptions(merge: true));
 
-    final dRef = _doctorAppts(doctorId).doc(appointmentId);
-    batch.set(dRef, updateData, SetOptions(merge: true));
+      // 2. Patient copy
+      final pRef = _patientAppts(patientId).doc(appointmentId);
+      batch.set(pRef, updateData, SetOptions(merge: true));
 
-    if (updatedByDoctor) {
-      final pNotifRef = _db.collection('patients').doc(patientId).collection('notifications').doc();
-      final isConfirmed = newStatus == AppointmentStatus.confirmed ||
-          newStatus == AppointmentStatus.approved ||
-          newStatus == AppointmentStatus.scheduled;
-      final isRejected = newStatus == AppointmentStatus.rejected;
-      final type = isConfirmed
-          ? 'appointment_confirmed'
-          : isRejected
-              ? 'appointment_rejected'
-              : 'appointment_cancelled';
-      final title = isConfirmed
-          ? 'Appointment Confirmed'
-          : isRejected
-              ? 'Appointment Declined'
-              : 'Appointment Cancelled';
-      final msg = isConfirmed
-          ? 'Dr. ${doctorName ?? "Doctor"} confirmed your appointment.'
-          : isRejected
-              ? 'Dr. ${doctorName ?? "Doctor"} declined your appointment request.'
-              : 'Your appointment status was updated to ${newStatus.name}.';
-      batch.set(pNotifRef, {
-        'title': title,
-        'message': msg,
-        'type': type,
-        'appointmentId': appointmentId,
-        'doctorId': doctorId,
-        'doctorName': doctorName ?? '',
-        'isRead': false,
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } else {
-      final dNotifRef = _db.collection('doctors').doc(doctorId).collection('notifications').doc();
-      batch.set(dNotifRef, {
-        'title': 'Appointment Cancelled',
-        'message': 'Patient ${patientName ?? "Patient"} cancelled their appointment.',
-        'type': 'appointment_cancelled',
-        'appointmentId': appointmentId,
-        'patientId': patientId,
-        'patientName': patientName ?? '',
-        'doctorId': doctorId,
-        'isRead': false,
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // 3. Doctor copy (if doctor is updating, doctor is auth.uid)
+      if (updatedByDoctor && (currentUid == doctorId || currentUid != null)) {
+        final dRef = _doctorAppts(doctorId).doc(appointmentId);
+        batch.set(dRef, updateData, SetOptions(merge: true));
+      }
+
+      await batch.commit();
+      dev.log('[APPOINTMENT] Status for $appointmentId updated to ${newStatus.name}', name: 'FirebaseAppointmentRepository');
+    } catch (e) {
+      dev.log('[APPOINTMENT] exception: $e', name: 'FirebaseAppointmentRepository');
+      rethrow;
     }
 
-    await batch.commit();
-    dev.log('[APPOINTMENT] [NOTIFICATION] Two-way status update for $appointmentId complete', name: 'FirebaseAppointmentRepository');
+    // Update availability slot if exists
+    try {
+      final apptSnap = await _db.collection('appointments').doc(appointmentId).get();
+      final dt = (apptSnap.data()?['dateTime'] as Timestamp?)?.toDate();
+      if (dt != null) {
+        final slotKey = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}_${dt.hour.toString().padLeft(2, '0')}-${dt.minute.toString().padLeft(2, '0')}';
+        final slotRef = _db.collection('doctors').doc(doctorId).collection('availability').doc(slotKey);
+        if (newStatus == AppointmentStatus.approved || newStatus == AppointmentStatus.confirmed) {
+          await slotRef.set({'status': 'approved', 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+        } else if (newStatus == AppointmentStatus.rejected || newStatus == AppointmentStatus.cancelled) {
+          await slotRef.delete();
+        }
+      }
+    } catch (e) {
+      dev.log('[APPOINTMENT] Availability slot update note: $e', name: 'FirebaseAppointmentRepository');
+    }
+
+    // Defensive notification write
+    try {
+      if (updatedByDoctor) {
+        final pNotifRef = _db.collection('patients').doc(patientId).collection('notifications').doc();
+        final isApproved = newStatus == AppointmentStatus.approved ||
+            newStatus == AppointmentStatus.confirmed ||
+            newStatus == AppointmentStatus.scheduled;
+        final isRejected = newStatus == AppointmentStatus.rejected;
+        final docDisplayName = doctorName ?? "Doctor";
+
+        final type = isApproved
+            ? 'appointment_confirmed'
+            : isRejected
+                ? 'appointment_rejected'
+                : 'appointment_cancelled';
+        final title = isApproved
+            ? 'Appointment Approved'
+            : isRejected
+                ? 'Appointment Rejected'
+                : 'Appointment Cancelled';
+        final msg = isApproved
+            ? 'Your appointment with $docDisplayName has been approved.'
+            : isRejected
+                ? 'Your appointment request with $docDisplayName was rejected.'
+                : 'Your appointment status was updated to ${newStatus.name}.';
+
+        await pNotifRef.set({
+          'id': pNotifRef.id,
+          'notificationId': pNotifRef.id,
+          'recipientUid': patientId,
+          'senderUid': doctorId,
+          'title': title,
+          'message': msg,
+          'type': type,
+          'appointmentId': appointmentId,
+          'relatedId': appointmentId,
+          'doctorId': doctorId,
+          'doctorName': docDisplayName,
+          'patientId': patientId,
+          'patientName': patientName ?? '',
+          'status': isApproved ? 'approved' : (isRejected ? 'rejected' : 'cancelled'),
+          'isRead': false,
+          'timestamp': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        // Also update the doctor's pending notification to actioned/rejected
+        try {
+          final docNotifs = await _db
+              .collection('doctors')
+              .doc(doctorId)
+              .collection('notifications')
+              .where('appointmentId', isEqualTo: appointmentId)
+              .get();
+          for (final d in docNotifs.docs) {
+            await d.reference.update({
+              'status': isApproved ? 'actioned' : 'rejected',
+              'isRead': true,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (e) {
+          dev.log('[APPOINTMENT] Doctor notification status update note: $e', name: 'FirebaseAppointmentRepository');
+        }
+      }
+    } catch (e) {
+      dev.log('[APPOINTMENT] Patient notification write skipped (handled via real-time stream): $e', name: 'FirebaseAppointmentRepository');
+    }
   }
 
   @override
@@ -227,6 +382,9 @@ class MockAppointmentRepository implements AppointmentRepository {
 
   @override
   Stream<List<Appointment>> doctorAppointmentsStream(String doctorId) => Stream.value([]);
+
+  @override
+  Stream<List<Map<String, dynamic>>> doctorAvailabilityStream(String doctorId) => Stream.value([]);
 
   @override
   Future<List<Appointment>> getAppointments(String userId) async => List.from(_appointments);

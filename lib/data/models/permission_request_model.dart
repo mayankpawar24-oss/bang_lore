@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum PermissionStatus { pending, approved, denied, revoked }
 
@@ -119,6 +119,7 @@ class AccessPermission {
       'patientName': patientName,
       'status': status.name,
       'requestedAt': Timestamp.fromDate(requestedAt),
+      'createdAt': Timestamp.fromDate(requestedAt),
       'approvedAt': approvedAt != null ? Timestamp.fromDate(approvedAt!) : null,
       'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt!) : null,
       'permissions': permissions,
@@ -127,7 +128,7 @@ class AccessPermission {
   }
 
   /// Canonical document ID: doctorId_patientId
-  static String docId(String doctorId, String patientId) => '_';
+  static String docId(String doctorId, String patientId) => '${doctorId}_$patientId';
 }
 
 /// Backward-compatible alias
