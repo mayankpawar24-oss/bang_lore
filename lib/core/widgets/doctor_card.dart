@@ -40,6 +40,7 @@ class DoctorCard extends StatelessWidget {
     if (variant == DoctorCardVariant.carousel) {
       return AppCard(
         width: width,
+        height: 185,
         padding: const EdgeInsets.all(14),
         onTap: onTap,
         elevation: 1,

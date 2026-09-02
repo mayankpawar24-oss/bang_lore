@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,7 @@ class FamilyTreeScreen extends ConsumerStatefulWidget {
 class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   int _selectedTab = 0; // 0: Tree, 1: Reminders, 2: Features
   late PageController _pageController;
+  final TransformationController _transformationController = TransformationController();
 
   // Editor State
   bool _isEditMode = false;
@@ -46,6 +48,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _transformationController.dispose();
     super.dispose();
   }
 
@@ -437,7 +440,10 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                       );
                     }
 
-                    final calculatedPositions = _getCalculatedPositions(members, canvasWidth, canvasHeight);
+                    final virtualWidth = max(canvasWidth, 1400.0);
+                    final virtualHeight = max(canvasHeight, 1200.0);
+
+                    final calculatedPositions = _getCalculatedPositions(members, virtualWidth, virtualHeight);
                     for (final m in members) {
                       if (_draggingMemberId != m.id) {
                         if (m.positionX != null && m.positionY != null) {
@@ -450,200 +456,214 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                     final positions = _localPositions;
 
-                    return Stack(
-                      children: [
-                        // Background Tree Silhouette Painter
-                        CustomPaint(
-                          size: Size(canvasWidth, canvasHeight),
-                          painter: TreeBackgroundPainter(),
-                        ),
+                    return InteractiveViewer(
+                      transformationController: _transformationController,
+                      boundaryMargin: const EdgeInsets.all(400),
+                      minScale: 0.4,
+                      maxScale: 2.5,
+                      panEnabled: _draggingMemberId == null,
+                      scaleEnabled: _draggingMemberId == null,
+                      constrained: false,
+                      child: SizedBox(
+                        width: virtualWidth,
+                        height: virtualHeight,
+                        child: Stack(
+                          children: [
+                            // Background Tree Silhouette Painter
+                            CustomPaint(
+                              size: Size(virtualWidth, virtualHeight),
+                              painter: TreeBackgroundPainter(),
+                            ),
 
-                        // Curved Connection Lines Painter
-                        CustomPaint(
-                          size: Size(canvasWidth, canvasHeight),
-                          painter: TreeConnectorPainter(members: members, positions: positions),
-                        ),
+                            // Curved Connection Lines Painter
+                            CustomPaint(
+                              size: Size(virtualWidth, virtualHeight),
+                              painter: TreeConnectorPainter(members: members, positions: positions),
+                            ),
 
-                        // Interactive Draggable Node Cards
-                        ...members.map((m) {
-                          final pos = positions[m.id] ?? calculatedPositions[m.id] ?? const Offset(100, 100);
-                          final isSelected = _selectedMemberId == m.id;
-                          final isDragging = _draggingMemberId == m.id;
+                            // Interactive Draggable Node Cards
+                            ...members.map((m) {
+                              final pos = positions[m.id] ?? calculatedPositions[m.id] ?? const Offset(100, 100);
+                              final isSelected = _selectedMemberId == m.id;
+                              final isDragging = _draggingMemberId == m.id;
 
-                          return AnimatedPositioned(
-                            duration: isDragging ? Duration.zero : const Duration(milliseconds: 180),
-                            curve: Curves.easeOutQuad,
-                            left: pos.dx,
-                            top: pos.dy,
-                            child: GestureDetector(
-                              onTap: () {
-                                if (_connectingSourceId != null) {
-                                  if (_connectingSourceId != m.id) {
-                                    _connectMembers(_connectingSourceId!, m.id);
-                                  }
-                                  setState(() => _connectingSourceId = null);
-                                  return;
-                                }
+                              return AnimatedPositioned(
+                                duration: isDragging ? Duration.zero : const Duration(milliseconds: 180),
+                                curve: Curves.easeOutQuad,
+                                left: pos.dx,
+                                top: pos.dy,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (_connectingSourceId != null) {
+                                      if (_connectingSourceId != m.id) {
+                                        _connectMembers(_connectingSourceId!, m.id);
+                                      }
+                                      setState(() => _connectingSourceId = null);
+                                      return;
+                                    }
 
-                                if (_isEditMode) {
-                                  setState(() => _selectedMemberId = m.id);
-                                } else {
-                                  context.push('/patient/family/family-member/${m.id}');
-                                }
-                              },
-                              onPanStart: (_) => setState(() {
-                                _draggingMemberId = m.id;
-                                _selectedMemberId = m.id;
-                                _localPositions[m.id] = pos;
-                              }),
-                              onPanUpdate: (details) {
-                                final currentPos = _localPositions[m.id] ?? pos;
-                                final newX = (currentPos.dx + details.delta.dx).clamp(0.0, canvasWidth - 125.0);
-                                final newY = (currentPos.dy + details.delta.dy).clamp(0.0, canvasHeight - 75.0);
-                                setState(() {
-                                  _localPositions[m.id] = Offset(newX, newY);
-                                });
-                              },
-                              onPanEnd: (_) {
-                                final finalPos = _localPositions[m.id];
-                                setState(() => _draggingMemberId = null);
-                                if (finalPos != null) {
-                                  final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
-                                  ref.read(familyMembersProvider.notifier).updateMember(updated);
-                                }
-                              },
-                              child: AnimatedScale(
-                                scale: isSelected ? 1.04 : 1.0,
-                                duration: const Duration(milliseconds: 150),
-                                curve: Curves.easeOut,
-                                child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Contextual Toolbar above selected node in Edit Mode
-                                  if (_isEditMode && isSelected)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      margin: const EdgeInsets.only(bottom: 6),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.navy,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.15),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          InkWell(
-                                            onTap: () => _showEditMemberSheet(context, m, isDark),
-                                            child: const Padding(
-                                              padding: EdgeInsets.all(4),
-                                              child: Icon(LucideIcons.edit2, color: Colors.white, size: 14),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          InkWell(
-                                            onTap: () => setState(() => _connectingSourceId = m.id),
-                                            child: const Padding(
-                                              padding: EdgeInsets.all(4),
-                                              child: Icon(LucideIcons.link, color: AppColors.accentCyan, size: 14),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          InkWell(
-                                            onTap: () => ref.read(familyMembersProvider.notifier).deleteMember(m.id),
-                                            child: const Padding(
-                                              padding: EdgeInsets.all(4),
-                                              child: Icon(LucideIcons.trash2, color: AppColors.danger, size: 14),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                  // Node Container Card
-                                  Container(
-                                    width: 125,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: isDark
-                                          ? (m.relationship == 'Self'
-                                              ? const Color(0xFF1E3A8A).withValues(alpha: 0.5)
-                                              : const Color(0xFF1E293B))
-                                          : (m.relationship == 'Self'
-                                              ? AppColors.surfaceBlue
-                                              : Colors.white),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? AppColors.primaryBlue
-                                            : (m.relationship == 'Self'
-                                                ? AppColors.primaryBlue
-                                                : (isDark
-                                                    ? Colors.white.withValues(alpha: 0.1)
-                                                    : AppColors.border.withValues(alpha: 0.8))),
-                                        width: isSelected ? 2.5 : 1,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: isSelected
-                                              ? AppColors.primaryBlue.withValues(alpha: 0.25)
-                                              : const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
-                                          blurRadius: isSelected ? 12 : 8,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
+                                    if (_isEditMode) {
+                                      setState(() => _selectedMemberId = m.id);
+                                    } else {
+                                      context.push('/patient/family/family-member/${m.id}');
+                                    }
+                                  },
+                                  onPanStart: (_) => setState(() {
+                                    _draggingMemberId = m.id;
+                                    _selectedMemberId = m.id;
+                                    _localPositions[m.id] = pos;
+                                  }),
+                                  onPanUpdate: (details) {
+                                    final currentPos = _localPositions[m.id] ?? pos;
+                                    final scale = _transformationController.value.getMaxScaleOnAxis();
+                                    final effectiveScale = scale > 0 ? scale : 1.0;
+                                    final newX = (currentPos.dx + details.delta.dx / effectiveScale).clamp(0.0, virtualWidth - 125.0);
+                                    final newY = (currentPos.dy + details.delta.dy / effectiveScale).clamp(0.0, virtualHeight - 75.0);
+                                    setState(() {
+                                      _localPositions[m.id] = Offset(newX, newY);
+                                    });
+                                  },
+                                  onPanEnd: (_) {
+                                    final finalPos = _localPositions[m.id];
+                                    setState(() => _draggingMemberId = null);
+                                    if (finalPos != null) {
+                                      final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
+                                      ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                    }
+                                  },
+                                  child: AnimatedScale(
+                                    scale: isSelected ? 1.04 : 1.0,
+                                    duration: const Duration(milliseconds: 150),
+                                    curve: Curves.easeOut,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        CircleAvatar(
-                                          radius: 16,
-                                          backgroundColor: isDark
-                                              ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
-                                              : AppColors.softBlue,
-                                          backgroundImage: (m.avatarUrl != null && m.avatarUrl!.isNotEmpty)
-                                              ? NetworkImage(m.avatarUrl!)
-                                              : null,
-                                          child: (m.avatarUrl == null || m.avatarUrl!.isEmpty)
-                                              ? Text(
-                                                  m.name.isNotEmpty ? m.name[0] : '?',
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: AppColors.primaryBlue,
-                                                    fontSize: 12,
+                                        // Contextual Toolbar above selected node in Edit Mode
+                                        if (_isEditMode && isSelected)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            margin: const EdgeInsets.only(bottom: 6),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.navy,
+                                              borderRadius: BorderRadius.circular(16),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(alpha: 0.15),
+                                                  blurRadius: 8,
+                                                  offset: const Offset(0, 4),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                InkWell(
+                                                  onTap: () => _showEditMemberSheet(context, m, isDark),
+                                                  child: const Padding(
+                                                    padding: EdgeInsets.all(4),
+                                                    child: Icon(LucideIcons.edit2, color: Colors.white, size: 14),
                                                   ),
-                                                )
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                m.name,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 11,
-                                                  color: m.relationship == 'Self'
-                                                      ? AppColors.primaryBlue
-                                                      : (isDark ? Colors.white : AppColors.navy),
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                                const SizedBox(width: 6),
+                                                InkWell(
+                                                  onTap: () => setState(() => _connectingSourceId = m.id),
+                                                  child: Padding(
+                                                    padding: const EdgeInsets.all(4),
+                                                    child: Icon(
+                                                      LucideIcons.link,
+                                                      color: _connectingSourceId == m.id ? AppColors.accentCyan : Colors.white,
+                                                      size: 14,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                InkWell(
+                                                  onTap: () => ref.read(familyMembersProvider.notifier).deleteMember(m.id),
+                                                  child: const Padding(
+                                                    padding: EdgeInsets.all(4),
+                                                    child: Icon(LucideIcons.trash2, color: AppColors.danger, size: 14),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                        // Node Body Card
+                                        Container(
+                                          width: 120,
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? AppColors.primaryBlue
+                                                  : (m.relationship == 'Self'
+                                                      ? AppColors.primaryBlue.withValues(alpha: 0.5)
+                                                      : (isDark
+                                                          ? Colors.white.withValues(alpha: 0.1)
+                                                          : AppColors.border)),
+                                              width: isSelected ? 2 : 1.2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: isSelected
+                                                    ? AppColors.primaryBlue.withValues(alpha: 0.25)
+                                                    : const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
+                                                blurRadius: isSelected ? 12 : 8,
+                                                offset: const Offset(0, 3),
                                               ),
-                                              Text(
-                                                m.relationship,
-                                                style: TextStyle(
-                                                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                                                  fontSize: 9,
+                                            ],
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 16,
+                                                backgroundColor: isDark
+                                                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
+                                                    : AppColors.softBlue,
+                                                backgroundImage: (m.avatarUrl != null && m.avatarUrl!.isNotEmpty)
+                                                    ? NetworkImage(m.avatarUrl!)
+                                                    : null,
+                                                child: (m.avatarUrl == null || m.avatarUrl!.isEmpty)
+                                                    ? Text(
+                                                        m.name.isNotEmpty ? m.name[0] : '?',
+                                                        style: const TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          color: AppColors.primaryBlue,
+                                                          fontSize: 12,
+                                                        ),
+                                                      )
+                                                    : null,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      m.name,
+                                                      style: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 11,
+                                                        color: m.relationship == 'Self'
+                                                            ? AppColors.primaryBlue
+                                                            : (isDark ? Colors.white : AppColors.navy),
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    Text(
+                                                      m.relationship,
+                                                      style: TextStyle(
+                                                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                                        fontSize: 9,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ],
                                           ),
@@ -651,13 +671,12 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                       ],
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                      ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
