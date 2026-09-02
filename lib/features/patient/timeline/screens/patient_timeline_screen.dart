@@ -55,6 +55,13 @@ class PatientTimelineScreen extends ConsumerStatefulWidget {
 
 class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
   TimelineFilter _selectedFilter = TimelineFilter.all;
+  DateTime _selectedDate = DateTime.now();
+  DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  bool _isCalendarExpanded = false;
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,12 +88,15 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
         child: Column(
           children: [
             _buildHeader(context, unreadCount, isDark),
+            _buildCalendarSection(appointments, isDark),
+            const SizedBox(height: 10),
             _buildFilterChips(isDark),
+            const SizedBox(height: 8),
             Expanded(
               child: filteredEvents.isEmpty
                   ? _buildEmptyState(isDark)
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                       itemCount: filteredEvents.length,
                       itemBuilder: (context, index) {
                         final event = filteredEvents[index];
@@ -98,6 +108,176 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
                       },
                     ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCalendarSection(List<AppointmentModel> appointments, bool isDark) {
+    final now = DateTime.now();
+    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final firstWeekday = (DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday) % 7;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: AppCard(
+        padding: const EdgeInsets.all(14),
+        borderRadius: 20,
+        elevation: 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(LucideIcons.calendar, size: 16, color: AppColors.primaryBlue),
+                    const SizedBox(width: 8),
+                    Text(
+                      DateFormat('MMMM yyyy').format(_focusedMonth),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      icon: Icon(LucideIcons.chevronLeft, size: 18, color: isDark ? Colors.white70 : AppColors.navy),
+                      onPressed: () {
+                        setState(() {
+                          _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+                        });
+                      },
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      icon: Icon(LucideIcons.chevronRight, size: 18, color: isDark ? Colors.white70 : AppColors.navy),
+                      onPressed: () {
+                        setState(() {
+                          _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+                        });
+                      },
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        _isCalendarExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                        size: 18,
+                        color: AppColors.primaryBlue,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isCalendarExpanded = !_isCalendarExpanded;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (_isCalendarExpanded) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: const ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) {
+                  return Text(
+                    d,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.muted),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 6),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: firstWeekday + daysInMonth,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  mainAxisSpacing: 4,
+                  crossAxisSpacing: 4,
+                  childAspectRatio: 1.2,
+                ),
+                itemBuilder: (context, index) {
+                  if (index < firstWeekday) return const SizedBox.shrink();
+                  final dayNum = index - firstWeekday + 1;
+                  final dayDate = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
+
+                  final isSelected = _isSameDay(dayDate, _selectedDate);
+                  final isToday = _isSameDay(dayDate, now);
+                  final dayAppts = appointments.where((a) => _isSameDay(a.dateTime, dayDate)).toList();
+
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedDate = dayDate),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primaryBlue
+                            : (isToday
+                                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.4) : AppColors.softBlue)
+                                : Colors.transparent),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '$dayNum',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: (isSelected || isToday) ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected
+                                  ? Colors.white
+                                  : (isToday
+                                      ? AppColors.primaryBlue
+                                      : (isDark ? Colors.white : AppColors.navy)),
+                            ),
+                          ),
+                          if (dayAppts.isNotEmpty)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: dayAppts.take(3).map((a) {
+                                Color dotColor = AppColors.success;
+                                if (a.status == AppointmentStatus.pending || a.status == AppointmentStatus.requested) {
+                                  dotColor = AppColors.warning;
+                                } else if (a.status == AppointmentStatus.cancelled || a.status == AppointmentStatus.rejected) {
+                                  dotColor = AppColors.danger;
+                                }
+                                return Container(
+                                  width: 3.5,
+                                  height: 3.5,
+                                  margin: const EdgeInsets.symmetric(horizontal: 0.8),
+                                  decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                                );
+                              }).toList(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  _CalendarLegendDot(color: AppColors.success, label: 'Approved'),
+                  SizedBox(width: 12),
+                  _CalendarLegendDot(color: AppColors.warning, label: 'Pending'),
+                  SizedBox(width: 12),
+                  _CalendarLegendDot(color: AppColors.danger, label: 'Cancelled'),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -524,6 +704,32 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CalendarLegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _CalendarLegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AppColors.muted, fontWeight: FontWeight.bold),
+        ),
+      ],
     );
   }
 }

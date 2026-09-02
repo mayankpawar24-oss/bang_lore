@@ -32,20 +32,20 @@ class FirebaseAuthRepository implements AuthRepository {
         _userCache.clear();
         return null;
       }
-      dev.log('[AUTH STREAM] User signed in:  ()', name: 'FirebaseAuthRepository');
+      dev.log('[AUTH STREAM] User signed in: ${user.email} (${user.uid})', name: 'FirebaseAuthRepository');
       return _loadUserModel(user.uid);
     });
   }
 
   @override
   Future<UserModel> login(String email, String password) async {
-    dev.log('[AUTH LOGIN] Attempting login for ', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH LOGIN] Attempting login for $email', name: 'FirebaseAuthRepository');
     final credential = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
     );
     final uid = credential.user!.uid;
-    dev.log('[AUTH LOGIN] Firebase Auth success: ', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH LOGIN] Firebase Auth success: $uid', name: 'FirebaseAuthRepository');
     return _loadUserModel(uid);
   }
 
@@ -168,11 +168,11 @@ class FirebaseAuthRepository implements AuthRepository {
 
   Future<UserModel> _loadUserModel(String uid) async {
     if (_userCache.containsKey(uid)) {
-      dev.log('[AUTH LOAD] Returning cached user model for  (role: )', name: 'FirebaseAuthRepository');
+      dev.log('[AUTH LOAD] Returning cached user model for $uid (role: ${_userCache[uid]?.role.name})', name: 'FirebaseAuthRepository');
       return _userCache[uid]!;
     }
 
-    dev.log('[AUTH LOAD] Fetching users/ from Firestore', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH LOAD] Fetching users/$uid from Firestore', name: 'FirebaseAuthRepository');
     final docRef = _db.collection('users').doc(uid);
     DocumentSnapshot doc = await docRef.get();
 
@@ -180,13 +180,13 @@ class FirebaseAuthRepository implements AuthRepository {
     int retries = 0;
     while (!doc.exists && retries < 3) {
       retries++;
-      dev.log('[AUTH LOAD] users/ not found, retrying (/3)...', name: 'FirebaseAuthRepository');
+      dev.log('[AUTH LOAD] users/$uid not found, retrying ($retries/3)...', name: 'FirebaseAuthRepository');
       await Future.delayed(const Duration(milliseconds: 250));
       doc = await docRef.get();
     }
 
     if (!doc.exists) {
-      dev.log('[AUTH LOAD] users/ doc does not exist, creating default patient profile', name: 'FirebaseAuthRepository');
+      dev.log('[AUTH LOAD] users/$uid doc does not exist, creating default patient profile', name: 'FirebaseAuthRepository');
       final authUser = _auth.currentUser;
       if (authUser != null) {
         final email = authUser.email ?? '';
@@ -220,19 +220,19 @@ class FirebaseAuthRepository implements AuthRepository {
     }
 
     if (!doc.exists || doc.data() == null) {
-      dev.log('[AUTH ERROR] Document users/ could not be loaded', name: 'FirebaseAuthRepository');
-      throw Exception('User record users/ does not exist in Firestore.');
+      dev.log('[AUTH ERROR] Document users/$uid could not be loaded', name: 'FirebaseAuthRepository');
+      throw Exception('User record users/$uid does not exist in Firestore.');
     }
 
     final data = doc.data() as Map<String, dynamic>;
     if (!data.containsKey('role') || data['role'] == null) {
-      dev.log('[AUTH ERROR] Document users/ missing role field', name: 'FirebaseAuthRepository');
-      throw Exception('User profile users/ is missing role assignment.');
+      dev.log('[AUTH ERROR] Document users/$uid missing role field', name: 'FirebaseAuthRepository');
+      throw Exception('User profile users/$uid is missing role assignment.');
     }
 
     final userModel = UserModel.fromFirestore(doc);
     _userCache[uid] = userModel;
-    dev.log('[AUTH LOAD] Successfully loaded users/ with role=', name: 'FirebaseAuthRepository');
+    dev.log('[AUTH LOAD] Successfully loaded users/$uid with role=${userModel.role.name}', name: 'FirebaseAuthRepository');
     return userModel;
   }
 }

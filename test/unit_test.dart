@@ -4,6 +4,10 @@ import 'package:continuum_health/data/models/patient_model.dart';
 import 'package:continuum_health/data/models/doctor_model.dart';
 import 'package:continuum_health/data/models/permission_request_model.dart';
 import 'package:continuum_health/data/models/family_member_model.dart';
+import 'package:continuum_health/data/models/report_model.dart';
+import 'package:continuum_health/data/models/appointment_model.dart';
+import 'package:continuum_health/data/models/vital_model.dart';
+import 'package:continuum_health/data/models/reminder_model.dart';
 
 void main() {
   group('UserModel & Registration Schema Tests', () {
@@ -163,6 +167,114 @@ void main() {
       expect(fromJson.positionX, 100.0);
       expect(fromJson.careTasks.length, 1);
       expect(fromJson.knownConditions.first, 'Hypertension');
+    });
+  });
+
+  group('ReportModel & Health Document Ingestion Tests', () {
+    test('report category serialization and metadata validation', () {
+      final now = DateTime.now();
+      final report = ReportModel(
+        id: 'rep_001',
+        patientId: 'pat_001',
+        title: 'Comprehensive Metabolic Panel',
+        category: ReportCategory.lab,
+        date: now,
+        doctorOrFacility: 'City Lab Diagnostics',
+        summary: 'Blood glucose normal, potassium optimal.',
+        sharedWithDoctor: true,
+        extractedData: {'fastingGlucose': 92, 'hba1c': 5.4},
+      );
+
+      final json = report.toJson();
+      expect(json['category'], 'lab');
+      expect(json['title'], 'Comprehensive Metabolic Panel');
+      expect(json['sharedWithDoctor'], true);
+
+      final parsed = ReportModel.fromJson(json);
+      expect(parsed.category, ReportCategory.lab);
+      expect(parsed.extractedData?['fastingGlucose'], 92);
+    });
+
+    test('discharge and prescription reports category mapping', () {
+      final discharge = ReportModel(
+        id: 'rep_002',
+        patientId: 'pat_001',
+        title: 'Inpatient Discharge Summary',
+        category: ReportCategory.discharge,
+        date: DateTime.now(),
+        followUpInstructions: 'Follow-up with cardiologist in 7 days.',
+      );
+
+      expect(discharge.category, ReportCategory.discharge);
+      expect(discharge.followUpInstructions, contains('cardiologist'));
+    });
+  });
+
+  group('Appointment Lifecycle & Status State Machine Tests', () {
+    test('appointment initial requested/pending status and transitions', () {
+      final now = DateTime.now().add(const Duration(days: 2));
+      final appt = Appointment(
+        id: 'appt_001',
+        patientId: 'pat_001',
+        patientName: 'Margaret Chen',
+        doctorId: 'doc_001',
+        doctorName: 'Dr. Aisha Patel',
+        specialty: 'Cardiology',
+        dateTime: now,
+        durationMinutes: 30,
+        status: AppointmentStatus.requested,
+      );
+
+      expect(appt.status, AppointmentStatus.requested);
+
+      // Doctor Approves
+      final approved = appt.copyWith(status: AppointmentStatus.approved);
+      expect(approved.status, AppointmentStatus.approved);
+
+      // Consultation Completed
+      final completed = approved.copyWith(status: AppointmentStatus.completed);
+      expect(completed.status, AppointmentStatus.completed);
+
+      // Or Cancelled
+      final cancelled = appt.copyWith(status: AppointmentStatus.cancelled);
+      expect(cancelled.status, AppointmentStatus.cancelled);
+    });
+  });
+
+  group('Vital & Reminder Telemetry Tests', () {
+    test('vital telemetry values serialization', () {
+      final vital = Vital(
+        id: 'v_001',
+        patientId: 'pat_001',
+        heartRate: 72,
+        systolic: 120,
+        diastolic: 80,
+        spo2: 98,
+        weight: 68.5,
+        recordedAt: DateTime.now(),
+      );
+
+      final json = vital.toJson();
+      expect(json['heartRate'], 72);
+      expect(json['systolic'], 120);
+      expect(json['diastolic'], 80);
+      expect(json['spo2'], 98);
+      expect(json['weight'], 68.5);
+    });
+
+    test('reminder completion toggle', () {
+      final reminder = Reminder(
+        id: 'rem_001',
+        patientId: 'pat_001',
+        title: 'Take Metformin 500mg',
+        type: ReminderType.medicine,
+        dateTime: DateTime.now(),
+        isCompleted: false,
+      );
+
+      expect(reminder.isCompleted, false);
+      final completed = reminder.copyWith(isCompleted: true);
+      expect(completed.isCompleted, true);
     });
   });
 }

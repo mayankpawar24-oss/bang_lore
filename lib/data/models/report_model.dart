@@ -126,4 +126,45 @@ class ReportModel {
       'createdAt': FieldValue.serverTimestamp(),
     };
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'patientId': patientId,
+      'title': title,
+      'category': category.name,
+      'date': date.toIso8601String(),
+      'doctorOrFacility': doctorOrFacility,
+      'summary': summary,
+      'rawContent': rawContent,
+      'extractedData': extractedData,
+      'followUpDate': followUpDate?.toIso8601String(),
+      'followUpInstructions': followUpInstructions,
+      'sharedWithDoctor': sharedWithDoctor,
+    };
+  }
+
+  factory ReportModel.fromJson(Map<String, dynamic> json) {
+    return ReportModel(
+      id: json['id'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? '',
+      title: json['title'] as String? ?? 'Medical Document',
+      category: ReportCategory.values.firstWhere(
+        (e) => e.name == (json['category'] as String? ?? 'other'),
+        orElse: () => ReportCategory.other,
+      ),
+      date: json['date'] != null
+          ? DateTime.tryParse(json['date'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      doctorOrFacility: json['doctorOrFacility'] as String?,
+      summary: json['summary'] as String?,
+      rawContent: json['rawContent'] as String?,
+      extractedData: json['extractedData'] as Map<String, dynamic>?,
+      followUpDate: json['followUpDate'] != null
+          ? DateTime.tryParse(json['followUpDate'] as String)
+          : null,
+      followUpInstructions: json['followUpInstructions'] as String?,
+      sharedWithDoctor: json['sharedWithDoctor'] as bool? ?? true,
+    );
+  }
 }
