@@ -57,22 +57,22 @@ class PatientShellScreen extends StatelessWidget {
               NavigationDestination(
                 icon: Icon(LucideIcons.home, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
                 selectedIcon: const Icon(LucideIcons.home, color: AppColors.primaryBlue),
-                label: 'Dashboard',
-              ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.calendar, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.calendar, color: AppColors.primaryBlue),
-                label: 'Calendar',
-              ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.bot, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.bot, color: AppColors.primaryBlue),
-                label: 'AI Assistant',
+                label: 'Home',
               ),
               NavigationDestination(
                 icon: Icon(LucideIcons.users, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
                 selectedIcon: const Icon(LucideIcons.users, color: AppColors.primaryBlue),
                 label: 'Family',
+              ),
+              NavigationDestination(
+                icon: Icon(LucideIcons.sparkles, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.sparkles, color: AppColors.primaryBlue),
+                label: 'AI Care',
+              ),
+              NavigationDestination(
+                icon: Icon(LucideIcons.clock, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                selectedIcon: const Icon(LucideIcons.clock, color: AppColors.primaryBlue),
+                label: 'Timeline',
               ),
               NavigationDestination(
                 icon: Icon(LucideIcons.user, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),

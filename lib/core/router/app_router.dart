@@ -16,6 +16,7 @@ import '../../features/patient/dashboard/screens/doctor_search_screen.dart';
 import '../../features/patient/dashboard/screens/doctor_detail_screen.dart';
 import '../../features/patient/schedule/screens/book_appointment_screen.dart';
 import '../../features/patient/ai/screens/ai_chat_screen.dart';
+import '../../features/patient/timeline/screens/patient_timeline_screen.dart';
 import '../../features/patient/patient_shell.dart';
 import '../../features/doctor/doctor_shell.dart';
 import '../../features/doctor/dashboard/screens/doctor_dashboard_screen.dart';
@@ -101,6 +102,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return PatientShellScreen(navigationShell: navigationShell);
         },
         branches: [
+          // Branch 0: HOME
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -116,37 +118,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) =>
                         DoctorDetailScreen(doctorId: state.pathParameters['id']!),
                   ),
-                  GoRoute(
-                    path: 'ai-chat',
-                    builder: (context, state) => const AIChatScreen(),
-                  ),
                 ],
               ),
             ],
           ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/patient/schedule',
-                builder: (context, state) => const PatientScheduleScreen(),
-                routes: [
-                  GoRoute(
-                    path: 'book/:doctorId',
-                    builder: (context, state) => BookAppointmentScreen(
-                        doctorId: state.pathParameters['doctorId']!),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/patient/ai-chat',
-                builder: (context, state) => const AIChatScreen(),
-              ),
-            ],
-          ),
+
+          // Branch 1: FAMILY
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -162,6 +139,54 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+
+          // Branch 2: AI CARE
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/patient/ai-care',
+                builder: (context, state) => const AIChatScreen(),
+              ),
+              GoRoute(
+                path: '/patient/ai-chat',
+                builder: (context, state) => const AIChatScreen(),
+              ),
+            ],
+          ),
+
+          // Branch 3: TIMELINE
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/patient/timeline',
+                builder: (context, state) => const PatientTimelineScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'schedule',
+                    builder: (context, state) => const PatientScheduleScreen(),
+                  ),
+                  GoRoute(
+                    path: 'book/:doctorId',
+                    builder: (context, state) => BookAppointmentScreen(
+                        doctorId: state.pathParameters['doctorId']!),
+                  ),
+                ],
+              ),
+              GoRoute(
+                path: '/patient/schedule',
+                builder: (context, state) => const PatientScheduleScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'book/:doctorId',
+                    builder: (context, state) => BookAppointmentScreen(
+                        doctorId: state.pathParameters['doctorId']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // Branch 4: PROFILE
           StatefulShellBranch(
             routes: [
               GoRoute(

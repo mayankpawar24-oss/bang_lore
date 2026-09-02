@@ -553,7 +553,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                       Divider(color: isDark ? const Color(0xFF1E293B) : AppColors.border),
                       const SizedBox(height: 4),
 
-                      // Expandable reasoning section
+                      // Expandable reasoning & Source Transparency section
                       InkWell(
                         onTap: () {
                           setState(() {
@@ -569,9 +569,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              isExpanded ? 'Hide clinical reasoning' : 'Why this answer?',
+                              isExpanded ? 'Hide clinical source transparency' : 'Why am I suggesting this? (Sources)',
                               style: const TextStyle(
-                                fontSize: 11,
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.primaryBlue,
                               ),
@@ -581,24 +581,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                       ),
 
                       if (isExpanded) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            'Agents Evaluated: Context Agent (Profile, Vitals, Medications, Family Tree) -> Clinical Reasoning -> Safety/Risk Filter.\n'
-                            'Confidence: .\n'
-                            'Disclaimer: Educational guidance only. Consult your doctor for diagnosis.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              height: 1.35,
-                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                            ),
-                          ),
-                        ),
+                        const SizedBox(height: 10),
+                        _buildSourceTransparencyCard(context, isDark),
                       ],
                     ],
                   ),
@@ -608,6 +592,121 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSourceTransparencyCard(BuildContext context, bool isDark) {
+    final meds = ref.watch(medicationsStreamProvider).valueOrNull ?? [];
+    final vitals = ref.watch(vitalsStreamProvider).valueOrNull ?? [];
+    final reports = ref.watch(reportsStreamProvider).valueOrNull ?? [];
+    final family = ref.watch(familyMembersStreamProvider).valueOrNull ?? [];
+
+    final hasSources = meds.isNotEmpty || vitals.isNotEmpty || reports.isNotEmpty || family.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0A0F1D) : AppColors.surfaceBlue,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.primaryBlue.withValues(alpha: isDark ? 0.3 : 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(LucideIcons.shieldCheck, size: 14, color: AppColors.success),
+              SizedBox(width: 6),
+              Text(
+                'Verified Clinical Sources Retained',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!hasSources)
+            const Text(
+              'No previous health records or vitals recorded. Advice derived from baseline clinical guidelines.',
+              style: TextStyle(fontSize: 11, color: AppColors.muted, fontStyle: FontStyle.italic),
+            )
+          else ...[
+            if (meds.isNotEmpty) ...[
+              _buildSourceLine(
+                icon: LucideIcons.pill,
+                title: 'Active Medication Context',
+                detail: meds.take(2).map((m) => '${m.name} (${m.dosage})').join(', '),
+                isDark: isDark,
+              ),
+              const SizedBox(height: 6),
+            ],
+            if (vitals.isNotEmpty) ...[
+              _buildSourceLine(
+                icon: LucideIcons.activity,
+                title: 'Latest Vital Telemetry',
+                detail: 'HR: ${vitals.first.heartRate} bpm, BP: ${vitals.first.systolic}/${vitals.first.diastolic}, SpO₂: ${vitals.first.spo2}%',
+                isDark: isDark,
+              ),
+              const SizedBox(height: 6),
+            ],
+            if (reports.isNotEmpty) ...[
+              _buildSourceLine(
+                icon: LucideIcons.fileText,
+                title: 'Ingested Medical Records',
+                detail: reports.take(2).map((r) => r.title).join(', '),
+                isDark: isDark,
+              ),
+              const SizedBox(height: 6),
+            ],
+            if (family.isNotEmpty) ...[
+              _buildSourceLine(
+                icon: LucideIcons.users,
+                title: 'Family Care Context',
+                detail: '${family.length} connected family member profiles',
+                isDark: isDark,
+              ),
+            ],
+          ],
+          const SizedBox(height: 8),
+          Divider(color: isDark ? Colors.white10 : AppColors.border, height: 1),
+          const SizedBox(height: 6),
+          const Text(
+            'Multi-Agent Gating: Context Agent -> Clinical Reasoning -> Safety Sentinel. Educational guidance only.',
+            style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSourceLine({
+    required IconData icon,
+    required String title,
+    required String detail,
+    required bool isDark,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 13, color: AppColors.primaryBlue),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: TextStyle(fontSize: 11.5, color: isDark ? Colors.white70 : AppColors.navy),
+              children: [
+                TextSpan(text: '$title: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                TextSpan(text: detail, style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

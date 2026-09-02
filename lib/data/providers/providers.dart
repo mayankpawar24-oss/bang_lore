@@ -15,6 +15,7 @@ import '../models/notification_model.dart';
 import '../models/permission_request_model.dart';
 import '../models/vital_model.dart';
 import '../models/ai_chat_model.dart';
+import '../models/report_model.dart';
 
 import '../repositories/auth_repository.dart';
 import '../repositories/doctor_repository.dart';
@@ -28,6 +29,7 @@ import '../repositories/permission_repository.dart';
 import '../repositories/ai_chat_repository.dart';
 import '../repositories/notification_repository.dart';
 import '../repositories/ai_repository.dart';
+import '../repositories/report_repository.dart';
 import '../services/multi_agent_service.dart';
 import '../services/backend_service.dart';
 
@@ -98,6 +100,10 @@ final aiChatRepositoryProvider = Provider<FirebaseAIChatRepository>((ref) {
 
 final notificationRepositoryProvider = Provider<FirebaseNotificationRepository>((ref) {
   return FirebaseNotificationRepository();
+});
+
+final reportRepositoryProvider = Provider<ReportRepository>((ref) {
+  return FirebaseReportRepository();
 });
 
 final backendServiceProvider = Provider<BackendService>((ref) {
@@ -401,6 +407,13 @@ final patientVitalsStreamProvider = StreamProvider.family<List<Vital>, String>((
 /// Stream of a specific patient's medications
 final patientMedicationsStreamProvider = StreamProvider.family<List<Medication>, String>((ref, patientId) {
   return ref.read(medicationRepositoryProvider).medicationsStream(patientId);
+});
+
+/// Stream of current patient's uploaded health reports & documents
+final reportsStreamProvider = StreamProvider<List<ReportModel>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) return Stream.value([]);
+  return ref.read(reportRepositoryProvider).reportsStream(uid);
 });
 
 // ════════════════════════════════════════════
@@ -747,7 +760,7 @@ class ChatMessagesNotifier extends StateNotifier<List<AIChatMessage>> {
     if (uid == null) return;
 
     final userMsg = AIChatMessage(
-      id: 'local_',
+      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
       chatId: chatId ?? _currentChatId ?? '',
       sender: AIChatSender.user,
       content: content,
@@ -768,7 +781,7 @@ class ChatMessagesNotifier extends StateNotifier<List<AIChatMessage>> {
       }
 
       final aiMsg = AIChatMessage(
-        id: 'ai_',
+        id: 'ai_${DateTime.now().millisecondsSinceEpoch}',
         chatId: _currentChatId ?? '',
         sender: AIChatSender.assistant,
         content: response.answer,
@@ -783,7 +796,7 @@ class ChatMessagesNotifier extends StateNotifier<List<AIChatMessage>> {
     } catch (e) {
       // Fallback to mock if backend is unavailable
       final fallbackMsg = AIChatMessage(
-        id: 'fallback_',
+        id: 'fallback_${DateTime.now().millisecondsSinceEpoch}',
         chatId: _currentChatId ?? '',
         sender: AIChatSender.assistant,
         content: _fallbackResponse(content),

@@ -85,7 +85,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             Expanded(
               child: PageView(
                 controller: _pageController,
-                physics: _isEditMode
+                physics: (_isEditMode || _draggingMemberId != null || _selectedTab == 0)
                     ? const NeverScrollableScrollPhysics()
                     : const BouncingScrollPhysics(),
                 onPageChanged: (index) {
@@ -1001,8 +1001,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   // ==========================================
 
   void _showAddMemberSheet(BuildContext context, bool isDark) {
+    int linkMethod = 0; // 0: ABHA ID, 1: Phone, 2: QR Code, 3: Custom
+    final abhaCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
-    final relCtrl = TextEditingController();
+    final relCtrl = TextEditingController(text: 'Family Member');
     int gen = 1;
 
     showModalBottomSheet(
@@ -1025,33 +1028,109 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+              ),
+              const SizedBox(height: 16),
               Text(
-                'Add Family Member',
+                'Connect Family Member',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: isDark ? Colors.white : AppColors.navy,
                 ),
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Name', hintText: 'e.g. Sarah Chen'),
+              const SizedBox(height: 4),
+              Text(
+                'Link accounts securely using verified digital healthcare identity.',
+                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12),
               ),
+              const SizedBox(height: 16),
+
+              // 3 Method Selector Tabs
+              Row(
+                children: [
+                  _buildAddOptionChip(label: 'ABHA ID', icon: LucideIcons.creditCard, isSelected: linkMethod == 0, isDark: isDark, onTap: () => setModalState(() => linkMethod = 0)),
+                  const SizedBox(width: 8),
+                  _buildAddOptionChip(label: 'Phone', icon: LucideIcons.phone, isSelected: linkMethod == 1, isDark: isDark, onTap: () => setModalState(() => linkMethod = 1)),
+                  const SizedBox(width: 8),
+                  _buildAddOptionChip(label: 'QR Code', icon: LucideIcons.qrCode, isSelected: linkMethod == 2, isDark: isDark, onTap: () => setModalState(() => linkMethod = 2)),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              if (linkMethod == 0) ...[
+                TextField(
+                  controller: abhaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '14-Digit ABHA ID / Address',
+                    hintText: 'e.g. 91-8472-9182-4412 or user@abdm',
+                    prefixIcon: Icon(LucideIcons.shieldCheck, color: AppColors.primaryBlue),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Name (Optional - auto-resolved)', hintText: 'e.g. Grandma Helen'),
+                ),
+              ] else if (linkMethod == 1) ...[
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Registered Mobile Number',
+                    hintText: '+91 98765 43210',
+                    prefixIcon: Icon(LucideIcons.phoneCall, color: AppColors.primaryBlue),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Contact Name', hintText: 'e.g. Robert Chen'),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : AppColors.surfaceBlue,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.scanLine, color: AppColors.primaryBlue, size: 32),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Scan Health QR Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primaryBlue)),
+                            const SizedBox(height: 2),
+                            Text('Scan another member\'s Continuum Health profile QR to instantly link.', style: TextStyle(color: isDark ? Colors.white70 : AppColors.secondaryText, fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Display Name', hintText: 'e.g. Sarah'),
+                ),
+              ],
+
               const SizedBox(height: 12),
               TextField(
                 controller: relCtrl,
-                decoration: const InputDecoration(labelText: 'Relationship', hintText: 'Parent, Child, Sibling, Partner, Other'),
+                decoration: const InputDecoration(labelText: 'Relationship', hintText: 'Parent, Child, Sibling, Partner, Grandparent'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Text(
                     'Generation: ',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : AppColors.navy,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.navy),
                   ),
                   const SizedBox(width: 8),
                   DropdownButton<int>(
@@ -1070,29 +1149,76 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               PrimaryButton(
-                label: 'Save Member',
+                label: 'Connect & Save Member',
+                icon: LucideIcons.userPlus,
                 onPressed: () {
-                  if (nameCtrl.text.isNotEmpty && relCtrl.text.isNotEmpty) {
-                    final newM = FamilyMemberModel(
-                      id: 'fm_${DateTime.now().millisecondsSinceEpoch}',
-                      name: nameCtrl.text,
-                      relationship: relCtrl.text,
-                      generation: gen,
-                      avatarUrl: 'https://i.pravatar.cc/150?u=${nameCtrl.text}',
-                      knownConditions: [],
-                      familyHistory: [],
-                      careNeeds: 'General Care',
-                      careTasks: [],
-                      hydration: HydrationStatus.done,
-                      walking: WalkingStatus.done,
-                      medication: MedicationStatus.done,
-                    );
-                    ref.read(familyMembersProvider.notifier).addMember(newM);
-                    Navigator.pop(context);
-                  }
+                  final enteredName = nameCtrl.text.trim().isNotEmpty
+                      ? nameCtrl.text.trim()
+                      : (linkMethod == 0 ? 'ABHA Linked Member' : (linkMethod == 1 ? 'Phone Contact' : 'QR Member'));
+                  final enteredRel = relCtrl.text.trim().isNotEmpty ? relCtrl.text.trim() : 'Family';
+
+                  final newM = FamilyMemberModel(
+                    id: const Uuid().v4(),
+                    name: enteredName,
+                    relationship: enteredRel,
+                    generation: gen,
+                    avatarUrl: 'https://i.pravatar.cc/150?u=${enteredName.hashCode}',
+                    knownConditions: [],
+                    familyHistory: [],
+                    careNeeds: 'General Health Monitoring',
+                    careTasks: [],
+                    hydration: HydrationStatus.done,
+                    walking: WalkingStatus.done,
+                    medication: MedicationStatus.done,
+                    positionX: 40.0 + (gen * 120.0),
+                    positionY: 80.0 + (DateTime.now().millisecond % 150),
+                  );
+                  ref.read(familyMembersProvider.notifier).addMember(newM);
+                  Navigator.pop(context);
                 },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddOptionChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primaryBlue
+                : (isDark ? const Color(0xFF1E293B) : AppColors.surfaceBlue),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected ? AppColors.primaryBlue : (isDark ? Colors.white10 : AppColors.border),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, size: 16, color: isSelected ? Colors.white : AppColors.primaryBlue),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : (isDark ? Colors.white : AppColors.navy),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
               ),
             ],
           ),

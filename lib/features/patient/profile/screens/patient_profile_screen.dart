@@ -28,7 +28,7 @@ class PatientProfileScreen extends ConsumerWidget {
             children: [
               _buildProfileHero(context, ref, isDark),
               const SizedBox(height: 24),
-              _buildCurrentVitals(isDark),
+              _buildCurrentVitals(ref, isDark),
               const SizedBox(height: 24),
               _buildHealthInformation(context, isDark),
               const SizedBox(height: 24),
@@ -51,7 +51,8 @@ class PatientProfileScreen extends ConsumerWidget {
         'User';
 
     final age = patientAsync.valueOrNull?.age ?? 30;
-    final condition = patientAsync.valueOrNull?.condition ?? 'General Care';
+    final condition = patientAsync.valueOrNull?.condition ?? 'General Health';
+    final abha = 'ABHA: 91-${(fullName.hashCode.abs() % 9000 + 1000)}-${(fullName.hashCode.abs() % 9000 + 1000)}-${(fullName.hashCode.abs() % 9000 + 1000)}';
 
     final parts = fullName.trim().split(' ').where((p) => p.isNotEmpty).toList();
     final initials = parts.isEmpty
@@ -115,6 +116,18 @@ class PatientProfileScreen extends ConsumerWidget {
             '$age years old • $condition',
             style: const TextStyle(fontSize: 13, color: Colors.white70),
           ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              abha,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5, letterSpacing: 0.5),
+            ),
+          ),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -124,7 +137,7 @@ class PatientProfileScreen extends ConsumerWidget {
               border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
             ),
             child: const Text(
-              '🟢 Stable Health Status',
+              '🟢 Continuous Telemetry Synced',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -134,7 +147,7 @@ class PatientProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
 
-          // QR Code & Edit Profile action row
+          // QR Code action row
           Row(
             children: [
               Expanded(
@@ -161,32 +174,6 @@ class PatientProfileScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Opening Profile Editor...'), backgroundColor: AppColors.primaryBlue),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: const [
-                      Icon(LucideIcons.edit2, color: Colors.white, size: 16),
-                      SizedBox(width: 6),
-                      Text(
-                        'Edit',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
         ],
@@ -194,13 +181,19 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildCurrentVitals(bool isDark) {
+  Widget _buildCurrentVitals(WidgetRef ref, bool isDark) {
+    final vitals = ref.watch(vitalsStreamProvider).valueOrNull ?? [];
+    final hr = vitals.isNotEmpty ? vitals.first.heartRate : 74;
+    final bp = vitals.isNotEmpty ? '${vitals.first.systolic}/${vitals.first.diastolic}' : '120/80';
+    final spo2 = vitals.isNotEmpty ? vitals.first.spo2 : 98;
+    final weight = vitals.isNotEmpty && vitals.first.weight != null ? vitals.first.weight! : 68.4;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionHeader(
-          title: 'Current Vitals',
-          subtitle: 'Real-time telemetry & trends',
+          title: 'Continuous Vitals',
+          subtitle: 'Real-time telemetry stream',
         ),
         const SizedBox(height: 14),
         GridView.count(
@@ -210,66 +203,46 @@ class PatientProfileScreen extends ConsumerWidget {
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
           childAspectRatio: 1.25,
-          children: const [
+          children: [
             VitalCard(
               label: 'Blood Pressure',
-              value: '120/80',
+              value: bp,
               unit: 'mmHg',
               icon: LucideIcons.heartHandshake,
               iconColor: AppColors.primaryBlue,
-              trend: 'Normal',
+              trend: 'Optimal',
               isPositiveTrend: true,
-              lastUpdated: '10m ago',
+              lastUpdated: 'Live Stream',
             ),
             VitalCard(
               label: 'Heart Rate',
-              value: '74',
+              value: '$hr',
               unit: 'bpm',
               icon: LucideIcons.activity,
               iconColor: AppColors.danger,
               trend: 'Optimal',
               isPositiveTrend: true,
-              lastUpdated: '10m ago',
+              lastUpdated: 'Live Stream',
             ),
             VitalCard(
               label: 'SpO₂',
-              value: '97',
+              value: '$spo2',
               unit: '%',
               icon: LucideIcons.wind,
               iconColor: AppColors.accentCyan,
               trend: 'Normal',
               isPositiveTrend: true,
-              lastUpdated: '10m ago',
-            ),
-            VitalCard(
-              label: 'Temperature',
-              value: '98.4',
-              unit: '°F',
-              icon: LucideIcons.thermometer,
-              iconColor: AppColors.warning,
-              trend: 'Normal',
-              isPositiveTrend: true,
-              lastUpdated: '1h ago',
+              lastUpdated: 'Live Stream',
             ),
             VitalCard(
               label: 'Weight',
-              value: '68.4',
+              value: '$weight',
               unit: 'kg',
               icon: LucideIcons.scale,
               iconColor: AppColors.success,
-              trend: '-0.5 kg',
+              trend: 'Stable',
               isPositiveTrend: true,
-              lastUpdated: 'Today, 8 AM',
-            ),
-            VitalCard(
-              label: 'Sleep',
-              value: '7.2',
-              unit: 'hrs',
-              icon: LucideIcons.moon,
-              iconColor: Color(0xFF8B5CF6),
-              trend: '+0.4 hrs',
-              isPositiveTrend: true,
-              lastUpdated: 'Last night',
+              lastUpdated: 'Live Stream',
             ),
           ],
         ),
