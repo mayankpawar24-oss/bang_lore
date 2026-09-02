@@ -491,33 +491,27 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                   context.push('/patient/family/family-member/${m.id}');
                                 }
                               },
-                              onPanStart: _isEditMode
-                                  ? (_) => setState(() {
-                                        _draggingMemberId = m.id;
-                                        _selectedMemberId = m.id;
-                                        _localPositions[m.id] = pos;
-                                      })
-                                  : null,
-                              onPanUpdate: _isEditMode
-                                  ? (details) {
-                                      final currentPos = _localPositions[m.id] ?? pos;
-                                      final newX = (currentPos.dx + details.delta.dx).clamp(0.0, canvasWidth - 125.0);
-                                      final newY = (currentPos.dy + details.delta.dy).clamp(0.0, canvasHeight - 75.0);
-                                      setState(() {
-                                        _localPositions[m.id] = Offset(newX, newY);
-                                      });
-                                    }
-                                  : null,
-                              onPanEnd: _isEditMode
-                                  ? (_) {
-                                      final finalPos = _localPositions[m.id];
-                                      setState(() => _draggingMemberId = null);
-                                      if (finalPos != null) {
-                                        final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
-                                        ref.read(familyMembersProvider.notifier).updateMember(updated);
-                                      }
-                                    }
-                                  : null,
+                              onPanStart: (_) => setState(() {
+                                _draggingMemberId = m.id;
+                                _selectedMemberId = m.id;
+                                _localPositions[m.id] = pos;
+                              }),
+                              onPanUpdate: (details) {
+                                final currentPos = _localPositions[m.id] ?? pos;
+                                final newX = (currentPos.dx + details.delta.dx).clamp(0.0, canvasWidth - 125.0);
+                                final newY = (currentPos.dy + details.delta.dy).clamp(0.0, canvasHeight - 75.0);
+                                setState(() {
+                                  _localPositions[m.id] = Offset(newX, newY);
+                                });
+                              },
+                              onPanEnd: (_) {
+                                final finalPos = _localPositions[m.id];
+                                setState(() => _draggingMemberId = null);
+                                if (finalPos != null) {
+                                  final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
+                                  ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                }
+                              },
                               child: AnimatedScale(
                                 scale: isSelected ? 1.04 : 1.0,
                                 duration: const Duration(milliseconds: 150),
