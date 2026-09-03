@@ -1224,4 +1224,101 @@ This medication was not marked as taken.
       expect(missedMsg.contains('bot_token'), isFalse); // Never logs bot token
     });
   });
+
+  group('Emergency SOS Google Maps Location & Intent Tests', () {
+    ({double lat, double lng})? extractCoordinates(String? mapsUrl, String? location, String? message) {
+      final candidates = [mapsUrl, location, message];
+      for (final candidate in candidates) {
+        if (candidate == null || candidate.trim().isEmpty) continue;
+        final text = candidate.trim();
+
+        // URL check
+        try {
+          final uriRegex = RegExp(r'https?://[^\s]+');
+          final uriMatches = uriRegex.allMatches(text);
+          for (final m in uriMatches) {
+            final uriStr = m.group(0);
+            if (uriStr != null) {
+              final parsedUri = Uri.tryParse(uriStr);
+              if (parsedUri != null) {
+                final q = parsedUri.queryParameters['q'] ?? parsedUri.queryParameters['query'];
+                if (q != null) {
+                  final parts = q.split(',');
+                  if (parts.length == 2) {
+                    final lat = double.tryParse(parts[0].trim());
+                    final lng = double.tryParse(parts[1].trim());
+                    if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                      return (lat: lat, lng: lng);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Coordinates regex
+        final coordRegex = RegExp(r'([-+]?\d{1,2}\.\d+)[,\s]+([-+]?\d{1,3}\.\d+)');
+        final match = coordRegex.firstMatch(text);
+        if (match != null) {
+          final latStr = match.group(1);
+          final lngStr = match.group(2);
+          if (latStr != null && lngStr != null) {
+            final lat = double.tryParse(latStr);
+            final lng = double.tryParse(lngStr);
+            if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              return (lat: lat, lng: lng);
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    test('extracts exact coordinates from maps.google.com query URL', () {
+      const url = 'https://maps.google.com/?q=12.933514,77.6924253';
+      final coords = extractCoordinates(url, null, null);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('extracts coordinates from message text with embedded URL', () {
+      const msg = '🚨 SOS Alert from Patient!\nLocation: https://maps.google.com/?q=12.933514,77.6924253\nPlease respond immediately.';
+      final coords = extractCoordinates(null, null, msg);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('extracts coordinates from raw location string', () {
+      const loc = '12.933514, 77.6924253';
+      final coords = extractCoordinates(null, loc, null);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('constructs canonical Google Maps search URL and geo URI', () {
+      const lat = 12.933514;
+      const lng = 77.6924253;
+      final mapsWebUri = Uri.https('www.google.com', '/maps/search/', {
+        'api': '1',
+        'query': '$lat,$lng',
+      });
+      final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+
+      expect(mapsWebUri.scheme, 'https');
+      expect(mapsWebUri.host, 'www.google.com');
+      expect(mapsWebUri.path, '/maps/search/');
+      expect(mapsWebUri.queryParameters['api'], '1');
+      expect(mapsWebUri.queryParameters['query'], '12.933514,77.6924253');
+      expect(geoUri.toString(), 'geo:12.933514,77.6924253?q=12.933514,77.6924253');
+    });
+
+    test('returns null when location is unavailable', () {
+      final coords = extractCoordinates(null, 'Location: Unavailable (Permission denied or GPS disabled)', 'SOS triggered');
+      expect(coords, isNull);
+    });
+  });
 }

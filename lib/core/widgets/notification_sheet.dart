@@ -187,6 +187,11 @@ class NotificationSheet extends ConsumerWidget {
     final isProfileAccessRequest = !isDoctor && (rawType.contains('profile_access_request') || rawType.contains('access_request') || item.type == NotificationType.permission);
     final isSos = item.type == NotificationType.sos || rawType.contains('sos') || item.isCritical;
     final isFamily = item.type == NotificationType.familyMessage || item.type == NotificationType.familyReminder || rawType.contains('family');
+    final coords = _extractCoordinates(item);
+    final hasValidMapsUrl = item.mapsUrl != null &&
+        item.mapsUrl!.trim().isNotEmpty &&
+        (item.mapsUrl!.startsWith('http://') || item.mapsUrl!.startsWith('https://') || item.mapsUrl!.startsWith('geo:'));
+    final shouldShowMapButton = isSos && (coords != null || hasValidMapsUrl);
 
     return GestureDetector(
       onTap: () {
@@ -292,7 +297,7 @@ class NotificationSheet extends ConsumerWidget {
                   ),
 
                   // SOS Location & Map Link Button
-                  if (isSos && item.mapsUrl != null && item.mapsUrl!.isNotEmpty) ...[
+                  if (shouldShowMapButton) ...[
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -305,12 +310,7 @@ class NotificationSheet extends ConsumerWidget {
                       ),
                       icon: const Icon(LucideIcons.mapPin, size: 14),
                       label: const Text('View Location on Google Maps', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      onPressed: () async {
-                        final uri = Uri.parse(item.mapsUrl!);
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
-                      },
+                      onPressed: () => _openGoogleMaps(context, item),
                     ),
                   ],
 
@@ -565,6 +565,128 @@ class NotificationSheet extends ConsumerWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     return '${dt.day}/${dt.month}';
+  }
+
+  ({double lat, double lng})? _extractCoordinates(NotificationModel item) {
+    final candidates = [
+      item.mapsUrl,
+      item.location,
+      item.message,
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate == null || candidate.trim().isEmpty) continue;
+      final text = candidate.trim();
+
+      // 1. Check if text contains a URL with query parameters (e.g. ?q=lat,lng)
+      try {
+        final uriRegex = RegExp(r'https?://[^\s]+');
+        final uriMatches = uriRegex.allMatches(text);
+        for (final m in uriMatches) {
+          final uriStr = m.group(0);
+          if (uriStr != null) {
+            final parsedUri = Uri.tryParse(uriStr);
+            if (parsedUri != null) {
+              final q = parsedUri.queryParameters['q'] ?? parsedUri.queryParameters['query'];
+              if (q != null) {
+                final parts = q.split(',');
+                if (parts.length == 2) {
+                  final lat = double.tryParse(parts[0].trim());
+                  final lng = double.tryParse(parts[1].trim());
+                  if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    return (lat: lat, lng: lng);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Direct regex match for "lat, lng" coordinates (e.g. 12.933514, 77.6924253 or 12.933514,77.6924253)
+      final coordRegex = RegExp(r'([-+]?\d{1,2}\.\d+)[,\s]+([-+]?\d{1,3}\.\d+)');
+      final match = coordRegex.firstMatch(text);
+      if (match != null) {
+        final latStr = match.group(1);
+        final lngStr = match.group(2);
+        if (latStr != null && lngStr != null) {
+          final lat = double.tryParse(latStr);
+          final lng = double.tryParse(lngStr);
+          if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+            return (lat: lat, lng: lng);
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openGoogleMaps(BuildContext context, NotificationModel item) async {
+    final coords = _extractCoordinates(item);
+    Uri? mapsWebUri;
+    Uri? geoUri;
+
+    if (coords != null) {
+      final queryParam = '${coords.lat},${coords.lng}';
+      mapsWebUri = Uri.https('www.google.com', '/maps/search/', {
+        'api': '1',
+        'query': queryParam,
+      });
+      geoUri = Uri.parse('geo:${coords.lat},${coords.lng}?q=${coords.lat},${coords.lng}');
+    } else if (item.mapsUrl != null && item.mapsUrl!.trim().isNotEmpty) {
+      mapsWebUri = Uri.tryParse(item.mapsUrl!.trim());
+    }
+
+    if (mapsWebUri == null && geoUri == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open Google Maps. Please check your internet connection.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+      return;
+    }
+
+    bool launched = false;
+
+    // 1. Try geo: intent first (opens Google Maps natively on Android if installed)
+    if (geoUri != null) {
+      try {
+        launched = await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        launched = false;
+      }
+    }
+
+    // 2. Fallback to external application with canonical https Google Maps URL
+    if (!launched && mapsWebUri != null) {
+      try {
+        launched = await launchUrl(mapsWebUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        launched = false;
+      }
+    }
+
+    // 3. Fallback to platform default launch
+    if (!launched && mapsWebUri != null) {
+      try {
+        launched = await launchUrl(mapsWebUri, mode: LaunchMode.platformDefault);
+      } catch (_) {
+        launched = false;
+      }
+    }
+
+    // 4. If all launch attempts failed, show error SnackBar
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to open Google Maps. Please check your internet connection.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 }
 
