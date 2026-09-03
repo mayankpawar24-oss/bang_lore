@@ -76,6 +76,9 @@ class FamilyMember {
   final int? birthYear;
   final String? notes;
   final List<String> parentIds;
+  final String? familyId;
+
+  String? get healthCondition => knownConditions.isNotEmpty ? knownConditions.first : null;
 
   const FamilyMember({
     required this.id,
@@ -101,6 +104,7 @@ class FamilyMember {
     this.birthYear,
     this.notes,
     this.parentIds = const [],
+    this.familyId,
   });
 
   FamilyMember copyWith({
@@ -127,6 +131,7 @@ class FamilyMember {
     int? birthYear,
     String? notes,
     List<String>? parentIds,
+    String? familyId,
   }) {
     return FamilyMember(
       id: id ?? this.id,
@@ -152,6 +157,7 @@ class FamilyMember {
       birthYear: birthYear ?? this.birthYear,
       notes: notes ?? this.notes,
       parentIds: parentIds ?? this.parentIds,
+      familyId: familyId ?? this.familyId,
     );
   }
 
@@ -180,6 +186,7 @@ class FamilyMember {
       'birthYear': birthYear,
       'notes': notes,
       'parentIds': parentIds,
+      if (familyId != null) 'familyId': familyId,
     };
   }
 
@@ -208,6 +215,7 @@ class FamilyMember {
       birthYear: json['birthYear'] as int?,
       notes: json['notes'] as String?,
       parentIds: json['parentIds'] != null ? List<String>.from(json['parentIds']) : [],
+      familyId: json['familyId'] as String?,
     );
   }
 
@@ -248,6 +256,7 @@ class FamilyMember {
       birthYear: (data['birthYear'] as num?)?.toInt(),
       notes: data['notes'] as String?,
       parentIds: List<String>.from(data['parentIds'] ?? []),
+      familyId: data['familyId'] as String?,
     );
   }
 
@@ -275,6 +284,7 @@ class FamilyMember {
       'birthYear': birthYear,
       'notes': notes,
       'parentIds': parentIds,
+      if (familyId != null) 'familyId': familyId,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }

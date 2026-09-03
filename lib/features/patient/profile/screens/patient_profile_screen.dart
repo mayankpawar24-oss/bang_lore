@@ -17,12 +17,36 @@ import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/secondary_button.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/report_model.dart';
+import '../../../../data/models/appointment_model.dart';
+import '../../../../data/models/medication_model.dart';
 
-class PatientProfileScreen extends ConsumerWidget {
+class PatientProfileScreen extends ConsumerStatefulWidget {
   const PatientProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PatientProfileScreen> createState() => _PatientProfileScreenState();
+}
+
+class _PatientProfileScreenState extends ConsumerState<PatientProfileScreen> {
+  String _selectedLogCategory = 'All';
+  String? _currentLinkingCode;
+  bool _isGeneratingCode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final uid = ref.read(currentUidProvider);
+        if (uid != null && uid.isNotEmpty) {
+          ref.read(missedEventsServiceProvider).checkAndProcessMissedEvents(uid);
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -39,6 +63,15 @@ class PatientProfileScreen extends ConsumerWidget {
 
               // 2. Personal Information & Phone Number
               _buildPersonalInformation(context, ref, isDark),
+              const SizedBox(height: 24),
+
+              // 2.5 Telegram Notifications (Patient-Specific)
+              SectionHeader(
+                title: 'Telegram Notifications',
+                subtitle: 'Connect your personal Telegram for medication reminders & appointment alerts',
+              ),
+              const SizedBox(height: 12),
+              _buildTelegramCard(context, ref, isDark),
               const SizedBox(height: 24),
 
               // 3. Uploaded Reports
@@ -345,19 +378,435 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
-  // 4. Logs / Activity
+  // 2.5 Telegram Notifications (Patient-Specific)
+  Widget _buildTelegramCard(BuildContext context, WidgetRef ref, bool isDark) {
+    final telegramStatus = ref.watch(telegramStatusStreamProvider).valueOrNull;
+    final isConnected = telegramStatus?['connected'] == true;
+    final chatId = telegramStatus?['chatId'] as String?;
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 20,
+      elevation: 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0088CC).withValues(alpha: isDark ? 0.25 : 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(LucideIcons.send, color: Color(0xFF0088CC), size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isConnected ? 'Telegram Connected' : 'Connect Personal Telegram',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isConnected
+                          ? (chatId != null && chatId.isNotEmpty ? 'Active (Chat ID: $chatId)' : 'Active (Alerts enabled)')
+                          : 'Get instant medication reminders & appointment alerts',
+                      style: TextStyle(
+                        color: isConnected
+                            ? AppColors.success
+                            : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                        fontSize: 12,
+                        fontWeight: isConnected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isConnected)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'CONNECTED',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              if (isConnected) ...[
+                Expanded(
+                  child: SecondaryButton(
+                    label: 'Disconnect',
+                    icon: LucideIcons.xCircle,
+                    foregroundColor: AppColors.danger,
+                    borderColor: AppColors.danger.withValues(alpha: 0.5),
+                    onPressed: () async {
+                      final uid = ref.read(currentUidProvider) ?? '';
+                      try {
+                        await ref.read(telegramRepositoryProvider).disconnectTelegram(uid, role: 'patient');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Telegram disconnected.'),
+                              backgroundColor: AppColors.primaryBlue,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to disconnect: $e'),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: PrimaryButton(
+                  text: isConnected ? 'Manage Settings' : 'Connect Telegram',
+                  icon: isConnected ? LucideIcons.settings : LucideIcons.send,
+                  onPressed: () => _showTelegramModal(context, ref, isDark),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTelegramModal(BuildContext context, WidgetRef ref, bool isDark) {
+    final currentUid = ref.read(currentUidProvider) ?? '';
+    final telegramStatus = ref.read(telegramStatusStreamProvider).valueOrNull;
+    final isConnected = telegramStatus?['connected'] == true;
+    final existingChatId = telegramStatus?['chatId'] as String? ?? '';
+    final chatIdController = TextEditingController(text: existingChatId);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                top: 24,
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0088CC).withValues(alpha: isDark ? 0.25 : 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(LucideIcons.send, color: Color(0xFF0088CC), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Personal Telegram Alerts',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.navy,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Receive instant alerts for your prescribed medication reminders, upcoming consultations, and missed appointment notifications.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Method 1: Instant Bot Launch with Code
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFF0088CC).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.sparkles, color: Color(0xFF0088CC), size: 16),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Option 1: Connect via Telegram Bot',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Generate a secure linking code and tap Open Bot to link your personal chat in one tap.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_currentLinkingCode != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0088CC).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Code: $_currentLinkingCode',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      letterSpacing: 1.5,
+                                      color: Color(0xFF0088CC),
+                                    ),
+                                  ),
+                                  const Text(
+                                    'Valid for 30m',
+                                    style: TextStyle(fontSize: 11, color: AppColors.muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0088CC),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              icon: _isGeneratingCode
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Icon(LucideIcons.send, size: 16),
+                              label: Text(_currentLinkingCode == null ? 'Generate Code & Open Bot' : 'Open Continuum Bot in Telegram'),
+                              onPressed: _isGeneratingCode
+                                  ? null
+                                  : () async {
+                                      setModalState(() => _isGeneratingCode = true);
+                                      try {
+                                        final code = _currentLinkingCode ??
+                                            await ref.read(telegramRepositoryProvider).generateLinkingCode(currentUid, role: 'patient');
+                                        setModalState(() {
+                                          _currentLinkingCode = code;
+                                          _isGeneratingCode = false;
+                                        });
+                                        await ref.read(telegramRepositoryProvider).openTelegramBot(currentUid, linkingCode: code);
+                                      } catch (e) {
+                                        setModalState(() => _isGeneratingCode = false);
+                                      }
+                                    },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Method 2: Manual Chat ID
+                    Text(
+                      'Option 2: Enter Telegram Chat ID Directly',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: chatIdController,
+                      keyboardType: TextInputType.text,
+                      style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
+                      decoration: InputDecoration(
+                        hintText: 'e.g., 123456789 or @username',
+                        hintStyle: TextStyle(color: isDark ? const Color(0xFF64748B) : AppColors.muted),
+                        prefixIcon: const Icon(LucideIcons.hash, size: 18, color: Color(0xFF0088CC)),
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        if (isConnected) ...[
+                          Expanded(
+                            child: SecondaryButton(
+                              label: 'Unlink',
+                              icon: LucideIcons.trash2,
+                              foregroundColor: AppColors.danger,
+                              onPressed: () async {
+                                Navigator.of(ctx).pop();
+                                await ref.read(telegramRepositoryProvider).disconnectTelegram(currentUid, role: 'patient');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: PrimaryButton(
+                            text: 'Save & Connect',
+                            icon: LucideIcons.check,
+                            onPressed: () async {
+                              final chatId = chatIdController.text.trim();
+                              if (chatId.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Please enter a valid Telegram Chat ID.')),
+                                );
+                                return;
+                              }
+                              Navigator.of(ctx).pop();
+                              await ref.read(telegramRepositoryProvider).connectTelegram(currentUid, chatId, role: 'patient');
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Personal Telegram connected successfully!'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // 4. Logs / Activity with Category Filtering & Analytics
   Widget _buildActivityLogsSection(BuildContext context, WidgetRef ref, bool isDark) {
     final currentUid = ref.watch(currentUidProvider) ?? '';
     final logsAsync = ref.watch(activityLogsStreamProvider(currentUid));
-    final logs = logsAsync.valueOrNull ?? [];
+    final rawLogs = logsAsync.valueOrNull ?? [];
+
+    final apptsAsync = ref.watch(patientAppointmentsStreamProvider(currentUid));
+    final rawAppointments = apptsAsync.valueOrNull ?? [];
+
+    final medsAsync = ref.watch(patientMedicationsStreamProvider(currentUid));
+    final rawMedications = medsAsync.valueOrNull ?? [];
+
+    final rawReports = ref.watch(reportsStreamProvider).valueOrNull ?? [];
+
+    final categories = [
+      'All',
+      'Appointments',
+      'Medication',
+      'Reports',
+      'Notifications',
+      'Adherence',
+      'Alerts',
+      'Telegram'
+    ];
+
+    final filteredLogs = rawLogs.where((log) {
+      if (_selectedLogCategory == 'All') return true;
+      final typeStr = log.eventType.name.toLowerCase();
+      switch (_selectedLogCategory) {
+        case 'Appointments':
+          return typeStr.contains('appointment');
+        case 'Medication':
+          return typeStr.contains('med') || typeStr.contains('pill');
+        case 'Reports':
+          return typeStr.contains('doc') || typeStr.contains('report') || typeStr.contains('ocr') || typeStr.contains('insight');
+        case 'Notifications':
+          return typeStr.contains('notif') || typeStr.contains('remind');
+        case 'Adherence':
+          return typeStr.contains('taken') || typeStr.contains('skipped') || typeStr.contains('missed');
+        case 'Alerts':
+          return typeStr.contains('missed') || typeStr.contains('alert') || typeStr.contains('failed');
+        case 'Telegram':
+          return typeStr.contains('telegram');
+        default:
+          return true;
+      }
+    }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           title: 'Logs / Activity',
-          subtitle: 'Live audit trail of real clinical and access events',
-          trailing: logs.isNotEmpty
+          subtitle: 'Live audit trail of real clinical, medication, and alert events',
+          trailing: rawLogs.isNotEmpty
               ? Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -365,7 +814,7 @@ class PatientProfileScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${logs.length} events',
+                    '${rawLogs.length} events',
                     style: const TextStyle(
                       color: AppColors.primaryBlue,
                       fontSize: 12,
@@ -376,7 +825,61 @@ class PatientProfileScreen extends ConsumerWidget {
               : null,
         ),
         const SizedBox(height: 12),
-        if (logs.isEmpty)
+
+        // CARE ACTIVITY ANALYTICS SUMMARY CARD
+        _buildCareActivitySummary(
+          context,
+          isDark,
+          rawLogs,
+          rawAppointments,
+          rawMedications,
+          rawReports,
+        ),
+        const SizedBox(height: 14),
+
+        // Category Filter Chips
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: categories.map((cat) {
+              final isSelected = _selectedLogCategory == cat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? Colors.white
+                          : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: AppColors.primaryBlue,
+                  backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  checkmarkColor: Colors.white,
+                  showCheckmark: false,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: isSelected
+                          ? AppColors.primaryBlue
+                          : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                  onSelected: (_) {
+                    setState(() => _selectedLogCategory = cat);
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        if (filteredLogs.isEmpty)
           AppCard(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
@@ -387,7 +890,9 @@ class PatientProfileScreen extends ConsumerWidget {
                   Icon(LucideIcons.activity, size: 32, color: AppColors.muted),
                   const SizedBox(height: 8),
                   Text(
-                    'No activity logged yet.',
+                    _selectedLogCategory == 'All'
+                        ? 'No activity logged yet.'
+                        : 'No events found for $_selectedLogCategory.',
                     style: TextStyle(
                       color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                       fontSize: 13,
@@ -405,37 +910,85 @@ class PatientProfileScreen extends ConsumerWidget {
             child: ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: logs.length > 8 ? 8 : logs.length,
+              itemCount: filteredLogs.length > 50 ? 50 : filteredLogs.length,
               separatorBuilder: (context, index) => _buildDivider(isDark),
               itemBuilder: (context, index) {
-                final log = logs[index];
+                final log = filteredLogs[index];
                 final icon = _getEventIcon(log.eventType);
                 final timeStr = DateFormat('MMM d, h:mm a').format(log.timestamp);
+                final statusBadge = _getEventStatusBadge(log, isDark);
 
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryBlue.withValues(alpha: isDark ? 0.2 : 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: AppColors.primaryBlue, size: 18),
-                  ),
-                  title: Text(
-                    log.title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13.5,
-                      color: isDark ? Colors.white : AppColors.navy,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${log.description}\n$timeStr',
-                    style: TextStyle(
-                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                      fontSize: 11.5,
-                      height: 1.3,
+                return InkWell(
+                  onTap: () => _showLogDetailModal(context, log, isDark),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryBlue.withValues(alpha: isDark ? 0.2 : 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(icon, color: AppColors.primaryBlue, size: 18),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      log.title,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13.5,
+                                        color: isDark ? Colors.white : AppColors.navy,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    timeStr,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? const Color(0xFF64748B) : AppColors.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                log.description,
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                  fontSize: 12,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  statusBadge,
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    log.actorRole.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? const Color(0xFF64748B) : AppColors.muted,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -446,8 +999,658 @@ class PatientProfileScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildCareActivitySummary(
+    BuildContext context,
+    bool isDark,
+    List<ActivityLogModel> logs,
+    List<Appointment> appointments,
+    List<Medication> medications,
+    List<ReportModel> reports,
+  ) {
+    final apptEvents = logs.where((l) => l.eventType.name.toLowerCase().contains('appointment')).length;
+    final medEvents = logs.where((l) => l.eventType.name.toLowerCase().contains('med') || l.eventType.name.toLowerCase().contains('pill')).length;
+    final notifEvents = logs.where((l) => l.eventType.name.toLowerCase().contains('notif') || l.eventType.name.toLowerCase().contains('telegram')).length;
+    final alertEvents = logs.where((l) => l.eventType.name.toLowerCase().contains('missed') || l.eventType.name.toLowerCase().contains('failed') || l.eventType.name.toLowerCase().contains('alert')).length;
+
+    final upcomingAppts = appointments.where((a) => a.status == AppointmentStatus.approved && a.dateTime.isAfter(DateTime.now())).length;
+    final missedAppts = appointments.where((a) => a.status == AppointmentStatus.missed).length;
+
+    final takenCount = medications.where((m) => m.isTaken).length;
+    final totalMeds = medications.length;
+    final adherencePct = totalMeds > 0 ? ((takenCount / totalMeds) * 100).round() : 100;
+
+    return InkWell(
+      onTap: () => _showAnalyticsModal(context, isDark, logs, appointments, medications, reports),
+      borderRadius: BorderRadius.circular(20),
+      child: AppCard(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        borderRadius: 20,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(LucideIcons.barChart2, color: AppColors.primaryBlue, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'CARE ACTIVITY',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Text(
+                      'View Trends',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                    const Icon(LucideIcons.chevronRight, size: 14, color: AppColors.primaryBlue),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Horizontal Counts
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildMiniStat('Appointments', '$apptEvents', AppColors.primaryBlue, isDark),
+                  const SizedBox(width: 10),
+                  _buildMiniStat('Medication', '$medEvents', const Color(0xFF10B981), isDark),
+                  const SizedBox(width: 10),
+                  _buildMiniStat('Reports', '${reports.length}', const Color(0xFF8B5CF6), isDark),
+                  const SizedBox(width: 10),
+                  _buildMiniStat('Alerts', '$alertEvents', const Color(0xFFEF4444), isDark),
+                  const SizedBox(width: 10),
+                  _buildMiniStat('Notifications', '$notifEvents', const Color(0xFFF59E0B), isDark),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Medication Adherence Progress Bar
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Medication Adherence',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white : AppColors.navy,
+                  ),
+                ),
+                Text(
+                  '$adherencePct%',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: adherencePct >= 80 ? const Color(0xFF10B981) : (adherencePct >= 50 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: adherencePct / 100.0,
+                backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  adherencePct >= 80 ? const Color(0xFF10B981) : (adherencePct >= 50 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444)),
+                ),
+                minHeight: 8,
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Upcoming & Missed Appointments
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryBlue.withValues(alpha: isDark ? 0.15 : 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(LucideIcons.calendarCheck, size: 16, color: AppColors.primaryBlue),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Upcoming',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                              ),
+                            ),
+                            Text(
+                              '$upcomingAppts',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : AppColors.navy,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: isDark ? 0.15 : 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(LucideIcons.alertTriangle, size: 16, color: Color(0xFFEF4444)),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Missed Appts',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                              ),
+                            ),
+                            Text(
+                              '$missedAppts',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFEF4444),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniStat(String label, String value, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.15 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _getEventStatusBadge(ActivityLogModel log, bool isDark) {
+    final typeStr = log.eventType.name.toLowerCase();
+    Color bg;
+    Color fg;
+    String label;
+
+    if (typeStr.contains('taken') || typeStr.contains('approved') || typeStr.contains('completed') || typeStr.contains('linked')) {
+      bg = const Color(0xFF10B981).withValues(alpha: 0.12);
+      fg = const Color(0xFF10B981);
+      label = typeStr.contains('taken') ? 'Taken' : (typeStr.contains('approved') ? 'Approved' : 'Completed');
+    } else if (typeStr.contains('missed') || typeStr.contains('failed') || typeStr.contains('rejected')) {
+      bg = const Color(0xFFEF4444).withValues(alpha: 0.12);
+      fg = const Color(0xFFEF4444);
+      label = typeStr.contains('missed') ? 'Missed' : (typeStr.contains('rejected') ? 'Rejected' : 'Failed');
+    } else if (typeStr.contains('remind') || typeStr.contains('requested') || typeStr.contains('pending')) {
+      bg = const Color(0xFFF59E0B).withValues(alpha: 0.12);
+      fg = const Color(0xFFF59E0B);
+      label = typeStr.contains('remind') ? 'Reminder' : 'Pending';
+    } else {
+      bg = AppColors.primaryBlue.withValues(alpha: 0.12);
+      fg = AppColors.primaryBlue;
+      label = 'Logged';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: fg,
+        ),
+      ),
+    );
+  }
+
+  void _showLogDetailModal(BuildContext context, ActivityLogModel log, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF131C2E) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(_getEventIcon(log.eventType), color: AppColors.primaryBlue, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        log.title,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('EEEE, MMM d, yyyy • h:mm a').format(log.timestamp),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              log.description,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: isDark ? const Color(0xFFE2E8F0) : AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildDetailRow('Event ID', log.id, isDark),
+            if (log.appointmentId != null) _buildDetailRow('Appointment ID', log.appointmentId!, isDark),
+            if (log.medicationId != null) _buildDetailRow('Medication ID', log.medicationId!, isDark),
+            if (log.reportId != null) _buildDetailRow('Report ID', log.reportId!, isDark),
+            _buildDetailRow('Actor Role', log.actorRole.toUpperCase(), isDark),
+            if (log.deliveryStatus != null) _buildDetailRow('Delivery Status', log.deliveryStatus!, isDark),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Close', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white : AppColors.navy,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAnalyticsModal(
+    BuildContext context,
+    bool isDark,
+    List<ActivityLogModel> logs,
+    List<Appointment> appointments,
+    List<Medication> medications,
+    List<ReportModel> reports,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final totalAppts = appointments.length;
+          final completedAppts = appointments.where((a) => a.status == AppointmentStatus.completed).length;
+          final upcomingAppts = appointments.where((a) => a.status == AppointmentStatus.approved && a.dateTime.isAfter(DateTime.now())).length;
+          final missedAppts = appointments.where((a) => a.status == AppointmentStatus.missed).length;
+          final cancelledAppts = appointments.where((a) => a.status == AppointmentStatus.cancelled).length;
+          final apptAttendancePct = totalAppts > 0 ? ((completedAppts / totalAppts) * 100).round() : 100;
+
+          final totalMeds = medications.length;
+          final takenDoses = medications.where((m) => m.isTaken).length;
+          final missedDoses = medications.where((m) => m.isMissed || (!m.isTaken && !m.isSkipped && m.date.isBefore(DateTime.now().subtract(const Duration(minutes: 60))))).length;
+          final medAdherencePct = totalMeds > 0 ? ((takenDoses / totalMeds) * 100).round() : 100;
+
+          final notifLogs = logs.where((l) => l.eventType.name.toLowerCase().contains('notif') || l.eventType.name.toLowerCase().contains('telegram')).toList();
+          final sentNotifs = notifLogs.where((l) => l.deliveryStatus == 'sent').length;
+          final inAppNotifs = notifLogs.where((l) => l.deliveryStatus == 'in_app_only' || l.deliveryStatus == null).length;
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 24),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(LucideIcons.barChart, color: AppColors.primaryBlue, size: 22),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Clinical Analytics & Trends',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.navy,
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(LucideIcons.x, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                Expanded(
+                  child: ListView(
+                    children: [
+                      // Section 1: Medication Analytics
+                      Text(
+                        'MEDICATION ADHERENCE',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildMetricBox('Total Prescriptions', '$totalMeds', AppColors.primaryBlue, isDark),
+                                _buildMetricBox('Doses Taken', '$takenDoses', const Color(0xFF10B981), isDark),
+                                _buildMetricBox('Doses Missed', '$missedDoses', const Color(0xFFEF4444), isDark),
+                                _buildMetricBox('Adherence', '$medAdherencePct%', const Color(0xFF8B5CF6), isDark),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                value: medAdherencePct / 100.0,
+                                backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  medAdherencePct >= 80 ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                ),
+                                minHeight: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Section 2: Appointments Analytics
+                      Text(
+                        'APPOINTMENTS ATTENDANCE',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildMetricBox('Total Consults', '$totalAppts', AppColors.primaryBlue, isDark),
+                                _buildMetricBox('Completed', '$completedAppts', const Color(0xFF10B981), isDark),
+                                _buildMetricBox('Upcoming', '$upcomingAppts', const Color(0xFF3B82F6), isDark),
+                                _buildMetricBox('Missed', '$missedAppts', const Color(0xFFEF4444), isDark),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Attendance Rate: $apptAttendancePct%',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : AppColors.navy,
+                                  ),
+                                ),
+                                Text(
+                                  'Cancelled: $cancelledAppts',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Section 3: Health Reports
+                      Text(
+                        'REPORTS & HEALTH VAULT',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildMetricBox('Total Documents', '${reports.length}', const Color(0xFF8B5CF6), isDark),
+                            _buildMetricBox(
+                              'Latest Upload',
+                              reports.isNotEmpty ? DateFormat('MMM d').format(reports.first.date) : 'None',
+                              AppColors.primaryBlue,
+                              isDark,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Section 4: Notifications
+                      Text(
+                        'AUTOMATION & NOTIFICATIONS',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildMetricBox('Total Dispatches', '${notifLogs.length}', const Color(0xFFF59E0B), isDark),
+                            _buildMetricBox('Telegram Delivered', '$sentNotifs', const Color(0xFF10B981), isDark),
+                            _buildMetricBox('In-App Only', '$inAppNotifs', const Color(0xFF64748B), isDark),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMetricBox(String label, String value, Color color, bool isDark) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+          ),
+        ),
+      ],
+    );
+  }
+
   IconData _getEventIcon(ActivityEventType type) {
     switch (type) {
+      case ActivityEventType.patientCreated:
+      case ActivityEventType.patientUpdated:
+        return LucideIcons.userCheck;
       case ActivityEventType.documentUploaded:
         return LucideIcons.uploadCloud;
       case ActivityEventType.documentViewed:
@@ -475,17 +1678,29 @@ class PatientProfileScreen extends ConsumerWidget {
       case ActivityEventType.discharge:
         return LucideIcons.bedDouble;
       case ActivityEventType.medicineAdded:
+      case ActivityEventType.medicationEdited:
+      case ActivityEventType.medicationDeleted:
       case ActivityEventType.medicineTaken:
       case ActivityEventType.medicineSkipped:
+      case ActivityEventType.medicationMissed:
         return LucideIcons.pill;
       case ActivityEventType.reminderCreated:
       case ActivityEventType.reminderCompleted:
       case ActivityEventType.reminderMissed:
         return LucideIcons.bell;
+      case ActivityEventType.telegramLinked:
+      case ActivityEventType.telegramUnlinked:
+        return LucideIcons.send;
+      case ActivityEventType.notificationSent:
+      case ActivityEventType.notificationFailed:
+        return LucideIcons.bellRing;
       case ActivityEventType.chatStarted:
       case ActivityEventType.chatAccessGranted:
       case ActivityEventType.chatAccessDenied:
         return LucideIcons.messageSquare;
+      case ActivityEventType.familyMemberAdded:
+      case ActivityEventType.familyMemberRemoved:
+        return LucideIcons.users;
       case ActivityEventType.general:
         return LucideIcons.activity;
     }

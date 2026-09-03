@@ -2,6 +2,8 @@ import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/appointment_model.dart';
+import '../models/activity_log_model.dart';
+import '../services/activity_log_service.dart';
 import '../services/awesome_notification_service.dart';
 
 abstract class AppointmentRepository {
@@ -26,7 +28,11 @@ abstract class AppointmentRepository {
 
 class FirebaseAppointmentRepository implements AppointmentRepository {
   final FirebaseFirestore _db;
-  FirebaseAppointmentRepository({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
+  final ActivityLogService _activityLogService;
+
+  FirebaseAppointmentRepository({FirebaseFirestore? db, ActivityLogService? activityLogService})
+      : _db = db ?? FirebaseFirestore.instance,
+        _activityLogService = activityLogService ?? ActivityLogService(db: db);
 
   CollectionReference _patientAppts(String patientId) =>
       _db.collection('patients').doc(patientId).collection('appointments');
@@ -203,6 +209,20 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
 
       await batch.commit();
       dev.log('[APPOINTMENT] Core appointment $apptId created in Firestore with status "pending"', name: 'FirebaseAppointmentRepository');
+
+      try {
+        await _activityLogService.logEvent(
+          patientId: patientId,
+          doctorId: doctorId,
+          appointmentId: apptId,
+          eventType: ActivityEventType.appointmentRequested,
+          title: 'Appointment Requested',
+          description: 'Requested consultation with Dr. ${withId.doctorName} for $timeStr.',
+          actorUid: patientId,
+          actorRole: 'patient',
+          actorName: withId.patientName,
+        );
+      } catch (_) {}
 
       try {
         await AwesomeNotificationService.showLocalNotification(
@@ -459,6 +479,56 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
         } catch (e) {
           dev.log('[AWESOME NOTIFICATION] Doctor notification error: $e', name: 'FirebaseAppointmentRepository');
         }
+      }
+
+      try {
+        final isApproved = newStatus == AppointmentStatus.approved || newStatus == AppointmentStatus.confirmed;
+        final isRejected = newStatus == AppointmentStatus.rejected;
+        final isCancelled = newStatus == AppointmentStatus.cancelled;
+        final isCompleted = newStatus == AppointmentStatus.completed;
+        final isMissed = newStatus == AppointmentStatus.missed;
+
+        final logEventType = isApproved
+            ? ActivityEventType.appointmentApproved
+            : isRejected
+                ? ActivityEventType.appointmentRejected
+                : isCancelled
+                    ? ActivityEventType.appointmentCancelled
+                    : isCompleted
+                        ? ActivityEventType.appointmentCompleted
+                        : isMissed
+                            ? ActivityEventType.appointmentMissed
+                            : ActivityEventType.general;
+
+        final logTitle = isApproved
+            ? 'Appointment Approved'
+            : isRejected
+                ? 'Appointment Rejected'
+                : isCancelled
+                    ? 'Appointment Cancelled'
+                    : isCompleted
+                        ? 'Appointment Completed'
+                        : isMissed
+                            ? 'Appointment Missed'
+                            : 'Appointment Updated';
+
+        final actorUid = updatedByDoctor ? doctorId : patientId;
+        final actorRole = updatedByDoctor ? 'doctor' : 'patient';
+        final actorName = updatedByDoctor ? (doctorName ?? 'Doctor') : (patientName ?? 'Patient');
+
+        await _activityLogService.logEvent(
+          patientId: patientId,
+          doctorId: doctorId,
+          appointmentId: appointmentId,
+          eventType: logEventType,
+          title: logTitle,
+          description: 'Consultation status updated to ${newStatus.name}.',
+          actorUid: actorUid,
+          actorRole: actorRole,
+          actorName: actorName,
+        );
+      } catch (e) {
+        dev.log('[APPOINTMENT] Activity log note: $e', name: 'FirebaseAppointmentRepository');
       }
     } catch (e) {
       dev.log('[APPOINTMENT] Notification write error: $e', name: 'FirebaseAppointmentRepository');

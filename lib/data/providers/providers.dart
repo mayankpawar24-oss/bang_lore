@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/user_model.dart';
 import '../models/doctor_model.dart';
+import '../models/doctor_chat_model.dart';
 import '../models/patient_model.dart';
 import '../models/appointment_model.dart';
 import '../models/medication_model.dart';
@@ -19,6 +20,7 @@ import '../models/report_model.dart';
 
 import '../repositories/auth_repository.dart';
 import '../repositories/doctor_repository.dart';
+import '../repositories/doctor_chat_repository.dart';
 import '../repositories/patient_repository.dart';
 import '../repositories/appointment_repository.dart';
 import '../repositories/medication_repository.dart';
@@ -38,6 +40,12 @@ import '../services/ocr_service.dart';
 import '../services/awesome_notification_service.dart';
 import '../services/multi_agent_service.dart';
 import '../services/backend_service.dart';
+import '../models/family_message_model.dart';
+import '../repositories/family_chat_repository.dart';
+import '../services/emergency_service.dart';
+import '../services/missed_events_service.dart';
+import '../models/family_relationship_model.dart';
+import '../services/patient_resolution_service.dart';
 
 // ════════════════════════════════════════════
 // FIREBASE SINGLETON PROVIDERS
@@ -613,6 +621,124 @@ final telegramStatusStreamProvider = StreamProvider<Map<String, dynamic>>((ref) 
     return Stream.value({'connected': false, 'chatId': null});
   }
   return ref.read(telegramRepositoryProvider).telegramStatusStream(uid);
+});
+
+/// Stream of patient appointments
+final patientAppointmentsStreamProvider = StreamProvider.family<List<Appointment>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(appointmentRepositoryProvider).appointmentsStream(patientId);
+});
+
+/// Family Chat Repository Provider
+final familyChatRepositoryProvider = Provider<FamilyChatRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return FirebaseFamilyChatRepository(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of family chat messages (by patientId or legacy)
+final familyMessagesStreamProvider = StreamProvider.family<List<FamilyMessageModel>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(familyChatRepositoryProvider).streamMessages(patientId);
+});
+
+/// Stream of shared group chat messages for a family (by familyId)
+final familyGroupMessagesStreamProvider = StreamProvider.family<List<FamilyMessageModel>, String>((ref, familyId) {
+  if (familyId.isEmpty) return Stream.value([]);
+  return ref.read(familyChatRepositoryProvider).streamFamilyMessages(familyId);
+});
+
+/// Doctor Chat Repository Provider
+final doctorChatRepositoryProvider = Provider<DoctorChatRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return FirebaseDoctorChatRepository(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of messages in a private Doctor ↔ Patient chat
+final doctorChatMessagesStreamProvider = StreamProvider.family<List<DoctorChatMessage>, String>((ref, chatId) {
+  if (chatId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamMessages(chatId);
+});
+
+/// Stream of patient's conversations with doctors
+final patientDoctorConversationsStreamProvider = StreamProvider.family<List<DoctorConversation>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamPatientConversations(patientId);
+});
+
+/// Stream of doctor's conversations with patients
+final doctorConversationsStreamProvider = StreamProvider.family<List<DoctorConversation>, String>((ref, doctorId) {
+  if (doctorId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamDoctorConversations(doctorId);
+});
+
+/// Emergency Service Provider
+final emergencyServiceProvider = Provider<EmergencyService>((ref) {
+  FirebaseFirestore? db;
+  TelegramRepository? tgRepo;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    tgRepo = ref.read(telegramRepositoryProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return EmergencyService(
+    db: db,
+    telegramRepository: tgRepo,
+    activityLogService: actService,
+  );
+});
+
+/// Missed Events Automation Service Provider
+final missedEventsServiceProvider = Provider<MissedEventsService>((ref) {
+  FirebaseFirestore? db;
+  TelegramRepository? tgRepo;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    tgRepo = ref.read(telegramRepositoryProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return MissedEventsService(
+    db: db,
+    telegramRepository: tgRepo,
+    activityLogService: actService,
+  );
+});
+
+/// Patient Resolution Service Provider
+final patientResolutionServiceProvider = Provider<PatientResolutionService>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return PatientResolutionService(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of real family relationships for a patient
+final familyRelationshipsStreamProvider = StreamProvider.family<List<FamilyRelationshipModel>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(patientResolutionServiceProvider).streamFamilyRelationships(patientId);
 });
 
 // ════════════════════════════════════════════

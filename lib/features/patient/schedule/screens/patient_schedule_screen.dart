@@ -875,7 +875,14 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
     );
   }
 
-  void _showSosSuccess(BuildContext context, bool isDark) {
+  Future<void> _showSosSuccess(BuildContext context, bool isDark) async {
+    final currentUid = ref.read(currentUidProvider) ?? '';
+    final alertResult = await ref.read(emergencyServiceProvider).triggerEmergencyAlert(
+      patientUid: currentUid,
+    );
+
+    if (!context.mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -894,16 +901,30 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                 color: isDark ? Colors.white : AppColors.navy,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            Text(
+              alertResult.locationText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+            const SizedBox(height: 16),
             _buildCheckItem('Family notified', isDark),
             _buildCheckItem('Care team notified', isDark),
-            _buildCheckItem('Location shared', isDark),
-            _buildCheckItem('Health info shared', isDark),
+            _buildCheckItem(
+              alertResult.mapsUrl != null ? 'GPS Location broadcast' : 'Location status broadcast',
+              isDark,
+            ),
+            if (alertResult.telegramSent)
+              _buildCheckItem('Telegram emergency alert sent', isDark),
             const SizedBox(height: 24),
             PrimaryButton(
-              label: 'Cancel Emergency',
+              label: 'Close',
               onPressed: () => Navigator.pop(context),
-              icon: LucideIcons.xCircle,
+              icon: LucideIcons.check,
             )
           ],
         ),

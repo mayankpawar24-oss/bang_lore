@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as dev;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,78 @@ class PatientDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen> {
+  StreamSubscription? _familyRemindersSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final uid = ref.read(currentUidProvider);
+        if (uid != null && uid.isNotEmpty) {
+          ref.read(missedEventsServiceProvider).checkAndProcessMissedEvents(uid);
+          _setupTargetRemindersListener(uid);
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _familyRemindersSub?.cancel();
+    super.dispose();
+  }
+
+  /// Listens for family reminders where targetUid == this user, and schedules awesome_notifications on this target device
+  void _setupTargetRemindersListener(String uid) {
+    _familyRemindersSub?.cancel();
+    try {
+      _familyRemindersSub = FirebaseFirestore.instance
+          .collection('reminders')
+          .where('targetUid', isEqualTo: uid)
+          .snapshots()
+          .listen((snap) {
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final status = data['status'] as String? ?? 'pending';
+          final isCompleted = data['isCompleted'] == true || status == 'completed';
+          final creatorUid = data['creatorUid'] as String? ?? data['createdBy'] as String?;
+
+          // Only schedule if this reminder was created by another user (family caregiver) for THIS user, and is still pending
+          if (!isCompleted && creatorUid != null && creatorUid != uid) {
+            final medName = data['medicineName'] as String? ?? data['title'] as String? ?? 'Medication';
+            final dosage = data['dosage'] as String? ?? '1 dose';
+            final dateTimeTs = data['dateTime'] as Timestamp?;
+            final scheduledTime = dateTimeTs?.toDate() ?? DateTime.now();
+            final reminderId = doc.id;
+            final timeDisplay = data['reminderTime'] as String? ?? '';
+
+            dev.log('''
+[FAMILY_NOTIFICATION]
+creatorUid = $creatorUid
+targetUid = $uid
+patientId = $uid
+reminderId = $reminderId
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+
+            AwesomeNotificationService.scheduleMedicationReminder(
+              id: reminderId.hashCode,
+              medicineName: medName,
+              dosage: dosage,
+              scheduledTime: scheduledTime,
+              medicationId: reminderId,
+            );
+          }
+        }
+      }, onError: (e) {
+        dev.log('[FAMILY_NOTIFICATION ERROR] $e', name: 'FamilyReminder');
+      });
+    } catch (e) {
+      dev.log('[FAMILY_NOTIFICATION SETUP ERROR] $e', name: 'FamilyReminder');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -794,6 +867,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     String? formError;
     bool isSaving = false;
 
+    String reminderFor = 'Me'; // 'Me' or 'Family Member'
+    String? selectedMemberId;
+    String? selectedMemberName;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -803,6 +880,8 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           final now = DateTime.now();
           final dtFormat = DateFormat('h:mm a');
           final timeDisplay = dtFormat.format(DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute));
+          final familyAsync = ref.read(familyRelationshipsStreamProvider(effectiveUid));
+          final familyList = familyAsync.valueOrNull ?? [];
 
           return Container(
             padding: EdgeInsets.only(
@@ -882,6 +961,98 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     ),
                     const SizedBox(height: 14),
                   ],
+
+                  // Who is this reminder for?
+                  Text(
+                    'Who is this reminder for? *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('For Me'),
+                        selected: reminderFor == 'Me',
+                        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.18),
+                        onSelected: (val) {
+                          if (val) {
+                            setModalState(() {
+                              reminderFor = 'Me';
+                              selectedMemberId = null;
+                              selectedMemberName = null;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Family Member'),
+                        selected: reminderFor == 'Family Member',
+                        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.18),
+                        onSelected: (val) {
+                          if (val) {
+                            setModalState(() {
+                              reminderFor = 'Family Member';
+                              if (familyList.isNotEmpty && selectedMemberId == null) {
+                                selectedMemberId = familyList.first.familyMemberId;
+                                selectedMemberName = familyList.first.memberName ?? 'Family Member';
+                              }
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (reminderFor == 'Family Member') ...[
+                    const SizedBox(height: 8),
+                    if (familyList.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                        ),
+                        child: const Text(
+                          'No linked family members found. Link a member in the Family tab first to create reminders for them.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber),
+                        ),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedMemberId ?? familyList.first.familyMemberId,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        items: familyList.map((m) {
+                          return DropdownMenuItem(
+                            value: m.familyMemberId,
+                            child: Text(
+                              '${m.memberName ?? "Member"} (${m.relationship})',
+                              style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontSize: 13),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            final match = familyList.firstWhere((m) => m.familyMemberId == val);
+                            setModalState(() {
+                              selectedMemberId = val;
+                              selectedMemberName = match.memberName ?? 'Family Member';
+                            });
+                          }
+                        },
+                      ),
+                  ],
+                  const SizedBox(height: 14),
 
                   // Medicine Name
                   Text(
@@ -1079,9 +1250,14 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                   selectedTime.minute,
                                 );
 
+                                final targetUid = (reminderFor == 'Family Member' && selectedMemberId != null)
+                                    ? selectedMemberId!
+                                    : effectiveUid;
+                                final isForFamily = targetUid != effectiveUid;
+
                                 final docRef = FirebaseFirestore.instance
                                     .collection('patients')
-                                    .doc(effectiveUid)
+                                    .doc(targetUid)
                                     .collection('medications')
                                     .doc();
 
@@ -1093,45 +1269,71 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                   isTaken: false,
                                   isSkipped: false,
                                   date: scheduledDateTime,
-                                  patientId: effectiveUid,
+                                  patientId: targetUid,
                                   frequency: selectedFrequency,
                                   notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
                                   startDate: scheduledDateTime,
                                   active: true,
                                 );
 
-                                dev.log('[FIRESTORE] Writing medication ${docRef.id} under patient $effectiveUid', name: 'PatientDashboard');
-                                await ref.read(medicationRepositoryProvider).addMedication(effectiveUid, med);
+                                dev.log('[FIRESTORE] Writing medication ${docRef.id} under target patient $targetUid (creator: $effectiveUid)', name: 'PatientDashboard');
+                                await ref.read(medicationRepositoryProvider).addMedication(targetUid, med);
 
-                                // Also persist to Reminder collection for unified schedule
+                                // Also persist to Reminder collection for unified schedule with target patientId & createdBy
                                 final reminder = Reminder(
                                   id: 'rem_${docRef.id}',
                                   title: '$name ($dosage)',
                                   description: notesController.text.trim().isNotEmpty
                                       ? notesController.text.trim()
                                       : 'Scheduled medication reminder • $selectedFrequency',
-                                  type: ReminderType.medicine,
+                                  type: ReminderType.medication,
                                   dateTime: scheduledDateTime,
                                   isCompleted: false,
-                                  patientId: effectiveUid,
-                                );
-                                await ref.read(reminderRepositoryProvider).addReminder(effectiveUid, reminder);
-
-                                // Trigger actual local notification via awesome_notifications
-                                await AwesomeNotificationService.scheduleMedicationReminder(
-                                  id: docRef.id.hashCode,
+                                  patientId: targetUid,
+                                  targetUid: targetUid,
+                                  createdBy: effectiveUid,
+                                  creatorUid: effectiveUid,
                                   medicineName: name,
                                   dosage: dosage,
-                                  scheduledTime: scheduledDateTime,
-                                  medicationId: docRef.id,
+                                  reminderTime: timeDisplay,
+                                  frequency: selectedFrequency,
+                                  targetPatientName: selectedMemberName,
                                 );
-                                dev.log('[MEDICATION] Successfully added medication $name and scheduled reminder', name: 'PatientDashboard');
+                                await ref.read(reminderRepositoryProvider).addReminder(targetUid, reminder);
+
+                                if (isForFamily) {
+                                  dev.log('''
+[FAMILY_REMINDER]
+creatorUid = $effectiveUid
+targetUid = $targetUid
+patientId = $targetUid
+reminderId = rem_${docRef.id}
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+                                  dev.log('[FAMILY_TARGET] targetUid = $targetUid', name: 'FamilyReminder');
+                                }
+
+                                // Trigger actual local notification via awesome_notifications ONLY for personal reminders
+                                if (!isForFamily) {
+                                  await AwesomeNotificationService.scheduleMedicationReminder(
+                                    id: docRef.id.hashCode,
+                                    medicineName: name,
+                                    dosage: dosage,
+                                    scheduledTime: scheduledDateTime,
+                                    medicationId: docRef.id,
+                                  );
+                                } else {
+                                  dev.log('[FAMILY_REMINDER] Creator device skipping local notification. Target ($targetUid) will schedule on device receipt.', name: 'PatientDashboard');
+                                }
+                                dev.log('[MEDICATION] Successfully added medication $name for $targetUid', name: 'PatientDashboard');
 
                                 if (context.mounted) {
                                   Navigator.pop(context);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Medication reminder for $name scheduled for $timeDisplay.'),
+                                      content: Text(isForFamily
+                                          ? 'Medication reminder for $selectedMemberName ($name) scheduled for $timeDisplay.'
+                                          : 'Medication reminder for $name scheduled for $timeDisplay.'),
                                       backgroundColor: AppColors.success,
                                     ),
                                   );

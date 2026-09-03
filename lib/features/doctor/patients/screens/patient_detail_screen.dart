@@ -22,6 +22,7 @@ import '../../../../data/models/permission_request_model.dart';
 import '../../../../data/models/ai_chat_model.dart';
 import '../../../../data/models/report_model.dart';
 import '../../../../data/models/activity_log_model.dart';
+import '../../../patient/dashboard/screens/doctor_chat_screen.dart';
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -283,6 +284,26 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.messageSquare, color: AppColors.primaryBlue),
+            tooltip: 'Chat with Patient',
+            onPressed: () {
+              final currentDoctor = ref.read(currentUserProvider).valueOrNull;
+              final doctorUid = currentDoctor?.id ?? ref.read(currentUidProvider) ?? '';
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DoctorChatScreen(
+                    doctorId: doctorUid,
+                    patientId: currentPatient.id,
+                    patientName: currentPatient.name,
+                    doctorName: currentDoctor?.name ?? 'Doctor',
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),

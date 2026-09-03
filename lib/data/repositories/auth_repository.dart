@@ -2,6 +2,8 @@ import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import '../models/activity_log_model.dart';
+import '../services/activity_log_service.dart';
 
 abstract class AuthRepository {
   Future<UserModel> login(String identifier, String password);
@@ -204,6 +206,22 @@ class FirebaseAuthRepository implements AuthRepository {
         if (hasAbha) doctorDoc['abhaId'] = abhaId.trim();
 
         await _db.collection('doctors').doc(uid).set(doctorDoc, SetOptions(merge: true));
+      }
+
+      try {
+        final activityService = ActivityLogService(db: _db, auth: _auth);
+        await activityService.logEvent(
+          patientId: role == UserRole.patient ? uid : null,
+          doctorId: role == UserRole.doctor ? uid : null,
+          eventType: role == UserRole.patient ? ActivityEventType.patientCreated : ActivityEventType.general,
+          title: role == UserRole.patient ? 'Patient Account Created' : 'Doctor Account Created',
+          description: 'Account registered successfully for ${name.trim()} (${role.name}).',
+          actorUid: uid,
+          actorRole: role.name,
+          actorName: name.trim(),
+        );
+      } catch (e) {
+        dev.log('[AUTH] Activity log note during registration: $e', name: 'FirebaseAuthRepository');
       }
 
       dev.log('[AUTH] Registration complete for $uid', name: 'FirebaseAuthRepository');

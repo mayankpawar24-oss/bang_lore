@@ -7,7 +7,7 @@
           "interval": [
             {
               "field": "minutes",
-              "minutesInterval": 2
+              "minutesInterval": 1
             }
           ]
         }
@@ -28,17 +28,30 @@
       "name": "Query Approved Appointments",
       "type": "n8n-nodes-base.googleCloudFirestore",
       "typeVersion": 1,
-      "position": [320, 300]
+      "position": [320, 200]
     },
     {
       "parameters": {
-        "jsCode": "// Evaluate appointment time vs current time for Reminders and Missed Appointments\nconst items = $input.all();\nconst results = [];\nconst now = new Date();\n\nfor (const item of items) {\n  const data = item.json;\n  const apptId = data.id || data.appointmentId;\n  if (!apptId) continue;\n\n  let apptTime = null;\n  if (data.dateTime && data.dateTime._seconds) {\n    apptTime = new Date(data.dateTime._seconds * 1000);\n  } else if (data.dateTime) {\n    apptTime = new Date(data.dateTime);\n  }\n  if (!apptTime || isNaN(apptTime.getTime())) continue;\n\n  const durationMinutes = data.durationMinutes || data.duration || 30;\n  const endTime = new Date(apptTime.getTime() + durationMinutes * 60000);\n  const diffMinutes = (apptTime.getTime() - now.getTime()) / 60000;\n\n  const patientId = data.patientId || '';\n  const doctorId = data.doctorId || '';\n  const doctorName = data.doctorName || 'Doctor';\n  const patientName = data.patientName || 'Patient';\n\n  // CASE 1: Upcoming in next 60 minutes -> Reminder\n  if (diffMinutes > 0 && diffMinutes <= 60) {\n    const eventKey = `reminder_${apptId}_${apptTime.toISOString().substring(0, 13)}`;\n    results.push({\n      json: {\n        action: 'reminder',\n        eventKey,\n        appointmentId: apptId,\n        patientId,\n        doctorId,\n        doctorName,\n        patientName,\n        apptTime: apptTime.toISOString(),\n        patientTitle: 'Upcoming Appointment Reminder',\n        patientMessage: `Reminder: Consultation with Dr. ${doctorName} is scheduled in ${Math.round(diffMinutes)} minutes.`,\n        doctorTitle: 'Upcoming Patient Reminder',\n        doctorMessage: `Upcoming consultation with ${patientName} in ${Math.round(diffMinutes)} minutes.`\n      }\n    });\n  }\n  // CASE 2: Appointment end time passed without completion -> Missed Appointment\n  else if (now.getTime() > endTime.getTime() + 10 * 60000) {\n    const eventKey = `missed_${apptId}`;\n    results.push({\n      json: {\n        action: 'missed',\n        eventKey,\n        appointmentId: apptId,\n        patientId,\n        doctorId,\n        doctorName,\n        patientName,\n        apptTime: apptTime.toISOString(),\n        patientTitle: 'Appointment Missed',\n        patientMessage: `You missed your scheduled consultation with Dr. ${doctorName}. Please reschedule.`,\n        doctorTitle: 'Patient Missed Appointment',\n        doctorMessage: `Patient ${patientName} missed their scheduled consultation.`\n      }\n    });\n  }\n}\n\nreturn results;"
+        "operation": "query",
+        "projectId": "continuum-health-b54cb",
+        "query": "={\n  \"from\": [\n    {\n      \"collectionId\": \"medications\"\n    }\n  ],\n  \"where\": {\n    \"fieldFilter\": {\n      \"field\": {\n        \"fieldPath\": \"active\"\n      },\n      \"op\": \"EQUAL\",\n      \"value\": {\n        \"booleanValue\": true\n      }\n    }\n  }\n}"
       },
-      "id": "evaluate-timing-1",
-      "name": "Evaluate Appointment Timing",
+      "id": "query-active-medications-1",
+      "name": "Query Active Medications",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [320, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Evaluate appointment time & medication schedules for reminders and missed events\nconst apptItems = $('Query Approved Appointments').all();\nlet medItems = [];\ntry {\n  medItems = $('Query Active Medications').all();\n} catch (_) {}\n\nconst results = [];\nconst seenKeys = new Set();\nconst now = new Date();\nconst todayStr = now.toISOString().substring(0, 10);\n\n// 1. EVALUATE APPOINTMENTS\nfor (const item of apptItems) {\n  const data = item.json;\n  const apptId = data.id || data.appointmentId;\n  if (!apptId) continue;\n\n  let apptTime = null;\n  if (data.dateTime && data.dateTime._seconds) {\n    apptTime = new Date(data.dateTime._seconds * 1000);\n  } else if (data.dateTime) {\n    apptTime = new Date(data.dateTime);\n  }\n  if (!apptTime || isNaN(apptTime.getTime())) continue;\n\n  const diffMinutes = (apptTime.getTime() - now.getTime()) / 60000;\n  const patientId = data.patientId || '';\n  const doctorId = data.doctorId || '';\n  const doctorName = data.doctorName || 'Doctor';\n  const patientName = data.patientName || 'Patient';\n  const timeFormatted = apptTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });\n\n  // CASE 1A: Upcoming in next 60 minutes -> Appointment Reminder for Patient\n  if (diffMinutes > 0 && diffMinutes <= 60) {\n    const eventKey = `appt_rem_${apptId}_${apptTime.toISOString().substring(0, 13)}`;\n    if (!seenKeys.has(eventKey)) {\n      seenKeys.add(eventKey);\n      results.push({\n        json: {\n          category: 'appointment',\n          action: 'reminder',\n          eventKey,\n          entityId: apptId,\n          appointmentId: apptId,\n          patientId,\n          doctorId,\n          recipientUid: patientId,\n          recipientRole: 'patient',\n          doctorName,\n          patientName,\n          title: 'Upcoming Appointment Reminder',\n          message: `Your appointment with Dr. ${doctorName} is scheduled for ${timeFormatted}.`,\n          telegramText: `🏥 *Continuum Health Reminder*\n\nYour appointment with Dr. ${doctorName}\nis scheduled for ${timeFormatted}.\n\nPlease be ready for your consultation.`\n        }\n      });\n    }\n  }\n  // CASE 1B: Appointment time passed by 2 minutes without completion -> Missed Appointment\n  else if (now.getTime() > (apptTime.getTime() + 2 * 60000)) {\n    const patientEventKey = `appt_missed_p_${apptId}`;\n    if (!seenKeys.has(patientEventKey)) {\n      seenKeys.add(patientEventKey);\n      results.push({\n        json: {\n          category: 'appointment',\n          action: 'missed',\n          eventKey: patientEventKey,\n          entityId: apptId,\n          appointmentId: apptId,\n          patientId,\n          doctorId,\n          recipientUid: patientId,\n          recipientRole: 'patient',\n          doctorName,\n          patientName,\n          title: 'Appointment Missed',\n          message: `You missed your scheduled appointment at ${timeFormatted}.`,\n          telegramText: `Continuum Health Alert\n\nYour appointment with Dr. ${doctorName}\nscheduled for ${timeFormatted} was missed.\n\nPlease reschedule your appointment if required.`,\n          doctorEscalation: !!doctorId,\n          doctorTitle: 'Patient Missed Appointment',\n          doctorMessage: `Patient ${patientName} missed the scheduled appointment at ${timeFormatted}.`\n        }\n      });\n    }\n  }\n}\n\n// 2. EVALUATE MEDICATIONS\nfor (const item of medItems) {\n  const data = item.json;\n  const medId = data.id || data.medicationId;\n  if (!medId) continue;\n  if (data.isTaken === true || data.isSkipped === true) continue;\n\n  const targetUid = data.targetUid || data.patientId || '';\n  const creatorUid = data.creatorUid || data.createdBy || '';\n  const isFamily = !!(creatorUid && targetUid && creatorUid !== targetUid);\n  const patientId = targetUid;\n  const medName = data.name || data.medicineName || 'Prescription';\n  const dosage = data.dosage || '1 dose';\n  const scheduledTimeStr = data.time || data.reminderTime || 'Scheduled Time';\n\n  // Parse time string e.g. \"08:00 AM\" or \"14:30\"\n  let medDate = new Date();\n  const timeMatch = scheduledTimeStr.match(/(\\d+):(\\d+)\\s*(AM|PM)?/i);\n  if (timeMatch) {\n    let hours = parseInt(timeMatch[1], 10);\n    const minutes = parseInt(timeMatch[2], 10);\n    const meridiem = timeMatch[3] ? timeMatch[3].toUpperCase() : null;\n    if (meridiem === 'PM' && hours < 12) hours += 12;\n    if (meridiem === 'AM' && hours === 12) hours = 0;\n    medDate.setHours(hours, minutes, 0, 0);\n  }\n\n  const diffMins = (now.getTime() - medDate.getTime()) / 60000;\n\n  // CASE 2A: Due around now (+/- 5 mins) -> Medication Reminder for Patient\n  if (Math.abs(diffMins) <= 5) {\n    const eventKey = `med_rem_${medId}_${todayStr}`;\n    if (!seenKeys.has(eventKey)) {\n      seenKeys.add(eventKey);\n      results.push({\n        json: {\n          category: 'medication',\n          action: 'reminder',\n          eventKey,\n          entityId: medId,\n          medicationId: medId,\n          patientId,\n          recipientUid: targetUid,\n          recipientRole: 'patient',\n          title: isFamily ? '💊 Family Medication Reminder' : 'Medication Reminder',\n          message: isFamily ? `Family medication reminder for ${medName} (${dosage}) at ${scheduledTimeStr}.` : `Your medication reminder for ${medName} is due now.`,\n          telegramText: isFamily\n            ? `💊 Family Medication Reminder\\n\\nMedicine: ${medName}\\nDosage: ${dosage}\\nTime: ${scheduledTimeStr}`\n            : `Continuum Health Medication Reminder\\n\\nMedicine: ${medName}\\nDosage: ${dosage}\\nTime: ${scheduledTimeStr}\\n\\nPlease take your medication as prescribed.`\n        }\n      });\n    }\n  }\n  // CASE 2B: 2-minute grace period passed without taken -> Missed Medication\n  else if (diffMins >= 2 && diffMins <= 360 && data.isMissed !== true) {\n    const eventKey = `med_missed_${medId}_${todayStr}`;\n    if (!seenKeys.has(eventKey)) {\n      seenKeys.add(eventKey);\n      results.push({\n        json: {\n          category: 'medication',\n          action: 'missed',\n          eventKey,\n          entityId: medId,\n          medicationId: medId,\n          patientId,\n          recipientUid: targetUid,\n          recipientRole: 'patient',\n          title: isFamily ? '⚠️ Missed Medication' : 'Missed Medication Alert',\n          message: `We noticed your medication dose for ${medName} was not marked as taken.`,\n          telegramText: isFamily\n            ? `⚠️ Missed Medication\\n\\nMedicine: ${medName}\\nDosage: ${dosage}\\n\\nThis medication was not marked as taken.`\n            : `Continuum Health Alert\\n\\nYou missed your scheduled medication:\\n\\nMedicine: ${medName}\\nDosage: ${dosage}\\nScheduled: ${scheduledTimeStr}\\n\\nPlease follow your prescribed medication plan.`\n        }\n      });\n    }\n  }\n}\n\nreturn results;"
+      },
+      "id": "evaluate-all-reminders-1",
+      "name": "Evaluate Reminders & Missed Events",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [540, 300]
+      "position": [560, 300]
     },
     {
       "parameters": {
@@ -52,7 +65,7 @@
       "type": "n8n-nodes-base.googleCloudFirestore",
       "typeVersion": 1,
       "continueOnFail": true,
-      "position": [760, 300]
+      "position": [780, 300]
     },
     {
       "parameters": {
@@ -69,15 +82,15 @@
       "name": "If Unprocessed",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [980, 300]
+      "position": [1000, 300]
     },
     {
       "parameters": {
         "operation": "set",
         "projectId": "continuum-health-b54cb",
         "collection": "processedEvents",
-        "documentId": "={{ $('Evaluate Appointment Timing').item.json.eventKey }}",
-        "columns": "eventKey,appointmentId,action,processedAt",
+        "documentId": "={{ $('Evaluate Reminders & Missed Events').item.json.eventKey }}",
+        "columns": "eventKey,entityId,action,category,processedAt",
         "options": {
           "useServerTimestamp": true
         }
@@ -86,65 +99,139 @@
       "name": "Record Timing Event Key",
       "type": "n8n-nodes-base.googleCloudFirestore",
       "typeVersion": 1,
-      "position": [1200, 200]
+      "position": [1220, 200]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "projectId": "continuum-health-b54cb",
+        "collection": "users",
+        "documentId": "={{ $('Evaluate Reminders & Missed Events').item.json.recipientUid }}"
+      },
+      "id": "get-recipient-user-2",
+      "name": "Get Recipient User",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.telegramConnected === true && $json.telegramChatId != null && $json.telegramChatId.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-telegram-connected-2",
+      "name": "If Telegram Connected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1660, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegramChatId }}",
+        "text": "={{ $('Evaluate Reminders & Missed Events').item.json.telegramText }}",
+        "additionalFields": {}
+      },
+      "id": "send-telegram-msg-2",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "continueOnFail": true,
+      "position": [1880, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare separated patient and doctor notification documents\nconst event = $('Evaluate Reminders & Missed Events').item.json;\nconst user = $('Get Recipient User').item.json || {};\nconst notifId = `notif_${event.eventKey}`;\n\nreturn [{\n  json: {\n    notificationId: notifId,\n    recipientUid: event.recipientUid,\n    recipientRole: event.recipientRole,\n    patientId: event.patientId,\n    doctorId: event.doctorId || null,\n    title: event.title,\n    message: event.message,\n    type: `${event.category}_${event.action}`,\n    relatedId: event.entityId,\n    appointmentId: event.appointmentId || null,\n    medicationId: event.medicationId || null,\n    read: false,\n    isRead: false,\n    telegramChatId: user.telegramChatId || null,\n    deliveryStatus: user.telegramConnected ? 'sent' : 'in_app_only',\n    createdAt: new Date().toISOString(),\n    category: event.category,\n    action: event.action,\n    entityId: event.entityId,\n    doctorEscalation: event.doctorEscalation || false,\n    doctorTitle: event.doctorTitle || null,\n    doctorMessage: event.doctorMessage || null\n  }\n}];"
+      },
+      "id": "prep-rem-notif-1",
+      "name": "Prepare Reminder Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "projectId": "continuum-health-b54cb",
+        "collection": "patientNotifications",
+        "documentId": "={{ $json.notificationId }}",
+        "options": {}
+      },
+      "id": "write-patient-notification-1",
+      "name": "Write Patient Notification",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [2100, 200]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "projectId": "continuum-health-b54cb",
+        "collection": "notifications",
+        "documentId": "={{ $json.notificationId }}",
+        "options": {}
+      },
+      "id": "write-rem-notification-1",
+      "name": "Write In-App Notification",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [2320, 200]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "projectId": "continuum-health-b54cb",
+        "collection": "activityLogs",
+        "documentId": "={{ $json.notificationId }}",
+        "options": {}
+      },
+      "id": "write-rem-audit-log-1",
+      "name": "Write Audit Log",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [2540, 200]
     },
     {
       "parameters": {
         "conditions": {
           "string": [
             {
-              "value1": "={{ $('Evaluate Appointment Timing').item.json.action }}",
+              "value1": "={{ $json.action }}",
               "value2": "missed"
             }
           ]
         }
       },
-      "id": "if-action-is-missed-1",
+      "id": "if-action-is-missed-2",
       "name": "If Action Is Missed",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [1420, 200]
+      "position": [2760, 200]
     },
     {
       "parameters": {
         "operation": "update",
         "projectId": "continuum-health-b54cb",
         "collection": "appointments",
-        "documentId": "={{ $('Evaluate Appointment Timing').item.json.appointmentId }}",
+        "documentId": "={{ $json.entityId }}",
         "columns": "status,missedAt,updatedAt",
         "options": {}
       },
-      "id": "mark-appointment-missed-1",
-      "name": "Mark Appointment Missed in Firestore",
+      "id": "mark-appt-missed-in-firestore",
+      "name": "Mark Appt Missed in Firestore",
       "type": "n8n-nodes-base.googleCloudFirestore",
       "typeVersion": 1,
-      "position": [1640, 100]
-    },
-    {
-      "parameters": {
-        "operation": "add",
-        "projectId": "continuum-health-b54cb",
-        "collection": "notifications",
-        "options": {}
-      },
-      "id": "create-patient-notification-1",
-      "name": "Create Patient In-App Notification",
-      "type": "n8n-nodes-base.googleCloudFirestore",
-      "typeVersion": 1,
-      "position": [1860, 200]
-    },
-    {
-      "parameters": {
-        "operation": "add",
-        "projectId": "continuum-health-b54cb",
-        "collection": "notifications",
-        "options": {}
-      },
-      "id": "create-doctor-notification-1",
-      "name": "Create Doctor In-App Notification",
-      "type": "n8n-nodes-base.googleCloudFirestore",
-      "typeVersion": 1,
-      "position": [2080, 200]
+      "continueOnFail": true,
+      "position": [2980, 200]
     }
   ],
   "connections": {
@@ -155,6 +242,11 @@
             "node": "Query Approved Appointments",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Query Active Medications",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -163,14 +255,25 @@
       "main": [
         [
           {
-            "node": "Evaluate Appointment Timing",
+            "node": "Evaluate Reminders & Missed Events",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Evaluate Appointment Timing": {
+    "Query Active Medications": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Reminders & Missed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Reminders & Missed Events": {
       "main": [
         [
           {
@@ -207,6 +310,84 @@
       "main": [
         [
           {
+            "node": "Get Recipient User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recipient User": {
+      "main": [
+        [
+          {
+            "node": "If Telegram Connected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Telegram Connected": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Reminder Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Reminder Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reminder Notification": {
+      "main": [
+        [
+          {
+            "node": "Write Patient Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Patient Notification": {
+      "main": [
+        [
+          {
+            "node": "Write In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write In-App Notification": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Audit Log": {
+      "main": [
+        [
+          {
             "node": "If Action Is Missed",
             "type": "main",
             "index": 0
@@ -218,36 +399,7 @@
       "main": [
         [
           {
-            "node": "Mark Appointment Missed in Firestore",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Create Patient In-App Notification",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mark Appointment Missed in Firestore": {
-      "main": [
-        [
-          {
-            "node": "Create Patient In-App Notification",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create Patient In-App Notification": {
-      "main": [
-        [
-          {
-            "node": "Create Doctor In-App Notification",
+            "node": "Mark Appt Missed in Firestore",
             "type": "main",
             "index": 0
           }

@@ -3,17 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/family_member_model.dart';
 import '../../../../data/models/reminder_model.dart';
 import '../../../../data/models/user_model.dart';
+import 'dart:developer' as dev;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../data/models/patient_model.dart';
+import '../../../../data/models/medication_model.dart';
+import '../../../../data/models/family_relationship_model.dart';
+import 'package:intl/intl.dart';
+import '../widgets/family_chat_view.dart';
 
 class FamilyTreeScreen extends ConsumerStatefulWidget {
   const FamilyTreeScreen({super.key});
@@ -37,14 +41,17 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   void _centerCanvasOnce(double canvasWidth, double canvasHeight, double virtualWidth, double virtualHeight) {
     if (_didInitializeCanvasCenter) return;
     _didInitializeCanvasCenter = true;
-    final initialX = (canvasWidth - virtualWidth) / 2;
-    const initialY = 20.0;
+    final initialX = (canvasWidth / 2) - (virtualWidth / 2);
+    final initialY = (canvasHeight / 2) - 380.0;
     _transformationController.value = Matrix4.identity()..setTranslationRaw(initialX, initialY, 0.0);
   }
+
+  late final PageController _pageController;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: _selectedTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uid = ref.read(currentUidProvider);
       if (uid != null) {
@@ -56,12 +63,18 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _transformationController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
     setState(() => _selectedTab = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -86,23 +99,24 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               ),
             ),
             Expanded(
-              child: IndexedStack(
-                index: _selectedTab,
+              child: PageView(
+                controller: _pageController,
+                physics: _isEditMode ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
+                onPageChanged: (idx) {
+                  setState(() => _selectedTab = idx);
+                },
                 children: [
-                  // Tab 0: Family Tree Canvas
+                  // Tab 0: Family Tree Canvas (with member list at bottom)
                   _buildTreeTabContent(context, members, isDark),
 
-                  // Tab 1: Family Reminders / History (Preserves vertical scrolling)
+                  // Tab 1: Family Reminders
                   SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     child: _buildRemindersTabContent(context, members, reminders, isDark),
                   ),
 
-                  // Tab 2: Family Features / Care Board (Preserves vertical scrolling)
-                  SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    child: _buildFeaturesTabContent(context, members, isDark),
-                  ),
+                  // Tab 2: Family Group Chat
+                  FamilyChatView(members: members),
                 ],
               ),
             ),
@@ -116,57 +130,88 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Family',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Care together, stay stronger',
+                style: TextStyle(
+                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  fontSize: 14,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Row(
           children: [
-            Text(
-              'Family',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
-                letterSpacing: -0.5,
+            IconButton(
+              tooltip: 'Emergency SOS',
+              onPressed: () => _showEmergencyContactsModal(context, isDark),
+              icon: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.4),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.danger.withValues(alpha: isDark ? 0.2 : 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(LucideIcons.phoneCall, color: AppColors.danger, size: 20),
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              'Care together, stay stronger',
-              style: TextStyle(
-                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                fontSize: 14,
+            IconButton(
+              onPressed: () => NotificationSheet.show(context),
+              icon: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : AppColors.border.withValues(alpha: 0.8),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(LucideIcons.bell, color: isDark ? Colors.white : AppColors.navy, size: 20),
               ),
             ),
           ],
-        ),
-        IconButton(
-          onPressed: () => NotificationSheet.show(context),
-          icon: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF131C2E) : Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.1)
-                    : AppColors.border.withValues(alpha: 0.8),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.2 : 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Icon(LucideIcons.bell, color: isDark ? Colors.white : AppColors.navy, size: 20),
-          ),
         ),
       ],
     );
   }
 
   Widget _buildSegmentedTab(bool isDark) {
-    final tabs = ['Tree', 'Reminders', 'Features'];
+    final tabs = ['Tree', 'Reminders', 'Chat'];
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -438,8 +483,8 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                       );
                     }
 
-                    const virtualWidth = 2500.0;
-                    const virtualHeight = 2500.0;
+                    const virtualWidth = 1600.0;
+                    const virtualHeight = 1200.0;
                     _centerCanvasOnce(canvasWidth, canvasHeight, virtualWidth, virtualHeight);
 
                     final calculatedPositions = _getCalculatedPositions(members, virtualWidth, virtualHeight);
@@ -457,9 +502,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                     return InteractiveViewer(
                       transformationController: _transformationController,
-                      boundaryMargin: const EdgeInsets.all(2500),
-                      minScale: 0.25,
-                      maxScale: 3.0,
+                      boundaryMargin: const EdgeInsets.all(600),
+                      minScale: 0.35,
+                      maxScale: 2.5,
                       panAxis: PanAxis.free,
                       panEnabled: !_isEditMode && _draggingMemberId == null,
                       scaleEnabled: !_isEditMode && _draggingMemberId == null,
@@ -520,8 +565,8 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                           final currentPos = _localPositions[m.id] ?? pos;
                                           final scale = _transformationController.value.getMaxScaleOnAxis();
                                           final effectiveScale = scale > 0 ? scale : 1.0;
-                                          final newX = (currentPos.dx + details.delta.dx / effectiveScale).clamp(0.0, virtualWidth - 125.0);
-                                          final newY = (currentPos.dy + details.delta.dy / effectiveScale).clamp(0.0, virtualHeight - 75.0);
+                                          final newX = (currentPos.dx + details.delta.dx / effectiveScale).clamp(20.0, virtualWidth - 140.0);
+                                          final newY = (currentPos.dy + details.delta.dy / effectiveScale).clamp(20.0, virtualHeight - 90.0);
                                           setState(() {
                                             _localPositions[m.id] = Offset(newX, newY);
                                           });
@@ -534,6 +579,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                           if (finalPos != null) {
                                             final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
                                             ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                            final currentUid = ref.read(currentUidProvider);
+                                            if (currentUid != null && m.memberUid != null && m.memberUid!.isNotEmpty) {
+                                              final relId = 'rel_${currentUid}_${m.memberUid}';
+                                              ref.read(patientResolutionServiceProvider).updateNodePosition(relId, finalPos.dx, finalPos.dy);
+                                            }
                                           }
                                         }
                                       : null,
@@ -702,6 +752,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     final gen1 = members.where((m) => m.generation == 1).toList();
     final gen2 = members.where((m) => m.generation == 2).toList();
     final gen3 = members.where((m) => m.generation == 3).toList();
+    final gen4 = members.where((m) => m.generation >= 4).toList();
 
     void layoutGen(List<FamilyMemberModel> list, double y) {
       if (list.isEmpty) return;
@@ -709,18 +760,22 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
       for (int i = 0; i < list.length; i++) {
         final m = list[i];
         if (m.positionX != null && m.positionY != null) {
-          result[m.id] = Offset(m.positionX!, m.positionY!);
+          result[m.id] = Offset(
+            m.positionX!.clamp(20.0, width - 140.0),
+            m.positionY!.clamp(20.0, height - 90.0),
+          );
         } else {
           final x = (step * (i + 1)) - 60;
-          result[m.id] = Offset(x.clamp(10.0, width - 130.0), y);
+          result[m.id] = Offset(x.clamp(20.0, width - 140.0), y.clamp(20.0, height - 90.0));
         }
       }
     }
 
-    layoutGen(gen0, 20);
-    layoutGen(gen1, height * 0.28);
-    layoutGen(gen2, height * 0.54);
-    layoutGen(gen3, height * 0.78);
+    layoutGen(gen0, 80.0);
+    layoutGen(gen1, 220.0);
+    layoutGen(gen2, 380.0);
+    layoutGen(gen3, 540.0);
+    layoutGen(gen4, 700.0);
 
     return result;
   }
@@ -936,86 +991,6 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   }
 
   // ==========================================
-  // TAB 3: FEATURES CONTENT (FUNCTIONAL MODALS)
-  // ==========================================
-
-  Widget _buildFeaturesTabContent(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
-    final features = [
-      {'title': 'Shared Care Board', 'desc': 'Manage family tasks & status', 'icon': LucideIcons.users, 'color': AppColors.success, 'action': () => _showCareBoardModal(context, members, isDark)},
-      {'title': 'Family Chat & Updates', 'desc': 'Private family messaging', 'icon': LucideIcons.messageCircle, 'color': AppColors.primaryBlue, 'action': () => _showFamilyChatModal(context, isDark)},
-      {'title': 'Health News', 'desc': 'Family wellness insights', 'icon': LucideIcons.newspaper, 'color': const Color(0xFF8B5CF6), 'action': () => _showHealthNewsModal(context, isDark)},
-      {'title': 'Emergency Contacts', 'desc': 'One-tap family calling', 'icon': LucideIcons.phoneCall, 'color': AppColors.danger, 'action': () => _showEmergencyContactsModal(context, isDark)},
-      {'title': 'Care Goals', 'desc': 'Track walking & hydration', 'icon': LucideIcons.target, 'color': AppColors.warning, 'action': () => _showCareGoalsModal(context, isDark)},
-      {'title': 'Share Records', 'desc': 'Manage record permissions', 'icon': LucideIcons.fileText, 'color': AppColors.accentCyan, 'action': () => _showShareRecordsModal(context, isDark)},
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionHeader(title: 'Family Features', subtitle: 'Integrated care coordination tools'),
-        const SizedBox(height: 14),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.2,
-          children: features.map((f) {
-            final color = f['color'] as Color;
-            final icon = f['icon'] as IconData;
-            final title = f['title'] as String;
-            final desc = f['desc'] as String;
-            final action = f['action'] as VoidCallback;
-
-            return AppCard(
-              onTap: action,
-              padding: const EdgeInsets.all(16),
-              borderRadius: 22,
-              elevation: 0.5,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: isDark ? 0.25 : 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 22),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : AppColors.navy,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    desc,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  // ==========================================
   // MODAL SHEETS & FORM ACTIONS
   // ==========================================
 
@@ -1024,31 +999,34 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     final abhaCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final qrCtrl = TextEditingController();
-    String selectedRel = 'Father';
+    String selectedRel = 'Parent';
     bool isSearching = false;
     UserModel? retrievedUser;
     PatientModel? retrievedPatient;
     String? searchError;
 
     final relationships = [
+      'Parent',
+      'Child',
+      'Spouse',
+      'Sibling',
+      'Grandparent',
+      'Grandchild',
       'Father',
       'Mother',
-      'Spouse',
-      'Child',
       'Son',
       'Daughter',
       'Brother',
       'Sister',
-      'Grandfather',
-      'Grandmother',
-      'Relative',
+      'Other',
     ];
 
     int getGeneration(String rel) {
-      if (['Grandfather', 'Grandmother'].contains(rel)) return 0;
-      if (['Father', 'Mother'].contains(rel)) return 1;
-      if (['Spouse', 'Brother', 'Sister'].contains(rel)) return 2;
+      if (['Grandparent', 'Grandfather', 'Grandmother'].contains(rel)) return 0;
+      if (['Parent', 'Father', 'Mother'].contains(rel)) return 1;
+      if (['Spouse', 'Sibling', 'Brother', 'Sister'].contains(rel)) return 2;
       if (['Child', 'Son', 'Daughter'].contains(rel)) return 3;
+      if (['Grandchild'].contains(rel)) return 4;
       return 2;
     }
 
@@ -1066,8 +1044,10 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               retrievedPatient = null;
             });
 
-            final db = FirebaseFirestore.instance;
             try {
+              final resService = ref.read(patientResolutionServiceProvider);
+              Map<String, dynamic>? profile;
+
               if (linkMethod == 0) {
                 final query = abhaCtrl.text.trim();
                 if (query.isEmpty) {
@@ -1077,25 +1057,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   });
                   return;
                 }
-                final uSnap = await db.collection('users').where('abhaId', isEqualTo: query).limit(1).get();
-                if (uSnap.docs.isNotEmpty) {
-                  retrievedUser = UserModel.fromFirestore(uSnap.docs.first);
-                } else {
-                  final pSnap = await db.collection('patients').where('abhaId', isEqualTo: query).limit(1).get();
-                  if (pSnap.docs.isNotEmpty) {
-                    retrievedPatient = PatientModel.fromFirestore(pSnap.docs.first);
-                    retrievedUser = UserModel(
-                      id: retrievedPatient!.id,
-                      name: retrievedPatient!.name,
-                      email: retrievedPatient!.email ?? '',
-                      role: UserRole.patient,
-                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
-                      abhaId: retrievedPatient!.abhaId,
-                    );
-                  }
-                }
+                profile = await resService.findPatientByQuery(abha: query);
               } else if (linkMethod == 1) {
-                final query = phoneCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+                final query = phoneCtrl.text.trim();
                 if (query.isEmpty) {
                   setModalState(() {
                     searchError = 'Please enter a phone number';
@@ -1103,28 +1067,7 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   });
                   return;
                 }
-                final uSnap = await db.collection('users').where('phoneNumber', isEqualTo: query).limit(1).get();
-                if (uSnap.docs.isNotEmpty) {
-                  retrievedUser = UserModel.fromFirestore(uSnap.docs.first);
-                } else {
-                  final pSnap = await db.collection('patients').where('phoneNumber', isEqualTo: query).limit(1).get();
-                  if (pSnap.docs.isNotEmpty) {
-                    retrievedPatient = PatientModel.fromFirestore(pSnap.docs.first);
-                    retrievedUser = UserModel(
-                      id: retrievedPatient!.id,
-                      name: retrievedPatient!.name,
-                      email: retrievedPatient!.email ?? '',
-                      role: UserRole.patient,
-                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
-                      abhaId: retrievedPatient!.abhaId,
-                    );
-                  } else {
-                    final rawSnap = await db.collection('users').where('phoneNumber', isEqualTo: phoneCtrl.text.trim()).limit(1).get();
-                    if (rawSnap.docs.isNotEmpty) {
-                      retrievedUser = UserModel.fromFirestore(rawSnap.docs.first);
-                    }
-                  }
-                }
+                profile = await resService.findPatientByQuery(phone: query);
               } else {
                 final query = qrCtrl.text.trim();
                 if (query.isEmpty) {
@@ -1134,41 +1077,36 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                   });
                   return;
                 }
-                String targetUid = query;
-                if (query.contains('continuum://patient/')) {
-                  final uri = Uri.tryParse(query);
-                  if (uri != null && uri.pathSegments.length >= 2) {
-                    targetUid = uri.pathSegments[1];
-                  }
-                }
-                final uDoc = await db.collection('users').doc(targetUid).get();
-                if (uDoc.exists) {
-                  retrievedUser = UserModel.fromFirestore(uDoc);
-                } else {
-                  final pDoc = await db.collection('patients').doc(targetUid).get();
-                  if (pDoc.exists) {
-                    retrievedPatient = PatientModel.fromFirestore(pDoc);
-                    retrievedUser = UserModel(
-                      id: retrievedPatient!.id,
-                      name: retrievedPatient!.name,
-                      email: retrievedPatient!.email ?? '',
-                      role: UserRole.patient,
-                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
-                      abhaId: retrievedPatient!.abhaId,
-                    );
-                  }
-                }
+                profile = await resService.findPatientByQuery(qrCode: query);
               }
 
-              if (retrievedUser != null && retrievedPatient == null) {
-                final pDoc = await db.collection('patients').doc(retrievedUser!.id).get();
-                if (pDoc.exists) {
-                  retrievedPatient = PatientModel.fromFirestore(pDoc);
-                }
-              }
-
-              if (retrievedUser == null) {
-                searchError = 'No Continuum user found matching this identifier.\nOnly registered Continuum accounts can be linked as family nodes.';
+              if (profile != null) {
+                final uid = profile['uid'] as String? ?? profile['id'] as String? ?? '';
+                retrievedUser = UserModel(
+                  id: uid,
+                  name: profile['name'] as String? ?? 'Family Member',
+                  email: profile['email'] as String? ?? '',
+                  role: UserRole.patient,
+                  phoneNumber: profile['phone'] as String? ?? profile['phoneNumber'] as String?,
+                  abhaId: profile['abhaNumber'] as String? ?? profile['abhaId'] as String?,
+                );
+                retrievedPatient = PatientModel(
+                  id: uid,
+                  name: retrievedUser!.name,
+                  age: profile['age'] as int? ?? 35,
+                  condition: profile['condition'] as String? ?? 'General Care',
+                  status: profile['status'] as String? ?? 'stable',
+                  medicationAdherence: 100.0,
+                  isAuthorized: true,
+                  conditions: [profile['condition'] as String? ?? 'General Care'],
+                  phoneNumber: retrievedUser!.phoneNumber,
+                  abhaId: retrievedUser!.abhaId,
+                  phone: retrievedUser!.phoneNumber,
+                  avatarUrl: profile['avatar'] as String?,
+                  bloodGroup: profile['bloodGroup'] as String? ?? 'Not specified',
+                );
+              } else {
+                searchError = 'Family member not found';
               }
             } catch (e) {
               searchError = 'Lookup failed: $e';
@@ -1462,6 +1400,14 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                     ),
                             );
 
+                            final siblingCount = currentMembers.where((m) => m.relationship.toLowerCase() == selectedRel.toLowerCase()).length;
+                            final center = Offset(rootSelf.positionX ?? 1200.0, rootSelf.positionY ?? 800.0);
+                            final sensiblePos = FamilyRelationshipModel.calculateSensiblePosition(
+                              selectedRel,
+                              center: center,
+                              siblingIndex: siblingCount,
+                            );
+
                             final newM = FamilyMemberModel(
                               id: const Uuid().v4(),
                               memberUid: retrievedUser!.id,
@@ -1479,15 +1425,33 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                               hydration: HydrationStatus.done,
                               walking: WalkingStatus.done,
                               medication: MedicationStatus.done,
-                              positionX: 1200.0 + (gen * 140.0),
-                              positionY: 600.0 + (DateTime.now().millisecond % 160),
+                              positionX: sensiblePos.dx,
+                              positionY: sensiblePos.dy,
                               connectedToIds: rootSelf.id.isNotEmpty ? [rootSelf.id] : [],
                               phoneNumber: retrievedUser!.phoneNumber,
                               abhaId: retrievedUser!.abhaId,
                               age: retrievedPatient?.age,
                               gender: null,
+                              familyId: (() {
+                                final currentUidNow = ref.read(currentUidProvider) ?? '';
+                                if (currentUidNow.isNotEmpty && retrievedUser!.id.isNotEmpty) {
+                                  final sortedUids = [currentUidNow, retrievedUser!.id]..sort();
+                                  return 'family_${sortedUids.join("_")}';
+                                }
+                                return null;
+                              })(),
                             );
                             ref.read(familyMembersProvider.notifier).addMember(newM);
+                            final currentUid = ref.read(currentUidProvider);
+                            if (currentUid != null && currentUid.isNotEmpty) {
+                              ref.read(patientResolutionServiceProvider).linkFamilyMember(
+                                patientId: currentUid,
+                                familyMemberId: retrievedUser!.id,
+                                relationship: selectedRel,
+                                customX: sensiblePos.dx,
+                                customY: sensiblePos.dy,
+                              );
+                            }
                             Navigator.pop(context);
                           },
                   ),
@@ -1593,302 +1557,520 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
     );
   }
 
-  void _showAddFamilyReminderSheet(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
+  void _showAddFamilyReminderSheet(
+    BuildContext context,
+    List<FamilyMemberModel> members,
+    bool isDark, {
+    FamilyMemberModel? preselectedMember,
+  }) {
     final titleCtrl = TextEditingController();
-    ReminderType selectedType = ReminderType.medicine;
-    String selectedAssignee = 'Sarah';
+    final dosageCtrl = TextEditingController(text: '1 tablet');
+    final notesCtrl = TextEditingController();
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(DateTime.now().add(const Duration(minutes: 2)));
+    String selectedFrequency = 'Daily';
+    int reminderTypeIndex = 0; // 0: Medicine, 1: Appointment, 2: General Health
+    bool isSaving = false;
+    String? formError;
 
-    final names = members.map((m) => m.name.split(' ')[0]).toList();
-    if (!names.contains('Sarah')) names.add('Sarah');
+    // Filter to linked members (excluding 'Self')
+    final realMembers = members.where((m) => m.relationship != 'Self').toList();
+    if (realMembers.isEmpty && members.isNotEmpty) {
+      realMembers.addAll(members);
+    }
+
+    FamilyMemberModel? selectedMember = preselectedMember ?? (realMembers.isNotEmpty ? realMembers.first : null);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF131C2E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add Family Reminder',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Reminder Title',
-                  hintText: 'e.g. Drink water or Take meds',
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Family Member',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: names.map((n) => ChoiceChip(
-                  label: Text(n),
-                  selected: selectedAssignee == n,
-                  selectedColor: AppColors.primaryBlue,
-                  labelStyle: TextStyle(
-                    color: selectedAssignee == n ? Colors.white : (isDark ? Colors.white : AppColors.navy),
-                    fontWeight: FontWeight.bold,
-                  ),
-                  onSelected: (val) {
-                    if (val) setModalState(() => selectedAssignee = n);
-                  },
-                )).toList(),
-              ),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                label: 'Save Family Reminder',
-                onPressed: () {
-                  if (titleCtrl.text.isNotEmpty) {
-                    final newR = ReminderModel(
-                      id: const Uuid().v4(),
-                      title: '$selectedAssignee – ${titleCtrl.text}',
-                      description: '',
-                      type: selectedType,
-                      dateTime: DateTime.now(),
-                      isCompleted: false,
-                      assignedBy: selectedAssignee,
-                    );
-                    ref.read(remindersProvider.notifier).addReminder(newR);
-                    Navigator.pop(context);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
+        builder: (context, setModalState) {
+          final now = DateTime.now();
+          final tempDate = DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute);
+          final timeDisplay = DateFormat('hh:mm a').format(tempDate);
 
-  // Feature Modals
-  void _showCareBoardModal(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Text(
-              'Shared Care Board',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
-              ),
+          return Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Tasks assigned across family members',
-              style: TextStyle(
-                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-              ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 24,
+              right: 24,
+              top: 24,
             ),
-            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
-            Expanded(
-              child: ListView(
-                children: members.expand((m) => m.careTasks.map((t) => ListTile(
-                  title: Text(
-                    t.title,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Add Family Reminder',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(LucideIcons.x, size: 20, color: isDark ? Colors.white70 : AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (formError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertCircle, size: 16, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formError!,
+                              style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // 1. Reminder Type Selector
+                  Text(
+                    'Reminder Type *',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : AppColors.navy,
+                      fontSize: 13,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
                     ),
                   ),
-                  subtitle: Text(
-                    'Assigned to ${t.assignedTo ?? m.name}',
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _buildAddOptionChip(
+                        label: 'Medicine',
+                        icon: LucideIcons.pill,
+                        isSelected: reminderTypeIndex == 0,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          reminderTypeIndex = 0;
+                          titleCtrl.clear();
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAddOptionChip(
+                        label: 'Appointment',
+                        icon: LucideIcons.calendar,
+                        isSelected: reminderTypeIndex == 1,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          reminderTypeIndex = 1;
+                          titleCtrl.clear();
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAddOptionChip(
+                        label: 'Health Goal',
+                        icon: LucideIcons.activity,
+                        isSelected: reminderTypeIndex == 2,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          reminderTypeIndex = 2;
+                          titleCtrl.clear();
+                        }),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 2. Target Family Member Selector
+                  Text(
+                    'Target Family Member *',
                     style: TextStyle(
-                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
                     ),
                   ),
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.4)
-                          : AppColors.softBlue,
-                      borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 8),
+                  if (realMembers.isEmpty)
+                    Text(
+                      'No family members linked yet. Please add a member first.',
+                      style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12),
+                    )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: realMembers.map((m) {
+                        final isSelected = selectedMember?.id == m.id;
+                        return ChoiceChip(
+                          avatar: CircleAvatar(
+                            radius: 10,
+                            backgroundColor: isSelected ? Colors.white : AppColors.primaryBlue,
+                            child: Text(
+                              m.name.isNotEmpty ? m.name[0] : '?',
+                              style: TextStyle(fontSize: 10, color: isSelected ? AppColors.primaryBlue : Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          label: Text('${m.name} (${m.relationship})'),
+                          selected: isSelected,
+                          selectedColor: AppColors.primaryBlue,
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : (isDark ? Colors.white : AppColors.navy),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          onSelected: (val) {
+                            if (val) setModalState(() => selectedMember = m);
+                          },
+                        );
+                      }).toList(),
                     ),
-                    child: Text(
-                      t.status.name.toUpperCase(),
-                      style: const TextStyle(
-                        color: AppColors.primaryBlue,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(height: 16),
+
+                  // 3. Title / Medicine Field
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: InputDecoration(
+                      labelText: reminderTypeIndex == 0
+                          ? 'Medicine Name *'
+                          : (reminderTypeIndex == 1 ? 'Doctor / Clinic / Appointment Title *' : 'Health Task / Goal Title *'),
+                      hintText: reminderTypeIndex == 0
+                          ? 'e.g. Metformin, Dolo 650, BP Tablet'
+                          : (reminderTypeIndex == 1 ? 'e.g. Dr. Sharma - Cardiology Checkup' : 'e.g. 20 min Morning Walk, Check Blood Sugar'),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 4. Dosage Field (Medicine only)
+                  if (reminderTypeIndex == 0) ...[
+                    TextField(
+                      controller: dosageCtrl,
+                      decoration: InputDecoration(
+                        labelText: 'Dosage *',
+                        hintText: 'e.g. 500mg, 1 tablet',
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Notes / Instructions Field
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: InputDecoration(
+                      labelText: reminderTypeIndex == 1 ? 'Location / Notes' : 'Instructions / Notes (optional)',
+                      hintText: reminderTypeIndex == 1 ? 'e.g. Room 204, City Clinic' : 'e.g. After breakfast with water',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // 5. Time Picker
+                  Text(
+                    'Reminder Time *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedTime = picked);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: isDark ? Colors.white12 : AppColors.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.clock, size: 18, color: AppColors.primaryBlue),
+                              const SizedBox(width: 10),
+                              Text(
+                                timeDisplay,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Change Time',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ))).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+                  const SizedBox(height: 14),
 
-  void _showFamilyChatModal(BuildContext context, bool isDark) {
-    final msgCtrl = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Text(
-              'Family Chat & Updates',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
-              ),
-            ),
-            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
-            Expanded(
-              child: Center(
-                child: Text(
-                  'Sarah: "Checked Mom\'s blood pressure at 9 AM — 120/80!"',
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
-                    fontSize: 14,
+                  // 6. Frequency Selection
+                  Text(
+                    'Frequency *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
                   ),
-                ),
-              ),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: msgCtrl,
-                    decoration: const InputDecoration(hintText: 'Type family update...'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Once', 'Daily', 'Twice daily', 'Weekly'].map((freq) {
+                      final isSelected = selectedFrequency == freq;
+                      return ChoiceChip(
+                        label: Text(freq),
+                        selected: isSelected,
+                        selectedColor: AppColors.primaryBlue,
+                        backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        labelStyle: TextStyle(
+                          color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.navy),
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        ),
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedFrequency = freq);
+                        },
+                      );
+                    }).toList(),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(LucideIcons.send, color: AppColors.primaryBlue),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+                  const SizedBox(height: 24),
 
-  void _showHealthNewsModal(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Health News For Family',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+                  // 7. Save Button with Real Firestore Targeting
+                  PrimaryButton(
+                    label: isSaving ? 'Scheduling Reminder...' : 'Save Family Reminder',
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final rawTitle = titleCtrl.text.trim();
+                            final dose = dosageCtrl.text.trim();
+
+                            if (rawTitle.isEmpty) {
+                              setModalState(() => formError = 'Please enter a reminder title.');
+                              return;
+                            }
+                            if (reminderTypeIndex == 0 && dose.isEmpty) {
+                              setModalState(() => formError = 'Please enter dosage.');
+                              return;
+                            }
+                            if (selectedMember == null) {
+                              setModalState(() => formError = 'Please select a target family member.');
+                              return;
+                            }
+
+                            final creatorUid = ref.read(currentUidProvider) ?? '';
+                            final targetUid = selectedMember!.memberUid != null && selectedMember!.memberUid!.isNotEmpty
+                                ? selectedMember!.memberUid!
+                                : selectedMember!.id;
+                            final patientId = targetUid;
+                            final familyId = selectedMember!.familyId ?? (creatorUid.isNotEmpty ? 'family_$creatorUid' : 'family_default');
+
+                            if (targetUid.isEmpty) {
+                              setModalState(() => formError = 'Selected member does not have a valid user ID.');
+                              return;
+                            }
+
+                            setModalState(() {
+                              isSaving = true;
+                              formError = null;
+                            });
+
+                            try {
+                              final scheduledDateTime = DateTime(
+                                now.year,
+                                now.month,
+                                now.day,
+                                selectedTime.hour,
+                                selectedTime.minute,
+                              );
+                              final docId = 'rem_${DateTime.now().millisecondsSinceEpoch}';
+
+                              final typeStr = reminderTypeIndex == 0
+                                  ? 'medicine'
+                                  : (reminderTypeIndex == 1 ? 'appointment' : 'generalHealth');
+                              final typeEnum = reminderTypeIndex == 0
+                                  ? ReminderType.medication
+                                  : (reminderTypeIndex == 1 ? ReminderType.appointment : ReminderType.custom);
+
+                              final displayTitle = reminderTypeIndex == 0 ? '$rawTitle ($dose)' : rawTitle;
+
+                              // REQUIRED VERIFICATION LOGS
+                              dev.log('''
+[FAMILY_REMINDER]
+creatorUid = $creatorUid
+targetUid = $targetUid
+patientId = $patientId
+reminderId = $docId
+reminderTime = $timeDisplay
+type = $typeStr
+'''.trim(), name: 'FamilyReminder');
+
+                              dev.log('[FAMILY_TARGET] targetUid = $targetUid', name: 'FamilyReminder');
+
+                              // 1. Create reminder model
+                              final reminder = Reminder(
+                                id: docId,
+                                title: displayTitle,
+                                medicineName: reminderTypeIndex == 0 ? rawTitle : null,
+                                dosage: reminderTypeIndex == 0 ? dose : null,
+                                description: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
+                                type: typeEnum,
+                                dateTime: scheduledDateTime,
+                                reminderTime: timeDisplay,
+                                frequency: selectedFrequency,
+                                status: 'pending',
+                                isCompleted: false,
+                                patientId: targetUid,
+                                targetUid: targetUid,
+                                createdBy: creatorUid,
+                                creatorUid: creatorUid,
+                                familyId: familyId,
+                                targetPatientName: selectedMember!.name,
+                                telegramEnabled: true,
+                              );
+
+                              // Save to reminders collection and patient's reminders subcollection
+                              await FirebaseFirestore.instance.collection('reminders').doc(docId).set({
+                                ...reminder.toFirestoreCreate(),
+                                'createdByUserId': creatorUid,
+                                'targetUserId': targetUid,
+                                'familyId': familyId,
+                                'type': typeStr,
+                              }, SetOptions(merge: true));
+
+                              await FirebaseFirestore.instance.collection('patients').doc(targetUid).collection('reminders').doc(docId).set({
+                                ...reminder.toFirestoreCreate(),
+                                'createdByUserId': creatorUid,
+                                'targetUserId': targetUid,
+                                'familyId': familyId,
+                                'type': typeStr,
+                              }, SetOptions(merge: true));
+
+                              // 2. If medicine: save medication to target member's medications collection
+                              if (reminderTypeIndex == 0) {
+                                final med = Medication(
+                                  id: docId,
+                                  name: rawTitle,
+                                  dosage: dose,
+                                  time: timeDisplay,
+                                  isTaken: false,
+                                  isSkipped: false,
+                                  date: scheduledDateTime,
+                                  patientId: targetUid,
+                                  frequency: selectedFrequency,
+                                  notes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
+                                  startDate: scheduledDateTime,
+                                  active: true,
+                                );
+                                await ref.read(medicationRepositoryProvider).addMedication(targetUid, med);
+                              }
+
+                              // 3. Create target-addressed notification record in patientNotifications
+                              final creatorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Family Member';
+                              final notifRef = FirebaseFirestore.instance.collection('patientNotifications').doc();
+                              await notifRef.set({
+                                'notificationId': notifRef.id,
+                                'recipientUid': targetUid,
+                                'recipientRole': 'patient',
+                                'senderUid': creatorUid,
+                                'type': 'family_${typeStr}_reminder',
+                                'title': reminderTypeIndex == 0 ? '💊 Family Medication Reminder' : (reminderTypeIndex == 1 ? '📅 Family Appointment Reminder' : '❤️ Family Health Goal Reminder'),
+                                'message': 'Reminder from $creatorName: $displayTitle at $timeDisplay.',
+                                'reminderId': docId,
+                                'status': 'sent',
+                                'createdAt': FieldValue.serverTimestamp(),
+                                'isRead': false,
+                              });
+
+                              dev.log('''
+[FAMILY_NOTIFICATION]
+creatorUid = $creatorUid
+targetUid = $targetUid
+patientId = $targetUid
+reminderId = $docId
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+
+                              // Note: Creator's device schedules NOTHING (per Requirement 2 & 3).
+                              // Target member's device schedules when receiving the reminder.
+
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Reminder for ${selectedMember!.name} ($displayTitle) scheduled for $timeDisplay.'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              dev.log('[FAMILY_REMINDER ERROR] $e', error: e, name: 'FamilyReminder');
+                              setModalState(() {
+                                isSaving = false;
+                                formError = 'Failed to save reminder: $e';
+                              });
+                            }
+                          },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              '• Heart Health: Importance of low sodium intake in seniors.\n• Hydration Tips: Drinking 8 glasses of water improves mobility.\n• Seasonal Care: Flu vaccination guide for family caregivers.',
-              style: TextStyle(
-                height: 1.6,
-                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
   void _showEmergencyContactsModal(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Emergency Contacts',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(LucideIcons.phone, color: AppColors.danger),
-              title: Text('Sarah Chen (Daughter)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-              subtitle: Text('+1 (555) 234-5678', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText)),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.phone, color: AppColors.danger),
-              title: Text('David Chen (Father)', style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-              subtitle: Text('+1 (555) 876-5432', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final currentUid = ref.read(currentUidProvider) ?? '';
+    final patient = ref.read(currentPatientStreamProvider).valueOrNull;
 
-  void _showCareGoalsModal(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (context) => Padding(
@@ -1897,56 +2079,125 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Care Goals & Trackers',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(LucideIcons.phoneCall, color: AppColors.danger, size: 24),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Emergency Contacts & SOS',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(LucideIcons.x, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-            Text(
-              '🎯 Daily Family Goal: 10,000 steps collective walk\n💧 Hydration Target: 2.5L per day per member\n💊 Medication Adherence: Target 95%+',
-              style: TextStyle(
-                height: 1.6,
-                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
+            if (patient?.emergencyContact != null && patient!.emergencyContact!.isNotEmpty)
+              ListTile(
+                leading: const Icon(LucideIcons.phone, color: AppColors.danger),
+                title: Text(
+                  'Designated Emergency Contact',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.navy),
+                ),
+                subtitle: Text(
+                  patient.emergencyContact!,
+                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No specific emergency contact phone saved in profile.',
+                  style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 13),
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+            const SizedBox(height: 16),
 
-  void _showShareRecordsModal(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Share Records Securely',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+            // Emergency SOS Trigger
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  final result = await ref.read(emergencyServiceProvider).triggerEmergencyAlert(
+                    patientUid: currentUid,
+                  );
+
+                  if (!context.mounted) return;
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      title: Row(
+                        children: [
+                          Icon(result.success ? LucideIcons.checkCircle : LucideIcons.alertTriangle,
+                              color: result.success ? AppColors.success : AppColors.danger),
+                          const SizedBox(width: 8),
+                          Text(result.success ? 'SOS Alert Dispatched' : 'Alert Notice'),
+                        ],
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            result.success
+                                ? 'Emergency broadcast sent to care team and family.'
+                                : (result.errorMessage ?? 'Failed to dispatch SOS.'),
+                            style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            result.locationText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                          if (result.telegramSent) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              '✓ Telegram emergency message delivered to connected chat.',
+                              style: TextStyle(fontSize: 12, color: AppColors.success, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                icon: const Icon(LucideIcons.shieldAlert, color: Colors.white),
+                label: const Text(
+                  'TRIGGER EMERGENCY SOS ALERT',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Grant secure access to family medical records to authorized caregivers.',
-              style: TextStyle(
-                color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
-              ),
-            ),
-            const SizedBox(height: 20),
-            PrimaryButton(label: 'Export Shared PDF', onPressed: () => Navigator.pop(context)),
           ],
         ),
       ),
