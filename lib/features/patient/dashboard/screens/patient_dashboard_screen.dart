@@ -668,16 +668,77 @@ reminderTime = $timeDisplay
   }
 
   Widget _buildVitalsSection(BuildContext context, bool isDark, String? uid, List<Vital> vitals) {
-    final hr = vitals.isNotEmpty ? vitals.first.heartRate : 74;
-    final bp = vitals.isNotEmpty ? '${vitals.first.systolic}/${vitals.first.diastolic}' : '120/80';
-    final spo2 = vitals.isNotEmpty ? vitals.first.spo2 : 98;
-    final weight = vitals.isNotEmpty && vitals.first.weight != null ? vitals.first.weight! : 68.0;
+    if (vitals.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: 'Health Vitals',
+            trailing: TextButton.icon(
+              onPressed: () => _showLogVitalsSheet(context, isDark, uid),
+              icon: const Icon(LucideIcons.plus, size: 14),
+              label: const Text('Add Reading', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            borderRadius: 16,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(LucideIcons.activity, color: AppColors.primaryBlue, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'No vital readings recorded yet',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Log your blood pressure, heart rate, or SpO₂ manually.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _showLogVitalsSheet(context, isDark, uid),
+                  child: const Text('Log Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final hr = vitals.first.heartRate != null ? '${vitals.first.heartRate} bpm' : '--';
+    final bp = (vitals.first.systolic != null && vitals.first.diastolic != null) ? '${vitals.first.systolic}/${vitals.first.diastolic}' : '--';
+    final spo2 = vitals.first.spo2 != null ? '${vitals.first.spo2}%' : '--';
+    final weight = vitals.first.weight != null ? '${vitals.first.weight} kg' : '--';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
-          title: 'Continuous Vitals',
+          title: 'Recorded Vitals',
           trailing: TextButton.icon(
             onPressed: () => _showLogVitalsSheet(context, isDark, uid),
             icon: const Icon(LucideIcons.plus, size: 14),
@@ -687,13 +748,13 @@ reminderTime = $timeDisplay
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: _buildVitalItem('Heart Rate', '$hr bpm', LucideIcons.heart, AppColors.danger, isDark)),
+            Expanded(child: _buildVitalItem('Heart Rate', hr, LucideIcons.heart, AppColors.danger, isDark)),
             const SizedBox(width: 8),
             Expanded(child: _buildVitalItem('Blood Pressure', bp, LucideIcons.gauge, AppColors.primaryBlue, isDark)),
             const SizedBox(width: 8),
-            Expanded(child: _buildVitalItem('SpO₂', '$spo2%', LucideIcons.wind, AppColors.accentCyan, isDark)),
+            Expanded(child: _buildVitalItem('SpO₂', spo2, LucideIcons.wind, AppColors.accentCyan, isDark)),
             const SizedBox(width: 8),
-            Expanded(child: _buildVitalItem('Weight', '$weight kg', LucideIcons.scale, AppColors.success, isDark)),
+            Expanded(child: _buildVitalItem('Weight', weight, LucideIcons.scale, AppColors.success, isDark)),
           ],
         ),
       ],

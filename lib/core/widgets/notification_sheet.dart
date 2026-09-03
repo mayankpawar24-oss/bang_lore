@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
 import '../../data/providers/providers.dart';
 import '../../data/models/notification_model.dart';
@@ -163,6 +165,14 @@ class NotificationSheet extends ConsumerWidget {
         icon = LucideIcons.shieldAlert;
         iconColor = AppColors.danger;
         break;
+      case NotificationType.familyMessage:
+        icon = LucideIcons.messageCircle;
+        iconColor = AppColors.primaryBlue;
+        break;
+      case NotificationType.familyReminder:
+        icon = LucideIcons.bellRing;
+        iconColor = const Color(0xFF8B5CF6);
+        break;
       case NotificationType.permission:
         icon = LucideIcons.lock;
         iconColor = AppColors.warning;
@@ -175,6 +185,8 @@ class NotificationSheet extends ConsumerWidget {
     final rawType = (item.rawType ?? item.type.name).toLowerCase();
     final isAppointmentRequest = isDoctor && (rawType.contains('appointment_request') || (item.type == NotificationType.appointment && item.isPending));
     final isProfileAccessRequest = !isDoctor && (rawType.contains('profile_access_request') || rawType.contains('access_request') || item.type == NotificationType.permission);
+    final isSos = item.type == NotificationType.sos || rawType.contains('sos') || item.isCritical;
+    final isFamily = item.type == NotificationType.familyMessage || item.type == NotificationType.familyReminder || rawType.contains('family');
 
     return GestureDetector(
       onTap: () {
@@ -185,17 +197,23 @@ class NotificationSheet extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isSos
+              ? AppColors.danger.withValues(alpha: 0.04)
+              : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: item.isRead
-                ? AppColors.border.withValues(alpha: 0.5)
-                : AppColors.primaryBlue.withValues(alpha: 0.3),
-            width: item.isRead ? 1 : 1.5,
+            color: isSos
+                ? AppColors.danger.withValues(alpha: 0.5)
+                : (item.isRead
+                    ? AppColors.border.withValues(alpha: 0.5)
+                    : AppColors.primaryBlue.withValues(alpha: 0.3)),
+            width: isSos ? 1.5 : (item.isRead ? 1 : 1.5),
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.navy.withValues(alpha: 0.03),
+              color: isSos
+                  ? AppColors.danger.withValues(alpha: 0.08)
+                  : AppColors.navy.withValues(alpha: 0.03),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -207,7 +225,7 @@ class NotificationSheet extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
+                color: iconColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: iconColor, size: 20),
@@ -221,13 +239,39 @@ class NotificationSheet extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text(
-                          item.title,
-                          style: TextStyle(
-                            fontWeight: item.isRead ? FontWeight.w600 : FontWeight.bold,
-                            fontSize: 15,
-                            color: AppColors.navy,
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.title,
+                                style: TextStyle(
+                                  fontWeight: item.isRead ? FontWeight.w600 : FontWeight.bold,
+                                  fontSize: 15,
+                                  color: isSos ? AppColors.danger : AppColors.navy,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (isSos) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.danger.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'CRITICAL',
+                                  style: TextStyle(
+                                    color: AppColors.danger,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       Text(
@@ -239,8 +283,55 @@ class NotificationSheet extends ConsumerWidget {
                   const SizedBox(height: 4),
                   Text(
                     item.message,
-                    style: const TextStyle(color: AppColors.slate, fontSize: 13, height: 1.4),
+                    style: TextStyle(
+                      color: isSos ? const Color(0xFF991B1B) : AppColors.slate,
+                      fontSize: 13,
+                      height: 1.4,
+                      fontWeight: isSos ? FontWeight.w500 : FontWeight.normal,
+                    ),
                   ),
+
+                  // SOS Location & Map Link Button
+                  if (isSos && item.mapsUrl != null && item.mapsUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.danger,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(LucideIcons.mapPin, size: 14),
+                      label: const Text('View Location on Google Maps', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        final uri = Uri.parse(item.mapsUrl!);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                    ),
+                  ],
+
+                  // Family Shortcut Button
+                  if (isFamily) ...[
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        context.push('/patient/family');
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(LucideIcons.users, size: 13, color: AppColors.primaryBlue),
+                          SizedBox(width: 4),
+                          Text('Open Family Circle', style: TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   // DOCTOR ACTION: Appointment Request (Accept / Decline)
                   if (isAppointmentRequest) ...[

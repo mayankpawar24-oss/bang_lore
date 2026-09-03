@@ -56,12 +56,56 @@ class FirebaseNotificationRepository {
       'id': docRef.id,
       'notificationId': docRef.id,
       'recipientUid': recipientUid,
+      'recipientUserId': recipientUid,
       'status': data['status'] ?? 'unread',
       'isRead': false,
       'timestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
     };
     await docRef.set(payload);
+
+    try {
+      // Also write to root notifications / patientNotifications for comprehensive cross-service compatibility
+      await _db.collection('notifications').doc(docRef.id).set(payload, SetOptions(merge: true));
+      if (recipientType == UserType.patient) {
+        await _db.collection('patientNotifications').doc(docRef.id).set(payload, SetOptions(merge: true));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> sendRecipientNotification({
+    required String recipientUid,
+    required String senderUid,
+    required String type,
+    required String title,
+    required String body,
+    String priority = 'normal',
+    String? familyGroupId,
+    String? relatedEventId,
+    String? relatedMemberId,
+    String? mapsUrl,
+    String? location,
+    UserType recipientType = UserType.patient,
+  }) async {
+    await sendNotification(
+      recipientUid: recipientUid,
+      recipientType: recipientType,
+      data: {
+        'senderUid': senderUid,
+        'senderUserId': senderUid,
+        'type': type,
+        'title': title,
+        'body': body,
+        'message': body,
+        'priority': priority,
+        'familyGroupId': familyGroupId,
+        'relatedId': relatedEventId,
+        'relatedEventId': relatedEventId,
+        'relatedMemberId': relatedMemberId,
+        'mapsUrl': mapsUrl,
+        'location': location,
+      },
+    );
   }
 
   Future<void> markAllAsRead(String userId, UserType type) async {

@@ -93,102 +93,17 @@ class _AppOpeningScreenState extends ConsumerState<AppOpeningScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF070B14),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Background Video or Gradient Fallback
-          if (_isInitialized)
-            Center(
-              child: AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              ),
-            )
-          else
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF0F172A),
-                    Color(0xFF1E3A8A),
-                    Color(0xFF0F172A),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // Vignette Overlay
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.50),
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.70),
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
-              ),
-            ),
-          ),
-
-          // Top Bar: Brand Mark + Audio Toggle & Skip
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // TOP: Skip Button in Top-Right
                   Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: AppColors.blueToIndigo,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primaryBlue.withValues(alpha: 0.4),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Icon(LucideIcons.activity, color: Colors.white, size: 18),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'Ardius Care',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       if (_isInitialized)
                         IconButton(
@@ -202,92 +117,176 @@ class _AppOpeningScreenState extends ConsumerState<AppOpeningScreen> {
                         ),
                       TextButton(
                         onPressed: _proceed,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
                         child: const Text(
                           'Skip',
                           style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
+                            color: Colors.white,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
+                  const SizedBox(height: 12),
 
-          // Bottom Bar: Narrative Tagline + "Get Started" Button
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 36,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Continuous, Connected Healthcare',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'AI-coordinated post-discharge recovery and proactive specialist care.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                GestureDetector(
-                  onTap: _proceed,
-                  child: Container(
-                    width: double.infinity,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.25),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
+                  // CENTER: Brand Icon + App Name
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: AppColors.blueToIndigo,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.4),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                      ],
+                        child: const Center(
+                          child: Icon(LucideIcons.activity, color: Colors.white, size: 22),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Continuum Health',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Supporting Visual / Video Area with AspectRatio
+                  Expanded(
+                    child: Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: _isInitialized
+                              ? AspectRatio(
+                                  aspectRatio: _controller.value.aspectRatio > 0
+                                      ? _controller.value.aspectRatio
+                                      : 16 / 9,
+                                  child: VideoPlayer(_controller),
+                                )
+                              : Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(LucideIcons.heartPulse, size: 64, color: AppColors.primaryBlue),
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Text(
-                          'Get Started',
-                          style: TextStyle(
-                            color: Color(0xFF0B0C0E),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // BOTTOM: Headline, Description & Get Started Button
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Continuous, Connected Healthcare',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'AI-coordinated proactive care, family health circles, and instant specialist consultations.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 13.5,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                        onTap: _proceed,
+                        child: Container(
+                          width: double.infinity,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Text(
+                                'Get Started',
+                                style: TextStyle(
+                                  color: Color(0xFF070B14),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Icon(
+                                LucideIcons.arrowRight,
+                                size: 18,
+                                color: Color(0xFF070B14),
+                              ),
+                            ],
                           ),
                         ),
-                        SizedBox(width: 6),
-                        Icon(
-                          LucideIcons.arrowRight,
-                          size: 16,
-                          color: Color(0xFF0B0C0E),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ),
-        ],
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

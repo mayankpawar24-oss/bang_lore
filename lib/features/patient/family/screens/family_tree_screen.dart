@@ -16,6 +16,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../data/models/patient_model.dart';
 import '../../../../data/models/medication_model.dart';
 import '../../../../data/models/family_relationship_model.dart';
+import '../../../../data/models/activity_log_model.dart';
 import 'package:intl/intl.dart';
 import '../widgets/family_chat_view.dart';
 
@@ -2008,22 +2009,87 @@ type = $typeStr
                                 await ref.read(medicationRepositoryProvider).addMedication(targetUid, med);
                               }
 
-                              // 3. Create target-addressed notification record in patientNotifications
+                              // 3. Create target-addressed notification record in patients/{targetUid}/notifications and root collections
                               final creatorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Family Member';
-                              final notifRef = FirebaseFirestore.instance.collection('patientNotifications').doc();
-                              await notifRef.set({
-                                'notificationId': notifRef.id,
-                                'recipientUid': targetUid,
-                                'recipientRole': 'patient',
-                                'senderUid': creatorUid,
-                                'type': 'family_${typeStr}_reminder',
-                                'title': reminderTypeIndex == 0 ? '💊 Family Medication Reminder' : (reminderTypeIndex == 1 ? '📅 Family Appointment Reminder' : '❤️ Family Health Goal Reminder'),
-                                'message': 'Reminder from $creatorName: $displayTitle at $timeDisplay.',
-                                'reminderId': docId,
-                                'status': 'sent',
-                                'createdAt': FieldValue.serverTimestamp(),
-                                'isRead': false,
-                              });
+                              final notifTitle = reminderTypeIndex == 0
+                                  ? '💊 Family Medication Reminder'
+                                  : (reminderTypeIndex == 1 ? '📅 Family Appointment Reminder' : '❤️ Family Health Goal Reminder');
+                              final notifBody = 'Reminder from $creatorName: $displayTitle at $timeDisplay.';
+
+                              await ref.read(notificationRepositoryProvider).sendRecipientNotification(
+                                recipientUid: targetUid,
+                                senderUid: creatorUid,
+                                type: 'family_reminder',
+                                title: notifTitle,
+                                body: notifBody,
+                                priority: 'high',
+                                familyGroupId: familyId,
+                                relatedEventId: docId,
+                                relatedMemberId: targetUid,
+                              );
+
+                              // 4. Log events for both Creator and Target Member
+                              try {
+                                await ref.read(activityLogServiceProvider).logEvent(
+                                  patientId: creatorUid,
+                                  eventType: ActivityEventType.reminderCreated,
+                                  title: 'Family Reminder Created',
+                                  description: 'Created reminder "$displayTitle" for ${selectedMember!.name} at $timeDisplay.',
+                                  actorUid: creatorUid,
+                                  actorRole: 'patient',
+                                  actorName: creatorName,
+                                  metadata: {
+                                    'targetUid': targetUid,
+                                    'targetName': selectedMember!.name,
+                                    'reminderId': docId,
+                                    'reminderTime': timeDisplay,
+                                  },
+                                );
+
+                                await ref.read(activityLogServiceProvider).logEvent(
+                                  patientId: targetUid,
+                                  eventType: ActivityEventType.reminderCreated,
+                                  title: notifTitle,
+                                  description: notifBody,
+                                  actorUid: creatorUid,
+                                  actorRole: 'patient',
+                                  actorName: creatorName,
+                                  metadata: {
+                                    'creatorUid': creatorUid,
+                                    'creatorName': creatorName,
+                                    'reminderId': docId,
+                                    'reminderTime': timeDisplay,
+                                  },
+                                );
+                              } catch (_) {}
+
+                              // 5. Send Telegram notification to Target Member if linked
+                              try {
+                                final targetUserDoc = await FirebaseFirestore.instance.collection('users').doc(targetUid).get();
+                                final targetData = targetUserDoc.data();
+                                final targetChatId = targetData?['telegramChatId'] as String?;
+                                final targetTelegramConnected = targetData?['telegramConnected'] == true;
+
+                                if (targetTelegramConnected && targetChatId != null && targetChatId.isNotEmpty) {
+                                  final telegramMsg = '''
+$notifTitle
+
+Medicine: $rawTitle
+Dosage: $dose
+Time: $timeDisplay
+
+Reminder set by $creatorName.
+'''.trim();
+                                  await ref.read(telegramRepositoryProvider).sendTelegramMessage(
+                                    chatId: targetChatId,
+                                    text: telegramMsg,
+                                    recipientUid: targetUid,
+                                    recipientRole: 'patient',
+                                  );
+                                }
+                              } catch (e) {
+                                dev.log('[FAMILY_TELEGRAM ERROR] $e', error: e, name: 'FamilyReminder');
+                              }
 
                               dev.log('''
 [FAMILY_NOTIFICATION]
@@ -2033,9 +2099,6 @@ patientId = $targetUid
 reminderId = $docId
 reminderTime = $timeDisplay
 '''.trim(), name: 'FamilyReminder');
-
-                              // Note: Creator's device schedules NOTHING (per Requirement 2 & 3).
-                              // Target member's device schedules when receiving the reminder.
 
                               if (context.mounted) {
                                 Navigator.pop(context);

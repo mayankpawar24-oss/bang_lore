@@ -32,8 +32,11 @@ class SupportingInsightCards extends StatelessWidget {
     // Vitals data extraction
     final hrVital = vitals.where((v) => v.heartRate != null).toList();
     final bpVital = vitals.where((v) => v.systolic != null && v.diastolic != null).toList();
-    final hrValue = hrVital.isNotEmpty ? '${hrVital.first.heartRate} bpm' : '72 bpm';
-    final bpValue = bpVital.isNotEmpty ? '${bpVital.first.systolic}/${bpVital.first.diastolic}' : '120/80';
+    final hasVitals = hrVital.isNotEmpty || bpVital.isNotEmpty;
+    final hrValue = hrVital.isNotEmpty ? '${hrVital.first.heartRate} bpm' : (hasVitals ? 'HR Recorded' : 'No Vitals Logged');
+    final bpValue = bpVital.isNotEmpty ? 'BP: ${bpVital.first.systolic}/${bpVital.first.diastolic}' : (hasVitals ? '' : 'Tap to log');
+    final vitalsBadge = hasVitals ? 'RECORDED' : 'PENDING';
+    final vitalsBadgeColor = hasVitals ? AppColors.success : AppColors.muted;
 
     // Meds data
     final totalMeds = medications.length;
@@ -64,9 +67,9 @@ class SupportingInsightCards extends StatelessWidget {
                 iconBg: const Color(0xFFEF4444).withValues(alpha: 0.12),
                 title: 'Vitals Status',
                 primaryMetric: hrValue,
-                subMetric: 'BP: $bpValue',
-                badgeText: 'STABLE',
-                badgeColor: AppColors.success,
+                subMetric: bpValue,
+                badgeText: vitalsBadge,
+                badgeColor: vitalsBadgeColor,
                 onTap: () => context.push('/patient/timeline'),
               ),
             ),

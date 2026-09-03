@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/family_message_model.dart';
 import '../../../../data/models/family_member_model.dart';
+import '../../../../data/models/activity_log_model.dart';
 import '../../../../data/providers/providers.dart';
 
 class FamilyChatView extends ConsumerStatefulWidget {
@@ -138,9 +139,52 @@ class _FamilyChatViewState extends ConsumerState<FamilyChatView> {
         senderPhoto: senderPhoto,
         text: text,
       );
+
+      // Dispatch notifications to all other connected family members
+      final otherMembers = widget.members
+          .where((m) => m.memberUid != null && m.memberUid!.isNotEmpty && m.memberUid != senderId && m.relationship != 'Self')
+          .map((m) => m.memberUid!)
+          .toSet();
+
+      for (final recipientUid in otherMembers) {
+        try {
+          await ref.read(notificationRepositoryProvider).sendRecipientNotification(
+            recipientUid: recipientUid,
+            senderUid: senderId,
+            type: 'family_message',
+            title: 'Family Health Circle',
+            body: '$senderName: $text',
+            priority: 'normal',
+            familyGroupId: familyId,
+          );
+        } catch (_) {}
+      }
+
+      // Log the event in sender's activity logs
+      try {
+        await ref.read(activityLogServiceProvider).logEvent(
+          patientId: senderId,
+          eventType: ActivityEventType.general,
+          title: 'Family Chat Message',
+          description: 'Sent message in Family Health Circle: "$text"',
+          actorUid: senderId,
+          actorRole: 'patient',
+          actorName: senderName,
+          metadata: {'familyId': familyId},
+        );
+      } catch (_) {}
+
       Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
     } catch (e) {
       dev.log('[FAMILY_CHAT ERROR] Failed to send group message: $e', name: 'FamilyChatView');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send message: $e'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
