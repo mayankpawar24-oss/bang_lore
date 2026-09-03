@@ -1,0 +1,257 @@
+{
+  "name": "Continuum Health — Appointment Status Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "query",
+        "projectId": "continuum-health-b54cb",
+        "query": "={\n  \"from\": [\n    {\n      \"collectionId\": \"appointments\"\n    }\n  ],\n  \"where\": {\n    \"fieldFilter\": {\n      \"field\": {\n        \"fieldPath\": \"status\"\n      },\n      \"op\": \"IN\",\n      \"value\": {\n        \"arrayValue\": {\n          \"values\": [\n            { \"stringValue\": \"pending\" },\n            { \"stringValue\": \"approved\" },\n            { \"stringValue\": \"rejected\" },\n            { \"stringValue\": \"cancelled\" },\n            { \"stringValue\": \"completed\" },\n            { \"stringValue\": \"missed\" }\n          ]\n        }\n      }\n    }\n  }\n}"
+      },
+      "id": "query-changed-appointments-1",
+      "name": "Query Changed Appointments",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build deterministic notification task and event key\nconst items = $input.all();\nconst tasks = [];\n\nfor (const item of items) {\n  const data = item.json;\n  const apptId = data.id || data.appointmentId;\n  if (!apptId) continue;\n\n  const status = (data.status || 'pending').toLowerCase();\n  const patientId = data.patientId || '';\n  const doctorId = data.doctorId || '';\n  const doctorName = data.doctorName || 'Doctor';\n  const patientName = data.patientName || 'Patient';\n  \n  // Determine timestamp for deterministic versioning\n  const updatedSeconds = (data.updatedAt && data.updatedAt._seconds) \n    ? data.updatedAt._seconds \n    : ((data.requestedAt && data.requestedAt._seconds) ? data.requestedAt._seconds : 'init');\n  \n  // Deterministic Idempotency Key: appointmentId + status + timestamp\n  const eventKey = `${apptId}_${status}_${updatedSeconds}`;\n  \n  let recipientUid = '';\n  let recipientRole = '';\n  let senderUid = '';\n  let title = '';\n  let message = '';\n  let notifType = 'appointment';\n\n  if (status === 'pending') {\n    // Doctor receives new appointment request\n    recipientUid = doctorId;\n    recipientRole = 'doctor';\n    senderUid = patientId;\n    title = 'New Appointment Request';\n    message = `New appointment request from ${patientName}`;\n    notifType = 'appointment_request';\n  } else if (status === 'approved') {\n    // Patient receives approval\n    recipientUid = patientId;\n    recipientRole = 'patient';\n    senderUid = doctorId;\n    title = 'Appointment Approved';\n    message = `Your appointment with Dr. ${doctorName} has been approved.`;\n    notifType = 'appointment_approved';\n  } else if (status === 'rejected') {\n    // Patient receives rejection\n    recipientUid = patientId;\n    recipientRole = 'patient';\n    senderUid = doctorId;\n    title = 'Appointment Rejected';\n    message = `Your appointment request with Dr. ${doctorName} was rejected.`;\n    notifType = 'appointment_rejected';\n  } else if (status === 'cancelled') {\n    // Both patient and doctor should know, default to doctor if patient cancelled\n    recipientUid = doctorId;\n    recipientRole = 'doctor';\n    senderUid = patientId;\n    title = 'Appointment Cancelled';\n    message = `${patientName} cancelled their scheduled appointment.`;\n    notifType = 'appointment_cancelled';\n  } else if (status === 'completed') {\n    recipientUid = patientId;\n    recipientRole = 'patient';\n    senderUid = doctorId;\n    title = 'Appointment Completed';\n    message = `Your consultation with Dr. ${doctorName} is completed.`;\n    notifType = 'appointment_completed';\n  } else if (status === 'missed') {\n    recipientUid = patientId;\n    recipientRole = 'patient';\n    senderUid = doctorId;\n    title = 'Appointment Missed';\n    message = `Your scheduled appointment with Dr. ${doctorName} was missed. Please reschedule.`;\n    notifType = 'appointment_missed';\n  }\n\n  if (recipientUid) {\n    tasks.push({\n      json: {\n        eventKey,\n        appointmentId: apptId,\n        status,\n        recipientUid,\n        recipientRole,\n        senderUid,\n        title,\n        message,\n        notifType,\n        doctorName,\n        patientName,\n        dateTime: data.dateTime,\n        notes: data.notes || ''\n      }\n    });\n  }\n}\n\nreturn tasks;"
+      },
+      "id": "build-notification-tasks-1",
+      "name": "Build Notification Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "projectId": "continuum-health-b54cb",
+        "collection": "processedEvents",
+        "documentId": "={{ $json.eventKey }}"
+      },
+      "id": "check-idempotency-1",
+      "name": "Check Idempotency",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error != null || $json.id == null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-not-processed-1",
+      "name": "If Not Processed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "projectId": "continuum-health-b54cb",
+        "collection": "processedEvents",
+        "documentId": "={{ $('Build Notification Tasks').item.json.eventKey }}",
+        "columns": "eventKey,appointmentId,status,processedAt",
+        "options": {
+          "useServerTimestamp": true
+        }
+      },
+      "id": "record-event-key-1",
+      "name": "Record Event Key",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "projectId": "continuum-health-b54cb",
+        "collection": "users",
+        "documentId": "={{ $('Build Notification Tasks').item.json.recipientUid }}"
+      },
+      "id": "get-recipient-user-1",
+      "name": "Get Recipient User",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.telegramConnected === true && $json.telegramChatId != null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-telegram-connected-1",
+      "name": "If Telegram Connected",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1640, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.telegramChatId }}",
+        "text": "=🏥 *Continuum Health*\n\n*{{ $('Build Notification Tasks').item.json.title }}*\n{{ $('Build Notification Tasks').item.json.message }}\n\nDoctor: Dr. {{ $('Build Notification Tasks').item.json.doctorName }}\nPatient: {{ $('Build Notification Tasks').item.json.patientName }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-telegram-msg-1",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1860, 100]
+    },
+    {
+      "parameters": {
+        "operation": "add",
+        "projectId": "continuum-health-b54cb",
+        "collection": "notifications",
+        "options": {}
+      },
+      "id": "write-root-notification-1",
+      "name": "Write In-App Notification",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1860, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Changed Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Changed Appointments": {
+      "main": [
+        [
+          {
+            "node": "Build Notification Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Notification Tasks": {
+      "main": [
+        [
+          {
+            "node": "Check Idempotency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Idempotency": {
+      "main": [
+        [
+          {
+            "node": "If Not Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Not Processed": {
+      "main": [
+        [
+          {
+            "node": "Record Event Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Event Key": {
+      "main": [
+        [
+          {
+            "node": "Get Recipient User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recipient User": {
+      "main": [
+        [
+          {
+            "node": "If Telegram Connected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Telegram Connected": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Write In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

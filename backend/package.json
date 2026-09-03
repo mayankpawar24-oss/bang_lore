@@ -1,0 +1,51 @@
+{
+  "name": "continuum-health-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Continuum Health - a healthcare monitoring and AI assistant platform",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --runInBand --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "healthcare",
+    "firebase",
+    "express",
+    "ai",
+    "fhir"
+  ],
+  "author": "Continuum Health Team",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "express-rate-limit": "^7.3.1",
+    "firebase-admin": "^12.3.0",
+    "helmet": "^7.1.0",
+    "uuid": "^10.0.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/index.js"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

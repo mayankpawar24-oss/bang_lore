@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isApprovedDoctor(patientId) {
+      let permId = request.auth.uid + '_' + patientId;
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/accessPermissions/$(permId)) &&
+        get(/databases/$(database)/documents/accessPermissions/$(permId)).data.status == 'approved';
+    }
+
+    function hasPermission(patientId, permType) {
+      let permId = request.auth.uid + '_' + patientId;
+      return isApprovedDoctor(patientId) &&
+        permType in get(/databases/$(database)/documents/accessPermissions/$(permId)).data.permissions;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /patients/{patientId} {
+      allow read, write: if isSignedIn() && request.auth.uid == patientId;
+      allow read: if isSignedIn();
+
+      match /vitals/{vitalId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'vitals');
+      }
+
+      match /medications/{medId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'medications');
+      }
+
+      match /appointments/{appId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'appointments');
+        allow create: if isSignedIn() && request.resource.data.doctorId == request.auth.uid;
+        allow read, update, delete: if isSignedIn() && resource.data.doctorId == request.auth.uid;
+      }
+
+      match /reminders/{remId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow create: if hasPermission(patientId, 'appointments');
+      }
+
+      match /familyMembers/{memberId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'familyHistory');
+      }
+
+      match /medicalHistory/{recordId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'medicalHistory');
+      }
+
+      match /aiChats/{chatId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'aiChat');
+
+        match /messages/{msgId} {
+          allow read, write: if isSignedIn() && request.auth.uid == patientId;
+          allow read: if hasPermission(patientId, 'aiChat');
+        }
+      }
+
+      match /symptoms/{symptomId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /medicalDocuments/{docId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /reports/{reportId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow read: if hasPermission(patientId, 'reports');
+      }
+
+      match /accessRequests/{requestId} {
+        allow read: if isSignedIn() && (request.auth.uid == patientId || request.auth.uid == resource.data.doctorId);
+        allow create: if isSignedIn() && request.auth.uid == request.resource.data.doctorId;
+        allow update: if isSignedIn() && (request.auth.uid == patientId || request.auth.uid == resource.data.doctorId);
+      }
+
+      match /notifications/{notifId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow create: if isSignedIn();
+      }
+
+      match /activityLogs/{logId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow create: if isSignedIn();
+      }
+    }
+
+    match /doctors/{doctorId} {
+      allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+      allow read: if isSignedIn();
+
+      match /appointments/{appId} {
+        allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn() && request.auth.uid == request.resource.data.patientId && request.resource.data.doctorId == doctorId;
+        allow read, update, delete: if isSignedIn() && (resource.data.patientId == request.auth.uid || resource.data.doctorId == request.auth.uid);
+      }
+
+      match /availability/{slotId} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn() && (
+          request.auth.uid == doctorId ||
+          request.resource.data.bookedByPatientId == request.auth.uid
+        );
+        allow delete: if isSignedIn() && (request.auth.uid == doctorId || resource.data.bookedByPatientId == request.auth.uid);
+      }
+
+      match /notifications/{notifId} {
+        allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn();
+      }
+
+      match /activityLogs/{logId} {
+        allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn();
+      }
+    }
+
+    match /appointments/{appId} {
+      allow create: if isSignedIn() &&
+        (request.auth.uid == request.resource.data.patientId || request.auth.uid == request.resource.data.doctorId);
+      allow read, update, delete: if isSignedIn() &&
+        (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.doctorId);
+    }
+
+    match /accessPermissions/{permId} {
+      allow read: if isSignedIn() &&
+        (resource == null || request.auth.uid == resource.data.doctorId || request.auth.uid == resource.data.patientId);
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.doctorId;
+      allow update: if isSignedIn() &&
+        (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.doctorId);
+      allow delete: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow read, update: if isSignedIn() && (resource.data.recipientUid == request.auth.uid);
+      allow create: if isSignedIn();
+    }
+
+    match /processedEvents/{eventId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /telegramLinkCodes/{code} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

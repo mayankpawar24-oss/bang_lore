@@ -1,0 +1,190 @@
+{
+  "name": "Continuum Health — Telegram Linking",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger-1",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming Telegram message for 6-character linking code\nconst item = $input.item.json;\nconst message = item.message || {};\nconst text = (message.text || '').trim();\nconst chatId = message.chat ? message.chat.id.toString() : '';\n\n// Match linking code pattern e.g. /start 123456 or plain 123456\nlet code = '';\nif (text.startsWith('/start ')) {\n  code = text.replace('/start ', '').trim();\n} else if (text.length >= 4 && text.length <= 10) {\n  code = text;\n}\n\nreturn [{\n  json: {\n    chatId,\n    code,\n    receivedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-telegram-input-1",
+      "name": "Parse Linking Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "projectId": "continuum-health-b54cb",
+        "collection": "telegramLinkCodes",
+        "documentId": "={{ $json.code }}"
+      },
+      "id": "lookup-linking-code-1",
+      "name": "Lookup Linking Code in Firestore",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.uid != null && $json.uid.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-code-valid-1",
+      "name": "If Code Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "projectId": "continuum-health-b54cb",
+        "collection": "users",
+        "documentId": "={{ $json.uid }}",
+        "columns": "telegramChatId,telegramConnected,updatedAt",
+        "options": {}
+      },
+      "id": "update-user-telegram-1",
+      "name": "Update User in Firestore",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [980, 200]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "projectId": "continuum-health-b54cb",
+        "collection": "telegramLinkCodes",
+        "documentId": "={{ $('Parse Linking Code').item.json.code }}"
+      },
+      "id": "invalidate-link-code-1",
+      "name": "Invalidate Used Code",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Linking Code').item.json.chatId }}",
+        "text": "✅ *Continuum Health Successfully Linked!*\n\nYour Telegram account is now securely linked to your Continuum Health profile.\nYou will receive critical appointment notifications, status updates, and reminders right here.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-success-reply-1",
+      "name": "Send Confirmation Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Linking Code').item.json.chatId }}",
+        "text": "❌ *Linking Failed*\n\nThe code you entered is invalid or has expired.\nPlease generate a new 6-digit linking code inside the Continuum Health app under Profile → Telegram Integration and try again.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-error-reply-1",
+      "name": "Send Invalid Code Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [980, 400]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Linking Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Linking Code": {
+      "main": [
+        [
+          {
+            "node": "Lookup Linking Code in Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Linking Code in Firestore": {
+      "main": [
+        [
+          {
+            "node": "If Code Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Code Valid": {
+      "main": [
+        [
+          {
+            "node": "Update User in Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Invalid Code Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User in Firestore": {
+      "main": [
+        [
+          {
+            "node": "Invalidate Used Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invalidate Used Code": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

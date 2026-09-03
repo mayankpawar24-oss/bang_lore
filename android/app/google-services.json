@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "764798571355",
+    "project_id": "continuum-health-b54cb",
+    "storage_bucket": "continuum-health-b54cb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:764798571355:android:f2da35192cd3e9623dc07e",
+        "android_client_info": {
+          "package_name": "com.continuumhealth.continuum_health"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2p0MtGhhm-3yj3dNWyx_Qms9vpeKqz6o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
