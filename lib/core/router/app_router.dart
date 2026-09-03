@@ -7,6 +7,7 @@ import '../../data/models/user_model.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/role_selection_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
+import '../../features/intro/screens/app_opening_screen.dart';
 import '../../features/patient/dashboard/screens/patient_dashboard_screen.dart';
 import '../../features/patient/schedule/screens/patient_schedule_screen.dart';
 import '../../features/patient/profile/screens/patient_profile_screen.dart';
@@ -31,10 +32,12 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: '/intro',
     redirect: (context, state) {
       final loc = state.matchedLocation;
-      final isPublicRoute = loc == '/login' ||
+      final isIntro = loc == '/intro';
+      final isPublicRoute = isIntro ||
+          loc == '/login' ||
           loc == '/role-select' ||
           loc == '/register';
 
@@ -62,9 +65,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         return null;
       }
 
-      // 4. Authenticated -> route to proper dashboard if on public page
+      // 4. Authenticated -> route to proper dashboard if on public page (except intro)
       final role = authState.user?.role;
-      if (isPublicRoute) {
+      if (isPublicRoute && !isIntro) {
         final target = role == UserRole.doctor ? '/doctor/dashboard' : '/patient/dashboard';
         dev.log('[ROUTER REDIRECT] Authenticated on public route "$loc" -> redirect $target (role: ${role?.name})', name: 'GoRouter');
         return target;
@@ -83,6 +86,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/intro',
+        builder: (context, state) => const AppOpeningScreen(),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),

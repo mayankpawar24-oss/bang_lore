@@ -1,6 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class PatientShellScreen extends StatelessWidget {
@@ -21,66 +23,203 @@ class PatientShellScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentIndex = navigationShell.currentIndex;
 
     return Scaffold(
+      extendBody: true,
       body: navigationShell,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
-          border: Border(
-            top: BorderSide(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : AppColors.border.withValues(alpha: 0.8),
-              width: 1,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.3 : 0.04),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: NavigationBar(
-            selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: _goBranch,
-            backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-            elevation: 0,
-            indicatorColor: isDark
-                ? const Color(0xFF1E3A8A).withValues(alpha: 0.5)
-                : AppColors.softBlue,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            destinations: [
-              NavigationDestination(
-                icon: Icon(LucideIcons.home, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.home, color: AppColors.primaryBlue),
-                label: 'Home',
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.bottomCenter,
+            children: [
+              // Floating Glassmorphic Dock Container
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    height: 66,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xFF131C2E).withValues(alpha: 0.88)
+                          : Colors.white.withValues(alpha: 0.90),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.12)
+                            : AppColors.border.withValues(alpha: 0.85),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.45 : 0.08),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        // Left 2 Navigation Items: Home (0) & Family (1)
+                        Expanded(
+                          child: _buildNavItem(
+                            context,
+                            index: 0,
+                            currentIndex: currentIndex,
+                            icon: LucideIcons.home,
+                            label: 'Home',
+                            isDark: isDark,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildNavItem(
+                            context,
+                            index: 1,
+                            currentIndex: currentIndex,
+                            icon: LucideIcons.users,
+                            label: 'Family',
+                            isDark: isDark,
+                          ),
+                        ),
+
+                        // Center Space Reserved for Emerged Button
+                        const SizedBox(width: 58),
+
+                        // Right 2 Navigation Items: Timeline (3) & Profile (4)
+                        Expanded(
+                          child: _buildNavItem(
+                            context,
+                            index: 3,
+                            currentIndex: currentIndex,
+                            icon: LucideIcons.clock,
+                            label: 'Timeline',
+                            isDark: isDark,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildNavItem(
+                            context,
+                            index: 4,
+                            currentIndex: currentIndex,
+                            icon: LucideIcons.user,
+                            label: 'Profile',
+                            isDark: isDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.users, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.users, color: AppColors.primaryBlue),
-                label: 'Family',
-              ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.sparkles, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.sparkles, color: AppColors.primaryBlue),
-                label: 'AI Care',
-              ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.clock, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.clock, color: AppColors.primaryBlue),
-                label: 'Timeline',
-              ),
-              NavigationDestination(
-                icon: Icon(LucideIcons.user, color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                selectedIcon: const Icon(LucideIcons.user, color: AppColors.primaryBlue),
-                label: 'Profile',
+
+              // Emerged Central Blue Action Button (Branch 2: AI Care / Robinson Co-Pilot)
+              Positioned(
+                top: -18,
+                child: GestureDetector(
+                  onTap: () => _goBranch(2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: AppColors.heroGradient,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.45),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
+                            width: 3.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            LucideIcons.sparkles,
+                            color: Colors.white,
+                            size: currentIndex == 2 ? 26 : 24,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'AI Care',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: currentIndex == 2 ? FontWeight.w800 : FontWeight.w600,
+                          color: currentIndex == 2
+                              ? AppColors.primaryBlue
+                              : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    BuildContext context, {
+    required int index,
+    required int currentIndex,
+    required IconData icon,
+    required String label,
+    required bool isDark,
+  }) {
+    final isSelected = index == currentIndex;
+    final color = isSelected
+        ? AppColors.primaryBlue
+        : (isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText);
+
+    return InkWell(
+      onTap: () => _goBranch(index),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primaryBlue.withValues(alpha: 0.12)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );

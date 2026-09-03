@@ -22,6 +22,9 @@ import '../../../../core/widgets/appointment_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../widgets/home_action_carousel.dart';
+import '../widgets/health_insights_summary_card.dart';
+import '../widgets/supporting_insight_cards.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
   const PatientDashboardScreen({super.key});
@@ -57,53 +60,115 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context, ref, unreadCount, isDark),
-              const SizedBox(height: 16),
-              AppSearchBar(
-                readOnly: true,
-                hintText: 'Search specialists, symptoms, clinics...',
-                onTap: () => context.push('/patient/dashboard/doctor-search'),
-                onFilterTap: () => context.push('/patient/dashboard/doctor-search'),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(context, ref, unreadCount, isDark),
+                  const SizedBox(height: 16),
+                  AppSearchBar(
+                    readOnly: true,
+                    hintText: 'Ask anything about your health, doctors, symptoms...',
+                    onTap: () => context.go('/patient/ai-care'),
+                    onFilterTap: () => context.push('/patient/dashboard/doctor-search'),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 1. Blue Action Carousel with pagination
+                  HomeActionCarousel(
+                    onUploadTap: () => _showUploadReportSheet(context, isDark, uid),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 2. Today's Health Insights Header & Summary
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "Today's Health Insights",
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : AppColors.navy,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => context.push('/patient/timeline'),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'View All',
+                          style: TextStyle(
+                            color: AppColors.primaryBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  HealthInsightsSummaryCard(
+                    vitals: streamVitals,
+                    medications: streamMeds,
+                    reports: streamReports,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Supporting 2-Column Insight Cards
+                  SupportingInsightCards(
+                    vitals: streamVitals,
+                    medications: streamMeds,
+                    appointments: streamAppts,
+                    reports: streamReports,
+                    onUploadTap: () => _showUploadReportSheet(context, isDark, uid),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 4. Clinical Health Records Upload Card
+                  _buildUploadRecordsBanner(context, isDark, uid),
+                  const SizedBox(height: 24),
+
+                  // 5. Clinical AI Guidance & Traditional Care Tip
+                  _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports, streamAppts),
+                  const SizedBox(height: 24),
+
+                  // 6. Quick Action Row
+                  _buildQuickActionsRow(context, isDark, uid),
+                  const SizedBox(height: 24),
+
+                  // 7. Vitals Overview
+                  _buildVitalsSection(context, isDark, uid, streamVitals),
+                  const SizedBox(height: 24),
+
+                  // 8. Today's Medications
+                  _buildTodayMedication(context, isDark, uid, streamMeds),
+                  const SizedBox(height: 24),
+
+                  // 9. Care Coordination / Next Appointment
+                  if (nextAppointment != null) ...[
+                    _buildNextAppointment(context, nextAppointment),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // 10. Find Specialists
+                  if (doctors.isNotEmpty) ...[
+                    _buildNearbyDoctors(context, doctors),
+                    const SizedBox(height: 24),
+                  ],
+                ],
               ),
-              const SizedBox(height: 20),
-
-              // 1. Health Records Upload Card
-              _buildUploadRecordsBanner(context, isDark, uid),
-              const SizedBox(height: 20),
-
-              // 2. Today's Insights & AI Care Tip
-              _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports, streamAppts),
-              const SizedBox(height: 24),
-
-              // 3. Quick Action Row
-              _buildQuickActionsRow(context, isDark, uid),
-              const SizedBox(height: 24),
-
-              // 4. Vitals Overview
-              _buildVitalsSection(context, isDark, uid, streamVitals),
-              const SizedBox(height: 24),
-
-              // 5. Today's Medications
-              _buildTodayMedication(context, isDark, uid, streamMeds),
-              const SizedBox(height: 24),
-
-              // 6. Care Coordination / Next Appointment
-              if (nextAppointment != null) ...[
-                _buildNextAppointment(context, nextAppointment),
-                const SizedBox(height: 24),
-              ],
-
-              // 7. Find Specialists
-              if (doctors.isNotEmpty) ...[
-                _buildNearbyDoctors(context, doctors),
-                const SizedBox(height: 24),
-              ],
-            ],
+            ),
           ),
         ),
       ),

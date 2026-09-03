@@ -13,6 +13,11 @@ import 'package:continuum_health/features/patient/dashboard/screens/patient_dash
 import 'package:continuum_health/features/patient/family/screens/family_tree_screen.dart';
 import 'package:continuum_health/features/patient/profile/screens/patient_profile_screen.dart';
 import 'package:continuum_health/features/doctor/profile/screens/doctor_profile_screen.dart';
+import 'package:continuum_health/features/patient/dashboard/widgets/home_action_carousel.dart';
+import 'package:continuum_health/features/patient/dashboard/widgets/health_insights_summary_card.dart';
+import 'package:continuum_health/features/patient/dashboard/widgets/supporting_insight_cards.dart';
+import 'package:continuum_health/data/models/vital_model.dart';
+import 'package:continuum_health/data/models/medication_model.dart';
 
 class FamilyMembersNotifierMock extends StateNotifier<List<FamilyMemberModel>> implements FamilyMembersNotifier {
   FamilyMembersNotifierMock() : super([
@@ -301,5 +306,98 @@ void main() {
     expect(parsed.id, 'appt_999');
     expect(parsed.status, AppointmentStatus.pending);
     expect(parsed.notes, 'Chest tightness check');
+  });
+
+  testWidgets('HomeActionCarousel renders carousel items and responds to upload tap', (WidgetTester tester) async {
+    bool uploadTapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeActionCarousel(
+            onUploadTap: () => uploadTapped = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(uploadTapped, isFalse);
+    expect(find.byType(HomeActionCarousel), findsOneWidget);
+    expect(find.text('Daily Care Protocol'), findsOneWidget);
+    expect(find.text('ACTIVE PROTOCOL'), findsOneWidget);
+  });
+
+  testWidgets('HealthInsightsSummaryCard renders adherence progress and nominal vitals', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HealthInsightsSummaryCard(
+            vitals: [
+              Vital(
+                id: 'v_1',
+                patientId: 'p_1',
+                heartRate: 72,
+                systolic: 120,
+                diastolic: 80,
+                recordedAt: DateTime.now(),
+              ),
+            ],
+            medications: [
+              MedicationModel(
+                id: 'm_1',
+                patientId: 'p_1',
+                name: 'Metformin',
+                dosage: '500mg',
+                frequency: 'Twice daily',
+                time: '08:00 AM',
+                date: DateTime.now(),
+                isTaken: true,
+              ),
+            ],
+            reports: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(find.byType(HealthInsightsSummaryCard), findsOneWidget);
+    expect(find.text('Personalized Health'), findsOneWidget);
+    expect(find.text('STABLE'), findsOneWidget);
+    expect(find.text('View Care Protocol Details'), findsOneWidget);
+  });
+
+  testWidgets('SupportingInsightCards renders 2x2 grid of clinical metrics', (WidgetTester tester) async {
+    bool uploadTapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SupportingInsightCards(
+            vitals: [
+              Vital(
+                id: 'v_1',
+                patientId: 'p_1',
+                heartRate: 76,
+                systolic: 118,
+                diastolic: 78,
+                recordedAt: DateTime.now(),
+              ),
+            ],
+            medications: const [],
+            appointments: const [],
+            reports: const [],
+            onUploadTap: () => uploadTapped = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(uploadTapped, isFalse);
+    expect(find.byType(SupportingInsightCards), findsOneWidget);
+    expect(find.text('Vitals Status'), findsOneWidget);
+    expect(find.text('Medication'), findsOneWidget);
+    expect(find.text('Consultation'), findsOneWidget);
+    expect(find.text('Clinical Records'), findsOneWidget);
   });
 }
