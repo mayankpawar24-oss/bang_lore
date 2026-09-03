@@ -8,6 +8,7 @@ import 'dart:developer' as dev;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_chip.dart';
@@ -19,6 +20,8 @@ import '../../../../data/models/patient_model.dart';
 import '../../../../data/models/appointment_model.dart';
 import '../../../../data/models/permission_request_model.dart';
 import '../../../../data/models/ai_chat_model.dart';
+import '../../../../data/models/report_model.dart';
+import '../../../../data/models/activity_log_model.dart';
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -31,6 +34,102 @@ class PatientDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
+  Future<void> _toggleAdmissionStatus(PatientModel patient) async {
+    final newStatus = patient.isAdmitted ? 'discharged' : 'admitted';
+    final isAdmitting = newStatus == 'admitted';
+
+    try {
+      final db = FirebaseFirestore.instance;
+      final updateData = <String, dynamic>{
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (isAdmitting) {
+        updateData['admittedAt'] = FieldValue.serverTimestamp();
+      } else {
+        updateData['dischargedAt'] = FieldValue.serverTimestamp();
+      }
+
+      await db.collection('patients').doc(patient.id).update(updateData);
+
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await ref.read(activityLogServiceProvider).logEvent(
+        patientId: patient.id,
+        eventType: ActivityEventType.admissionChanged,
+        title: isAdmitting ? 'Patient Admitted' : 'Patient Discharged',
+        description: isAdmitting
+            ? 'Admitted for in-hospital observation and clinical management.'
+            : 'Discharged from in-hospital care to outpatient monitoring.',
+        actorUid: currentUid,
+        actorRole: 'doctor',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isAdmitting ? 'Patient marked as Admitted.' : 'Patient discharged.'),
+            backgroundColor: isAdmitting ? AppColors.primaryBlue : AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update admission status: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadDocumentForPatient(PatientModel patient) async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'txt'],
+      );
+
+      if (files.isEmpty) return;
+      final file = files.first;
+      final bytes = await file.readAsBytes();
+
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final report = ReportModel(
+        id: '',
+        patientId: patient.id,
+        title: file.name.split('.').first,
+        category: ReportCategory.emr,
+        date: DateTime.now(),
+        doctorOrFacility: 'Attending Physician',
+        summary: 'In-hospital clinical document uploaded during admission.',
+        uploadedBy: currentUid,
+        uploaderId: currentUid,
+        uploaderRole: 'doctor',
+      );
+
+      await ref.read(reportRepositoryProvider).uploadReport(
+        report,
+        fileBytes: bytes,
+        fileName: file.name,
+        fileType: file.extension == 'pdf' ? 'application/pdf' : 'image/${file.extension}',
+        uploaderRole: 'doctor',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Document uploaded & OCR processed successfully.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to upload document: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -241,6 +340,95 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
                 ],
               ),
             ).animate().fadeIn().slideY(begin: -0.05),
+            const SizedBox(height: 16),
+
+            // In-Hospital Care / Admission Card
+            AppCard(
+              padding: const EdgeInsets.all(18),
+              borderRadius: 20,
+              elevation: 1,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            currentPatient.isAdmitted ? LucideIcons.bedDouble : LucideIcons.home,
+                            size: 20,
+                            color: currentPatient.isAdmitted ? AppColors.danger : AppColors.success,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            currentPatient.isAdmitted ? 'Inpatient (Admitted)' : 'Outpatient (Discharged)',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                        ],
+                      ),
+                      OutlinedButton.icon(
+                        icon: Icon(
+                          currentPatient.isAdmitted ? LucideIcons.logOut : LucideIcons.logIn,
+                          size: 16,
+                          color: currentPatient.isAdmitted ? AppColors.success : AppColors.primaryBlue,
+                        ),
+                        label: Text(
+                          currentPatient.isAdmitted ? 'Discharge' : 'Mark Admitted',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: currentPatient.isAdmitted ? AppColors.success : AppColors.primaryBlue,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: currentPatient.isAdmitted ? AppColors.success : AppColors.primaryBlue,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        onPressed: () => _toggleAdmissionStatus(currentPatient),
+                      ),
+                    ],
+                  ),
+                  if (currentPatient.isAdmitted) ...[
+                    const SizedBox(height: 12),
+                    Divider(color: isDark ? const Color(0xFF334155) : AppColors.border),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Patient is currently admitted. Inpatient clinical records and notes can be uploaded.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          icon: const Icon(LucideIcons.uploadCloud, size: 16, color: Colors.white),
+                          label: const Text('Upload Doc', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                          onPressed: () => _uploadDocumentForPatient(currentPatient),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ).animate().fadeIn().slideY(begin: 0.05),
             const SizedBox(height: 20),
 
             // Medication Adherence Section

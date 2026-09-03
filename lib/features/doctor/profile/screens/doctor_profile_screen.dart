@@ -28,7 +28,7 @@ class DoctorProfileScreen extends ConsumerWidget {
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

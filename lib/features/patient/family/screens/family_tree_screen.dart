@@ -1,9 +1,9 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
@@ -12,6 +12,8 @@ import '../../../../core/widgets/primary_button.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/family_member_model.dart';
 import '../../../../data/models/reminder_model.dart';
+import '../../../../data/models/user_model.dart';
+import '../../../../data/models/patient_model.dart';
 
 class FamilyTreeScreen extends ConsumerStatefulWidget {
   const FamilyTreeScreen({super.key});
@@ -23,7 +25,6 @@ class FamilyTreeScreen extends ConsumerStatefulWidget {
 class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   int _selectedTab = 0; // 0: Tree, 1: Reminders, 2: Features
   final TransformationController _transformationController = TransformationController();
-  final PageController _pageController = PageController();
 
   // Editor State
   bool _isEditMode = false;
@@ -56,19 +57,11 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   @override
   void dispose() {
     _transformationController.dispose();
-    _pageController.dispose();
     super.dispose();
   }
 
   void _onTabTapped(int index) {
     setState(() => _selectedTab = index);
-    if (_pageController.hasClients) {
-      _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    }
   }
 
   @override
@@ -93,25 +86,21 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
               ),
             ),
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: _draggingMemberId != null ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
-                onPageChanged: (index) {
-                  setState(() => _selectedTab = index);
-                },
+              child: IndexedStack(
+                index: _selectedTab,
                 children: [
                   // Tab 0: Family Tree Canvas
                   _buildTreeTabContent(context, members, isDark),
 
                   // Tab 1: Family Reminders / History (Preserves vertical scrolling)
                   SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     child: _buildRemindersTabContent(context, members, reminders, isDark),
                   ),
 
                   // Tab 2: Family Features / Care Board (Preserves vertical scrolling)
                   SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     child: _buildFeaturesTabContent(context, members, isDark),
                   ),
                 ],
@@ -449,8 +438,8 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                       );
                     }
 
-                    final virtualWidth = max(canvasWidth, 1400.0);
-                    final virtualHeight = max(canvasHeight, 1200.0);
+                    const virtualWidth = 2500.0;
+                    const virtualHeight = 2500.0;
                     _centerCanvasOnce(canvasWidth, canvasHeight, virtualWidth, virtualHeight);
 
                     final calculatedPositions = _getCalculatedPositions(members, virtualWidth, virtualHeight);
@@ -468,11 +457,12 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
 
                     return InteractiveViewer(
                       transformationController: _transformationController,
-                      boundaryMargin: const EdgeInsets.symmetric(horizontal: 1200, vertical: 1000),
-                      minScale: 0.3,
+                      boundaryMargin: const EdgeInsets.all(2500),
+                      minScale: 0.25,
                       maxScale: 3.0,
-                      panEnabled: _draggingMemberId == null,
-                      scaleEnabled: _draggingMemberId == null,
+                      panAxis: PanAxis.free,
+                      panEnabled: !_isEditMode && _draggingMemberId == null,
+                      scaleEnabled: !_isEditMode && _draggingMemberId == null,
                       constrained: false,
                       child: SizedBox(
                         width: virtualWidth,
@@ -518,29 +508,35 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
                                       context.push('/patient/family/family-member/${m.id}');
                                     }
                                   },
-                                  onPanStart: (_) => setState(() {
-                                    _draggingMemberId = m.id;
-                                    _selectedMemberId = m.id;
-                                    _localPositions[m.id] = pos;
-                                  }),
-                                  onPanUpdate: (details) {
-                                    final currentPos = _localPositions[m.id] ?? pos;
-                                    final scale = _transformationController.value.getMaxScaleOnAxis();
-                                    final effectiveScale = scale > 0 ? scale : 1.0;
-                                    final newX = (currentPos.dx + details.delta.dx / effectiveScale).clamp(0.0, virtualWidth - 125.0);
-                                    final newY = (currentPos.dy + details.delta.dy / effectiveScale).clamp(0.0, virtualHeight - 75.0);
-                                    setState(() {
-                                      _localPositions[m.id] = Offset(newX, newY);
-                                    });
-                                  },
-                                  onPanEnd: (_) {
-                                    final finalPos = _localPositions[m.id];
-                                    setState(() => _draggingMemberId = null);
-                                    if (finalPos != null) {
-                                      final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
-                                      ref.read(familyMembersProvider.notifier).updateMember(updated);
-                                    }
-                                  },
+                                  onPanStart: _isEditMode
+                                      ? (_) => setState(() {
+                                          _draggingMemberId = m.id;
+                                          _selectedMemberId = m.id;
+                                          _localPositions[m.id] = pos;
+                                        })
+                                      : null,
+                                  onPanUpdate: _isEditMode
+                                      ? (details) {
+                                          final currentPos = _localPositions[m.id] ?? pos;
+                                          final scale = _transformationController.value.getMaxScaleOnAxis();
+                                          final effectiveScale = scale > 0 ? scale : 1.0;
+                                          final newX = (currentPos.dx + details.delta.dx / effectiveScale).clamp(0.0, virtualWidth - 125.0);
+                                          final newY = (currentPos.dy + details.delta.dy / effectiveScale).clamp(0.0, virtualHeight - 75.0);
+                                          setState(() {
+                                            _localPositions[m.id] = Offset(newX, newY);
+                                          });
+                                        }
+                                      : null,
+                                  onPanEnd: _isEditMode
+                                      ? (_) {
+                                          final finalPos = _localPositions[m.id];
+                                          setState(() => _draggingMemberId = null);
+                                          if (finalPos != null) {
+                                            final updated = m.copyWith(positionX: finalPos.dx, positionY: finalPos.dy);
+                                            ref.read(familyMembersProvider.notifier).updateMember(updated);
+                                          }
+                                        }
+                                      : null,
                                   child: AnimatedScale(
                                     scale: isSelected ? 1.04 : 1.0,
                                     duration: const Duration(milliseconds: 150),
@@ -1024,187 +1020,482 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
   // ==========================================
 
   void _showAddMemberSheet(BuildContext context, bool isDark) {
-    int linkMethod = 0; // 0: ABHA ID, 1: Phone, 2: QR Code, 3: Custom
+    int linkMethod = 0; // 0: ABHA ID, 1: Phone, 2: QR Code
     final abhaCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final relCtrl = TextEditingController(text: 'Family Member');
-    int gen = 1;
+    final qrCtrl = TextEditingController();
+    String selectedRel = 'Father';
+    bool isSearching = false;
+    UserModel? retrievedUser;
+    PatientModel? retrievedPatient;
+    String? searchError;
+
+    final relationships = [
+      'Father',
+      'Mother',
+      'Spouse',
+      'Child',
+      'Son',
+      'Daughter',
+      'Brother',
+      'Sister',
+      'Grandfather',
+      'Grandmother',
+      'Relative',
+    ];
+
+    int getGeneration(String rel) {
+      if (['Grandfather', 'Grandmother'].contains(rel)) return 0;
+      if (['Father', 'Mother'].contains(rel)) return 1;
+      if (['Spouse', 'Brother', 'Sister'].contains(rel)) return 2;
+      if (['Child', 'Son', 'Daughter'].contains(rel)) return 3;
+      return 2;
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF131C2E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Connect Family Member',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Link accounts securely using verified digital healthcare identity.',
-                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12),
-              ),
-              const SizedBox(height: 16),
+        builder: (context, setModalState) {
+          Future<void> performLookup() async {
+            setModalState(() {
+              isSearching = true;
+              searchError = null;
+              retrievedUser = null;
+              retrievedPatient = null;
+            });
 
-              // 3 Method Selector Tabs
-              Row(
+            final db = FirebaseFirestore.instance;
+            try {
+              if (linkMethod == 0) {
+                final query = abhaCtrl.text.trim();
+                if (query.isEmpty) {
+                  setModalState(() {
+                    searchError = 'Please enter an ABHA ID';
+                    isSearching = false;
+                  });
+                  return;
+                }
+                final uSnap = await db.collection('users').where('abhaId', isEqualTo: query).limit(1).get();
+                if (uSnap.docs.isNotEmpty) {
+                  retrievedUser = UserModel.fromFirestore(uSnap.docs.first);
+                } else {
+                  final pSnap = await db.collection('patients').where('abhaId', isEqualTo: query).limit(1).get();
+                  if (pSnap.docs.isNotEmpty) {
+                    retrievedPatient = PatientModel.fromFirestore(pSnap.docs.first);
+                    retrievedUser = UserModel(
+                      id: retrievedPatient!.id,
+                      name: retrievedPatient!.name,
+                      email: retrievedPatient!.email ?? '',
+                      role: UserRole.patient,
+                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
+                      abhaId: retrievedPatient!.abhaId,
+                    );
+                  }
+                }
+              } else if (linkMethod == 1) {
+                final query = phoneCtrl.text.replaceAll(RegExp(r'[^0-9]'), '');
+                if (query.isEmpty) {
+                  setModalState(() {
+                    searchError = 'Please enter a phone number';
+                    isSearching = false;
+                  });
+                  return;
+                }
+                final uSnap = await db.collection('users').where('phoneNumber', isEqualTo: query).limit(1).get();
+                if (uSnap.docs.isNotEmpty) {
+                  retrievedUser = UserModel.fromFirestore(uSnap.docs.first);
+                } else {
+                  final pSnap = await db.collection('patients').where('phoneNumber', isEqualTo: query).limit(1).get();
+                  if (pSnap.docs.isNotEmpty) {
+                    retrievedPatient = PatientModel.fromFirestore(pSnap.docs.first);
+                    retrievedUser = UserModel(
+                      id: retrievedPatient!.id,
+                      name: retrievedPatient!.name,
+                      email: retrievedPatient!.email ?? '',
+                      role: UserRole.patient,
+                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
+                      abhaId: retrievedPatient!.abhaId,
+                    );
+                  } else {
+                    final rawSnap = await db.collection('users').where('phoneNumber', isEqualTo: phoneCtrl.text.trim()).limit(1).get();
+                    if (rawSnap.docs.isNotEmpty) {
+                      retrievedUser = UserModel.fromFirestore(rawSnap.docs.first);
+                    }
+                  }
+                }
+              } else {
+                final query = qrCtrl.text.trim();
+                if (query.isEmpty) {
+                  setModalState(() {
+                    searchError = 'Please enter or scan QR code payload';
+                    isSearching = false;
+                  });
+                  return;
+                }
+                String targetUid = query;
+                if (query.contains('continuum://patient/')) {
+                  final uri = Uri.tryParse(query);
+                  if (uri != null && uri.pathSegments.length >= 2) {
+                    targetUid = uri.pathSegments[1];
+                  }
+                }
+                final uDoc = await db.collection('users').doc(targetUid).get();
+                if (uDoc.exists) {
+                  retrievedUser = UserModel.fromFirestore(uDoc);
+                } else {
+                  final pDoc = await db.collection('patients').doc(targetUid).get();
+                  if (pDoc.exists) {
+                    retrievedPatient = PatientModel.fromFirestore(pDoc);
+                    retrievedUser = UserModel(
+                      id: retrievedPatient!.id,
+                      name: retrievedPatient!.name,
+                      email: retrievedPatient!.email ?? '',
+                      role: UserRole.patient,
+                      phoneNumber: retrievedPatient!.phoneNumber ?? retrievedPatient!.phone,
+                      abhaId: retrievedPatient!.abhaId,
+                    );
+                  }
+                }
+              }
+
+              if (retrievedUser != null && retrievedPatient == null) {
+                final pDoc = await db.collection('patients').doc(retrievedUser!.id).get();
+                if (pDoc.exists) {
+                  retrievedPatient = PatientModel.fromFirestore(pDoc);
+                }
+              }
+
+              if (retrievedUser == null) {
+                searchError = 'No Continuum user found matching this identifier.\nOnly registered Continuum accounts can be linked as family nodes.';
+              }
+            } catch (e) {
+              searchError = 'Lookup failed: $e';
+            } finally {
+              setModalState(() => isSearching = false);
+            }
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 24,
+              right: 24,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildAddOptionChip(label: 'ABHA ID', icon: LucideIcons.creditCard, isSelected: linkMethod == 0, isDark: isDark, onTap: () => setModalState(() => linkMethod = 0)),
-                  const SizedBox(width: 8),
-                  _buildAddOptionChip(label: 'Phone', icon: LucideIcons.phone, isSelected: linkMethod == 1, isDark: isDark, onTap: () => setModalState(() => linkMethod = 1)),
-                  const SizedBox(width: 8),
-                  _buildAddOptionChip(label: 'QR Code', icon: LucideIcons.qrCode, isSelected: linkMethod == 2, isDark: isDark, onTap: () => setModalState(() => linkMethod = 2)),
-                ],
-              ),
-              const SizedBox(height: 18),
+                  Center(
+                    child: Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Add Family Node',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Link verified family members using their ABHA ID, phone number, or QR code.',
+                    style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12),
+                  ),
+                  const SizedBox(height: 18),
 
-              if (linkMethod == 0) ...[
-                TextField(
-                  controller: abhaCtrl,
-                  decoration: const InputDecoration(
-                    labelText: '14-Digit ABHA ID / Address',
-                    hintText: 'e.g. 91-8472-9182-4412 or user@abdm',
-                    prefixIcon: Icon(LucideIcons.shieldCheck, color: AppColors.primaryBlue),
+                  // Relationship Selection
+                  Text(
+                    'Relationship to You',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Name (Optional - auto-resolved)', hintText: 'e.g. Grandma Helen'),
-                ),
-              ] else if (linkMethod == 1) ...[
-                TextField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Registered Mobile Number',
-                    hintText: '+91 98765 43210',
-                    prefixIcon: Icon(LucideIcons.phoneCall, color: AppColors.primaryBlue),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : AppColors.border),
+                      borderRadius: BorderRadius.circular(14),
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedRel,
+                        isExpanded: true,
+                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.bold),
+                        items: relationships.map((rel) {
+                          return DropdownMenuItem(value: rel, child: Text(rel));
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setModalState(() => selectedRel = val);
+                        },
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Contact Name', hintText: 'e.g. Robert Chen'),
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : AppColors.surfaceBlue,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.3)),
+                  const SizedBox(height: 18),
+
+                  // Verified Identifier Method Selector
+                  Text(
+                    'Verified Continuum Identifier',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
                   ),
-                  child: Row(
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      const Icon(LucideIcons.scanLine, color: AppColors.primaryBlue, size: 32),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Scan Health QR Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primaryBlue)),
-                            const SizedBox(height: 2),
-                            Text('Scan another member\'s Continuum Health profile QR to instantly link.', style: TextStyle(color: isDark ? Colors.white70 : AppColors.secondaryText, fontSize: 11)),
-                          ],
-                        ),
+                      _buildAddOptionChip(
+                        label: 'ABHA ID',
+                        icon: LucideIcons.creditCard,
+                        isSelected: linkMethod == 0,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          linkMethod = 0;
+                          retrievedUser = null;
+                          searchError = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAddOptionChip(
+                        label: 'Phone',
+                        icon: LucideIcons.phone,
+                        isSelected: linkMethod == 1,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          linkMethod = 1;
+                          retrievedUser = null;
+                          searchError = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildAddOptionChip(
+                        label: 'QR Code',
+                        icon: LucideIcons.qrCode,
+                        isSelected: linkMethod == 2,
+                        isDark: isDark,
+                        onTap: () => setModalState(() {
+                          linkMethod = 2;
+                          retrievedUser = null;
+                          searchError = null;
+                        }),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Display Name', hintText: 'e.g. Sarah'),
-                ),
-              ],
+                  const SizedBox(height: 16),
 
-              const SizedBox(height: 12),
-              TextField(
-                controller: relCtrl,
-                decoration: const InputDecoration(labelText: 'Relationship', hintText: 'Parent, Child, Sibling, Partner, Grandparent'),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Text(
-                    'Generation: ',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.navy),
+                  if (linkMethod == 0) ...[
+                    TextField(
+                      controller: abhaCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '14-Digit ABHA ID',
+                        hintText: 'e.g. 91-8472-9182-4412',
+                        prefixIcon: Icon(LucideIcons.shieldCheck, color: AppColors.primaryBlue),
+                      ),
+                    ),
+                  ] else if (linkMethod == 1) ...[
+                    TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Registered Mobile Number',
+                        hintText: '+91 98765 43210',
+                        prefixIcon: Icon(LucideIcons.phoneCall, color: AppColors.primaryBlue),
+                      ),
+                    ),
+                  ] else ...[
+                    TextField(
+                      controller: qrCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'QR Payload / Continuum UID',
+                        hintText: 'Paste scanned QR code payload',
+                        prefixIcon: Icon(LucideIcons.qrCode, color: AppColors.primaryBlue),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: isSearching ? null : performLookup,
+                      icon: isSearching
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(LucideIcons.search, size: 16),
+                      label: Text(isSearching ? 'Verifying on Continuum...' : 'Retrieve Continuum Account'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primaryBlue,
+                        side: const BorderSide(color: AppColors.primaryBlue),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  DropdownButton<int>(
-                    value: gen,
-                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                    style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
-                    items: const [
-                      DropdownMenuItem(value: 0, child: Text('Gen 0 (Grandparent)')),
-                      DropdownMenuItem(value: 1, child: Text('Gen 1 (Parent/Aunt)')),
-                      DropdownMenuItem(value: 2, child: Text('Gen 2 (Self/Sibling)')),
-                      DropdownMenuItem(value: 3, child: Text('Gen 3 (Children)')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) setModalState(() => gen = val);
-                    },
+
+                  if (searchError != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertCircle, color: AppColors.danger, size: 18),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              searchError!,
+                              style: const TextStyle(color: AppColors.danger, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (retrievedUser != null) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.checkCircle2, color: AppColors.success, size: 20),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Verified Continuum User',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.success, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            retrievedUser!.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Age: ${retrievedPatient?.age != null ? "${retrievedPatient!.age} yrs" : "Registered"} • Blood Group: ${retrievedPatient?.bloodGroup ?? "Not specified"}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            ),
+                          ),
+                          if (retrievedPatient != null && retrievedPatient!.condition.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Clinical Status: ${retrievedPatient!.condition}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 4),
+                          Text(
+                            'UID: ${retrievedUser!.id}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                              color: isDark ? Colors.white38 : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+                  PrimaryButton(
+                    label: 'Add Node to Canvas',
+                    icon: LucideIcons.userPlus,
+                    onPressed: (retrievedUser == null)
+                        ? null
+                        : () {
+                            final gen = getGeneration(selectedRel);
+                            final currentMembers = ref.read(familyMembersProvider);
+                            final rootSelf = currentMembers.firstWhere(
+                              (m) => m.relationship == 'Self',
+                              orElse: () => currentMembers.isNotEmpty
+                                  ? currentMembers.first
+                                  : FamilyMemberModel(
+                                      id: '',
+                                      name: '',
+                                      relationship: '',
+                                      generation: 2,
+                                      knownConditions: [],
+                                      familyHistory: [],
+                                      careTasks: [],
+                                      hydration: HydrationStatus.done,
+                                      walking: WalkingStatus.done,
+                                      medication: MedicationStatus.done,
+                                    ),
+                            );
+
+                            final newM = FamilyMemberModel(
+                              id: const Uuid().v4(),
+                              memberUid: retrievedUser!.id,
+                              name: retrievedUser!.name,
+                              relationship: selectedRel,
+                              generation: gen,
+                              avatarUrl: 'https://i.pravatar.cc/150?u=${retrievedUser!.id.hashCode}',
+                              knownConditions: retrievedPatient?.conditions ??
+                                  (retrievedPatient?.condition != null && retrievedPatient!.condition.isNotEmpty
+                                      ? [retrievedPatient!.condition]
+                                      : []),
+                              familyHistory: [],
+                              careNeeds: retrievedPatient?.condition ?? 'Health Monitored',
+                              careTasks: [],
+                              hydration: HydrationStatus.done,
+                              walking: WalkingStatus.done,
+                              medication: MedicationStatus.done,
+                              positionX: 1200.0 + (gen * 140.0),
+                              positionY: 600.0 + (DateTime.now().millisecond % 160),
+                              connectedToIds: rootSelf.id.isNotEmpty ? [rootSelf.id] : [],
+                              phoneNumber: retrievedUser!.phoneNumber,
+                              abhaId: retrievedUser!.abhaId,
+                              age: retrievedPatient?.age,
+                              gender: null,
+                            );
+                            ref.read(familyMembersProvider.notifier).addMember(newM);
+                            Navigator.pop(context);
+                          },
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              PrimaryButton(
-                label: 'Connect & Save Member',
-                icon: LucideIcons.userPlus,
-                onPressed: () {
-                  final enteredName = nameCtrl.text.trim().isNotEmpty
-                      ? nameCtrl.text.trim()
-                      : (linkMethod == 0 ? 'ABHA Linked Member' : (linkMethod == 1 ? 'Phone Contact' : 'QR Member'));
-                  final enteredRel = relCtrl.text.trim().isNotEmpty ? relCtrl.text.trim() : 'Family';
-
-                  final newM = FamilyMemberModel(
-                    id: const Uuid().v4(),
-                    name: enteredName,
-                    relationship: enteredRel,
-                    generation: gen,
-                    avatarUrl: 'https://i.pravatar.cc/150?u=${enteredName.hashCode}',
-                    knownConditions: [],
-                    familyHistory: [],
-                    careNeeds: 'General Health Monitoring',
-                    careTasks: [],
-                    hydration: HydrationStatus.done,
-                    walking: WalkingStatus.done,
-                    medication: MedicationStatus.done,
-                    positionX: 40.0 + (gen * 120.0),
-                    positionY: 80.0 + (DateTime.now().millisecond % 150),
-                  );
-                  ref.read(familyMembersProvider.notifier).addMember(newM);
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1269,32 +1560,34 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           right: 24,
           top: 24,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Edit ${member.name}',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Edit ${member.name}',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : AppColors.navy,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
-            const SizedBox(height: 12),
-            TextField(controller: relCtrl, decoration: const InputDecoration(labelText: 'Relationship')),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Update Member',
-              onPressed: () {
-                final updated = member.copyWith(name: nameCtrl.text, relationship: relCtrl.text);
-                ref.read(familyMembersProvider.notifier).updateMember(updated);
-                Navigator.pop(context);
-              },
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+              const SizedBox(height: 12),
+              TextField(controller: relCtrl, decoration: const InputDecoration(labelText: 'Relationship')),
+              const SizedBox(height: 24),
+              PrimaryButton(
+                label: 'Update Member',
+                onPressed: () {
+                  final updated = member.copyWith(name: nameCtrl.text, relationship: relCtrl.text);
+                  ref.read(familyMembersProvider.notifier).updateMember(updated);
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1324,9 +1617,10 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
             right: 24,
             top: 24,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Add Family Reminder',
@@ -1391,8 +1685,9 @@ class _FamilyTreeScreenState extends ConsumerState<FamilyTreeScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // Feature Modals
   void _showCareBoardModal(BuildContext context, List<FamilyMemberModel> members, bool isDark) {

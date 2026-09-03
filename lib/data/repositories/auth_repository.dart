@@ -4,8 +4,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 
 abstract class AuthRepository {
-  Future<UserModel> login(String email, String password);
+  Future<UserModel> login(String identifier, String password);
   Future<UserModel> register(String name, String email, String password, UserRole role);
+  Future<UserModel> registerUser({
+    required String name,
+    required String password,
+    required String phoneNumber,
+    required UserRole role,
+    String? email,
+    String? abhaId,
+  });
   Future<UserModel> loginAsPatient();
   Future<UserModel> loginAsDoctor();
   Future<void> logout();
@@ -28,96 +36,182 @@ class FirebaseAuthRepository implements AuthRepository {
   Stream<UserModel?> get authStateChanges {
     return _auth.authStateChanges().asyncMap((user) async {
       if (user == null) {
-        dev.log('[AUTH STREAM] User signed out', name: 'FirebaseAuthRepository');
+        dev.log('[AUTH] User signed out', name: 'FirebaseAuthRepository');
         _userCache.clear();
         return null;
       }
-      dev.log('[AUTH STREAM] User signed in: ${user.email} (${user.uid})', name: 'FirebaseAuthRepository');
+      dev.log('[AUTH] User signed in: ${user.email} (${user.uid})', name: 'FirebaseAuthRepository');
       return _loadUserModel(user.uid);
     });
   }
 
   @override
-  Future<UserModel> login(String email, String password) async {
-    dev.log('[AUTH LOGIN] Attempting login for $email', name: 'FirebaseAuthRepository');
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email.trim(),
-      password: password,
-    );
-    final uid = credential.user!.uid;
-    dev.log('[AUTH LOGIN] Firebase Auth success: $uid', name: 'FirebaseAuthRepository');
-    return _loadUserModel(uid);
+  Future<UserModel> login(String identifier, String password) async {
+    final trimmed = identifier.trim();
+    dev.log('[AUTH] [AUTH LOGIN] Attempting login for $trimmed', name: 'FirebaseAuthRepository');
+
+    String authEmail = trimmed;
+    if (!trimmed.contains('@')) {
+      // Input is a phone number
+      final cleanPhone = trimmed.replaceAll(RegExp(r'[^\d+]'), '');
+      final plainDigits = cleanPhone.replaceAll(RegExp(r'\D'), '');
+
+      // Check if user has an associated custom email in Firestore
+      try {
+        final query = await _db.collection('users')
+            .where('phoneNumber', isEqualTo: plainDigits)
+            .limit(1)
+            .get();
+        if (query.docs.isNotEmpty) {
+          final data = query.docs.first.data();
+          final existingEmail = data['email'] as String?;
+          if (existingEmail != null && existingEmail.isNotEmpty && existingEmail.contains('@')) {
+            authEmail = existingEmail;
+          } else {
+            authEmail = '$plainDigits@phone.continuum.health';
+          }
+        } else {
+          authEmail = '$plainDigits@phone.continuum.health';
+        }
+      } catch (e) {
+        dev.log('[AUTH] Note looking up user phone: $e', name: 'FirebaseAuthRepository');
+        authEmail = '$plainDigits@phone.continuum.health';
+      }
+    }
+
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: authEmail,
+        password: password,
+      );
+      final uid = credential.user!.uid;
+      dev.log('[AUTH] [AUTH LOGIN] Firebase Auth success: $uid', name: 'FirebaseAuthRepository');
+      return _loadUserModel(uid);
+    } catch (e) {
+      dev.log('[AUTH] Login failure: $e', error: e, name: 'FirebaseAuthRepository');
+      rethrow;
+    }
   }
 
   @override
   Future<UserModel> register(
-      String name, String email, String password, UserRole role) async {
-    dev.log('[DOCTOR AUTH] Registering $email as ${role.name}', name: 'FirebaseAuthRepository');
-    final credential = await _auth.createUserWithEmailAndPassword(
-      email: email.trim(),
+      String name, String email, String password, UserRole role) {
+    return registerUser(
+      name: name,
       password: password,
-    );
-    final uid = credential.user!.uid;
-    dev.log('[DOCTOR AUTH] Firebase Auth account created for $uid', name: 'FirebaseAuthRepository');
-
-    final user = UserModel(
-      id: uid,
-      name: name.trim(),
-      email: email.trim(),
+      phoneNumber: '9876543210',
       role: role,
+      email: email,
     );
+  }
 
-    // Cache user model immediately to prevent race conditions during authStateChanges
-    _userCache[uid] = user;
+  @override
+  Future<UserModel> registerUser({
+    required String name,
+    required String password,
+    required String phoneNumber,
+    required UserRole role,
+    String? email,
+    String? abhaId,
+  }) async {
+    final cleanPhone = phoneNumber.replaceAll(RegExp(r'\D'), '');
+    final hasEmail = email != null && email.trim().isNotEmpty && email.contains('@');
+    final hasAbha = abhaId != null && abhaId.trim().isNotEmpty;
 
-    // 1. Write users/{uid} document
-    dev.log('[FIRESTORE] Writing users/$uid to Firestore (role: ${role.name})', name: 'FirebaseAuthRepository');
-    await _db.collection('users').doc(uid).set({
-      'name': name.trim(),
-      'email': email.trim(),
-      'role': role.name,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    dev.log('[FIRESTORE] users/$uid created successfully', name: 'FirebaseAuthRepository');
+    // Use email if provided, otherwise deterministic phone identity
+    final authEmail = hasEmail ? email.trim().toLowerCase() : '$cleanPhone@phone.continuum.health';
 
-    // 2. Write role-specific profile document
-    if (role == UserRole.patient) {
-      dev.log('[FIRESTORE] Writing patients/$uid to Firestore', name: 'FirebaseAuthRepository');
-      await _db.collection('patients').doc(uid).set({
-        'name': name.trim(),
+    dev.log('[AUTH] Registering $name with phone $cleanPhone (email: $authEmail, role: ${role.name})', name: 'FirebaseAuthRepository');
+
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: authEmail,
+        password: password,
+      );
+      final uid = credential.user!.uid;
+      dev.log('[AUTH] Firebase Auth account created: $uid', name: 'FirebaseAuthRepository');
+
+      final user = UserModel(
+        id: uid,
+        name: name.trim(),
+        email: hasEmail ? email.trim().toLowerCase() : '',
+        role: role,
+        phoneNumber: cleanPhone,
+        phone: cleanPhone,
+        abhaId: hasAbha ? abhaId.trim() : null,
+      );
+
+      _userCache[uid] = user;
+
+      // 1. Write users/{uid} document
+      dev.log('[FIRESTORE] Writing users/$uid (role: ${role.name})', name: 'FirebaseAuthRepository');
+      final userDoc = <String, dynamic>{
         'uid': uid,
-        'age': 30,
-        'condition': 'General Care',
-        'status': 'stable',
-        'medicationAdherence': 100.0,
-        'isAuthorized': false,
-        'conditions': [],
-        'medicalHistory': [],
+        'name': name.trim(),
+        'phoneNumber': cleanPhone,
+        'phone': cleanPhone,
+        'role': role.name,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
-    } else {
-      dev.log('[DOCTOR AUTH] [FIRESTORE] Writing doctors/$uid to Firestore', name: 'FirebaseAuthRepository');
-      await _db.collection('doctors').doc(uid).set({
-        'name': name.trim(),
-        'uid': uid,
-        'specialty': 'General Practice',
-        'hospital': 'City Clinic',
-        'rating': 5.0,
-        'distance': 0.0,
-        'avatarUrl': '',
-        'phone': '',
-        'about': 'Healthcare Practitioner',
-        'availableDays': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-        'isAvailable': true,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      if (hasEmail) userDoc['email'] = email.trim().toLowerCase();
+      if (hasAbha) userDoc['abhaId'] = abhaId.trim();
+
+      await _db.collection('users').doc(uid).set(userDoc, SetOptions(merge: true));
+      dev.log('[FIRESTORE] users/$uid created successfully', name: 'FirebaseAuthRepository');
+
+      // 2. Write role-specific profile document
+      if (role == UserRole.patient) {
+        dev.log('[FIRESTORE] Writing patients/$uid', name: 'FirebaseAuthRepository');
+        final patientDoc = <String, dynamic>{
+          'name': name.trim(),
+          'uid': uid,
+          'phoneNumber': cleanPhone,
+          'phone': cleanPhone,
+          'age': 30,
+          'condition': 'General Care',
+          'status': 'discharged',
+          'medicationAdherence': 100.0,
+          'isAuthorized': false,
+          'conditions': [],
+          'medicalHistory': [],
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (hasEmail) patientDoc['email'] = email.trim().toLowerCase();
+        if (hasAbha) patientDoc['abhaId'] = abhaId.trim();
+
+        await _db.collection('patients').doc(uid).set(patientDoc, SetOptions(merge: true));
+      } else {
+        dev.log('[FIRESTORE] Writing doctors/$uid', name: 'FirebaseAuthRepository');
+        final doctorDoc = <String, dynamic>{
+          'name': name.trim(),
+          'uid': uid,
+          'phoneNumber': cleanPhone,
+          'phone': cleanPhone,
+          'specialty': 'General Practice',
+          'hospital': 'City Clinic',
+          'rating': 5.0,
+          'distance': 0.0,
+          'avatarUrl': '',
+          'about': 'Healthcare Practitioner',
+          'availableDays': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          'isAvailable': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (hasEmail) doctorDoc['email'] = email.trim().toLowerCase();
+        if (hasAbha) doctorDoc['abhaId'] = abhaId.trim();
+
+        await _db.collection('doctors').doc(uid).set(doctorDoc, SetOptions(merge: true));
+      }
+
+      dev.log('[AUTH] Registration complete for $uid', name: 'FirebaseAuthRepository');
+      return user;
+    } catch (e, st) {
+      dev.log('[AUTH] Registration error: $e', error: e, stackTrace: st, name: 'FirebaseAuthRepository');
+      rethrow;
     }
-
-    dev.log('[DOCTOR AUTH] Registration complete for $uid', name: 'FirebaseAuthRepository');
-    return user;
   }
 
   @override

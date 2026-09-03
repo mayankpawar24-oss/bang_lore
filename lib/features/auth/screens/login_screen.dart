@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -34,7 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (email.isEmpty || password.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password.')),
+        const SnackBar(content: Text('Please enter your phone number or email, and password.')),
       );
       return;
     }
@@ -143,14 +143,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     children: [
                       TextFormField(
                         controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        keyboardType: TextInputType.text,
                         style: TextStyle(color: isDark ? Colors.white : AppColors.navy),
                         decoration: InputDecoration(
-                          labelText: 'Email Address',
+                          labelText: 'Phone Number or Email',
                           labelStyle: TextStyle(
                             color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                           ),
-                          prefixIcon: const Icon(LucideIcons.mail, size: 18, color: AppColors.primaryBlue),
+                          prefixIcon: const Icon(LucideIcons.user, size: 18, color: AppColors.primaryBlue),
                           filled: true,
                           fillColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
                           border: OutlineInputBorder(

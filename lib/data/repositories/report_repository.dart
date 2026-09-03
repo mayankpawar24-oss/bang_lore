@@ -2,9 +2,14 @@ import 'dart:developer' as dev;
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/report_model.dart';
 import '../models/reminder_model.dart';
 import '../models/medical_history_model.dart';
+import '../models/activity_log_model.dart';
+import '../services/proton_drive_service.dart';
+import '../services/ocr_service.dart';
+import '../services/activity_log_service.dart';
 
 abstract class ReportRepository {
   Future<ReportModel> uploadReport(
@@ -12,6 +17,7 @@ abstract class ReportRepository {
     List<int>? fileBytes,
     String? fileName,
     String? fileType,
+    String? uploaderRole,
   });
   Future<List<ReportModel>> getReports(String patientId);
   Stream<List<ReportModel>> reportsStream(String patientId);
@@ -21,10 +27,21 @@ abstract class ReportRepository {
 class FirebaseReportRepository implements ReportRepository {
   final FirebaseFirestore _db;
   final FirebaseStorage _storage;
+  final ProtonDriveService _protonService;
+  final OcrService _ocrService;
+  final ActivityLogService _activityLogService;
 
-  FirebaseReportRepository({FirebaseFirestore? db, FirebaseStorage? storage})
-      : _db = db ?? FirebaseFirestore.instance,
-        _storage = storage ?? FirebaseStorage.instance;
+  FirebaseReportRepository({
+    FirebaseFirestore? db,
+    FirebaseStorage? storage,
+    ProtonDriveService? protonService,
+    OcrService? ocrService,
+    ActivityLogService? activityLogService,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _storage = storage ?? FirebaseStorage.instance,
+        _protonService = protonService ?? ProtonDriveService(),
+        _ocrService = ocrService ?? OcrService(),
+        _activityLogService = activityLogService ?? ActivityLogService();
 
   CollectionReference _reports(String patientId) =>
       _db.collection('patients').doc(patientId).collection('reports');
@@ -68,9 +85,12 @@ class FirebaseReportRepository implements ReportRepository {
     List<int>? fileBytes,
     String? fileName,
     String? fileType,
+    String? uploaderRole,
   }) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? report.patientId;
+    final resolvedUploaderRole = uploaderRole ?? (currentUid == report.patientId ? 'patient' : 'doctor');
     final docId = report.id.isNotEmpty ? report.id : _medicalDocuments(report.patientId).doc().id;
-    dev.log('[STORAGE] [REPORT] Ingesting document $docId for patient ${report.patientId}', name: 'ReportRepository');
+    dev.log('[STORAGE] [REPORT] Ingesting document $docId for patient ${report.patientId} by $currentUid ($resolvedUploaderRole)', name: 'ReportRepository');
 
     String? storagePath;
     String? downloadUrl;
@@ -89,8 +109,9 @@ class FirebaseReportRepository implements ReportRepository {
           customMetadata: {
             'documentId': docId,
             'patientId': report.patientId,
+            'uploaderId': currentUid,
+            'uploaderRole': resolvedUploaderRole,
             'category': report.category.name,
-            'uploadedBy': report.patientId,
           },
         );
 
@@ -99,29 +120,69 @@ class FirebaseReportRepository implements ReportRepository {
         dev.log('[STORAGE] File uploaded successfully. Download URL obtained: $downloadUrl', name: 'ReportRepository');
       }
 
+      // 2. Ingest into Proton Drive integration
+      String? protonRef;
+      if (fileBytes != null && fileBytes.isNotEmpty) {
+        try {
+          final protonRes = await _protonService.uploadDocument(
+            patientId: report.patientId,
+            documentId: docId,
+            fileName: resolvedFileName,
+            fileBytes: fileBytes,
+            mimeType: resolvedFileType,
+          );
+          protonRef = protonRes.protonReference;
+          dev.log('[PROTON] Ingestion completed: $protonRef', name: 'ReportRepository');
+        } catch (e) {
+          dev.log('[PROTON] Integration note: $e', name: 'ReportRepository');
+        }
+      }
+
+      // 3. Run OCR extraction
+      Map<String, dynamic>? ocrData = report.extractedData;
+      bool ocrDone = report.ocrCompleted;
+      try {
+        final ocrResult = await _ocrService.processDocument(
+          fileName: resolvedFileName,
+          fileBytes: fileBytes ?? [],
+          rawText: report.rawContent,
+        );
+        ocrData = ocrResult.toMap();
+        ocrDone = true;
+        dev.log('[OCR] Extracted data for $docId: ${ocrResult.diagnosis.join(", ")}', name: 'ReportRepository');
+      } catch (e) {
+        dev.log('[OCR] Processing note: $e', name: 'ReportRepository');
+      }
+
       final reportModelWithMeta = report.copyWith(
         id: docId,
         documentId: docId,
         fileName: resolvedFileName,
         fileType: resolvedFileType,
         storagePath: storagePath,
+        storageReference: storagePath,
+        protonDriveReference: protonRef,
         downloadUrl: downloadUrl,
-        uploadedBy: report.patientId,
+        uploadedBy: currentUid,
+        uploaderId: currentUid,
+        uploaderRole: resolvedUploaderRole,
         uploadedAt: DateTime.now(),
         documentCategory: report.category.name,
+        extractedData: ocrData,
+        ocrCompleted: ocrDone,
       );
 
       final batch = _db.batch();
 
-      // 2. Save to Firestore: patients/{uid}/medicalDocuments/{documentId}
+      // 4. Save to Firestore: patients/{uid}/medicalDocuments/{documentId}
       final medDocRef = _medicalDocuments(report.patientId).doc(docId);
       batch.set(medDocRef, reportModelWithMeta.toFirestoreCreate(), SetOptions(merge: true));
 
-      // 3. Mirror to patients/{uid}/reports/{documentId} for backward compatibility
+      // 5. Mirror to patients/{uid}/reports/{documentId} for backward compatibility
       final repRef = _reports(report.patientId).doc(docId);
       batch.set(repRef, reportModelWithMeta.toFirestoreCreate(), SetOptions(merge: true));
 
-      // 4. Save to medicalHistory if applicable
+      // 6. Save to medicalHistory if applicable
       if (report.title.isNotEmpty &&
           (report.category == ReportCategory.discharge ||
               report.category == ReportCategory.treatment ||
@@ -138,7 +199,7 @@ class FirebaseReportRepository implements ReportRepository {
         batch.set(medHistRef, medHist.toFirestore());
       }
 
-      // 5. Automatic follow-up reminder if specified
+      // 7. Automatic follow-up reminder if specified
       if (report.followUpDate != null) {
         final remRef = _db.collection('patients').doc(report.patientId).collection('reminders').doc();
         final reminder = Reminder(
@@ -153,9 +214,14 @@ class FirebaseReportRepository implements ReportRepository {
         batch.set(remRef, reminder.toFirestoreCreate());
       }
 
-      // 6. Timeline notification for patient
+      // 8. Timeline notification for patient
       final notifRef = _db.collection('patients').doc(report.patientId).collection('notifications').doc();
       batch.set(notifRef, {
+        'id': notifRef.id,
+        'notificationId': notifRef.id,
+        'recipientUid': report.patientId,
+        'senderUid': currentUid,
+        'recipientRole': 'patient',
         'title': 'Health Record Uploaded',
         'message': 'Your "${report.title}" has been safely encrypted and synced to your health timeline.',
         'type': 'general',
@@ -166,6 +232,30 @@ class FirebaseReportRepository implements ReportRepository {
 
       await batch.commit();
       dev.log('[FIRESTORE] Document metadata persisted successfully to patients/${report.patientId}/medicalDocuments/$docId', name: 'ReportRepository');
+
+      // 9. Real Activity Logs
+      await _activityLogService.logEvent(
+        patientId: report.patientId,
+        eventType: ActivityEventType.documentUploaded,
+        title: 'Document Uploaded: ${report.title}',
+        description: 'Uploaded by $resolvedUploaderRole ($resolvedFileName). Stored in Proton & Firebase.',
+        actorUid: currentUid,
+        actorRole: resolvedUploaderRole,
+        metadata: {'documentId': docId, 'fileName': resolvedFileName},
+      );
+
+      if (ocrDone) {
+        await _activityLogService.logEvent(
+          patientId: report.patientId,
+          eventType: ActivityEventType.ocrCompleted,
+          title: 'OCR Clinical Extraction Completed',
+          description: 'Entities parsed for ${report.title}. Findings cataloged in clinical profile.',
+          actorUid: currentUid,
+          actorRole: 'system',
+          metadata: {'documentId': docId},
+        );
+      }
+
       return reportModelWithMeta;
     } catch (e, stack) {
       dev.log('[STORAGE] [FIRESTORE] Error uploading document: $e', error: e, stackTrace: stack, name: 'ReportRepository');

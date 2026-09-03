@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 import 'data/providers/providers.dart';
+import 'data/services/awesome_notification_service.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -14,6 +15,9 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize Awesome Notifications device channels and handlers
+  await AwesomeNotificationService.initialize();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

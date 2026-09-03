@@ -31,6 +31,11 @@ import '../repositories/notification_repository.dart';
 import '../repositories/ai_repository.dart';
 import '../repositories/report_repository.dart';
 import '../repositories/telegram_repository.dart';
+import '../models/activity_log_model.dart';
+import '../services/activity_log_service.dart';
+import '../services/proton_drive_service.dart';
+import '../services/ocr_service.dart';
+import '../services/awesome_notification_service.dart';
 import '../services/multi_agent_service.dart';
 import '../services/backend_service.dart';
 
@@ -113,6 +118,26 @@ final telegramRepositoryProvider = Provider<TelegramRepository>((ref) {
 
 final backendServiceProvider = Provider<BackendService>((ref) {
   return BackendService();
+});
+
+final activityLogServiceProvider = Provider<ActivityLogService>((ref) {
+  return ActivityLogService();
+});
+
+final protonDriveServiceProvider = Provider<ProtonDriveService>((ref) {
+  return ProtonDriveService();
+});
+
+final ocrServiceProvider = Provider<OcrService>((ref) {
+  return OcrService();
+});
+
+final awesomeNotificationServiceProvider = Provider<AwesomeNotificationService>((ref) {
+  return AwesomeNotificationService();
+});
+
+final activityLogsStreamProvider = StreamProvider.family<List<ActivityLogModel>, String>((ref, patientId) {
+  return ref.watch(activityLogServiceProvider).streamLogs(patientId);
 });
 
 // Keep AI mock for local development
@@ -231,11 +256,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> register(
       String name, String email, String password, UserRole role) async {
+    return registerUser(
+      name: name,
+      password: password,
+      phoneNumber: '9876543210',
+      role: role,
+      email: email,
+    );
+  }
+
+  Future<void> registerUser({
+    required String name,
+    required String password,
+    required String phoneNumber,
+    required UserRole role,
+    String? email,
+    String? abhaId,
+  }) async {
     state = state.copyWith(status: AuthStatus.loading, error: null);
     try {
-      final user = await _ref
-          .read(authRepositoryProvider)
-          .register(name, email, password, role);
+      final user = await _ref.read(authRepositoryProvider).registerUser(
+        name: name,
+        password: password,
+        phoneNumber: phoneNumber,
+        role: role,
+        email: email,
+        abhaId: abhaId,
+      );
       state = AuthState(user: user, status: AuthStatus.authenticated);
     } on FirebaseAuthException catch (e) {
       state = AuthState(status: AuthStatus.error, error: _authError(e.code));

@@ -36,20 +36,27 @@ class SectionHeader extends StatelessWidget {
                     ),
               ),
             ),
-            if (actionText != null && onActionTap != null)
-              GestureDetector(
-                onTap: onActionTap,
-                child: Text(
-                  actionText!,
-                  style: const TextStyle(
-                    color: AppColors.primaryBlue,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (actionText != null && onActionTap != null)
+                  GestureDetector(
+                    onTap: onActionTap,
+                    child: Text(
+                      actionText!,
+                      style: const TextStyle(
+                        color: AppColors.primaryBlue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
                   ),
-                ),
-              )
-            else if (trailing != null)
-              trailing!,
+                if (actionText != null && onActionTap != null && trailing != null)
+                  const SizedBox(width: 10),
+                if (trailing != null)
+                  trailing!,
+              ],
+            ),
           ],
         ),
         if (subtitle != null) ...[

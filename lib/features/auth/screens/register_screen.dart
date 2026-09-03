@@ -19,7 +19,9 @@ class RegisterScreen extends ConsumerStatefulWidget {
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
+  final _abhaController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   UserRole _selectedRole = UserRole.patient;
@@ -29,7 +31,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose();
     _emailController.dispose();
+    _abhaController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
     super.dispose();
@@ -37,12 +41,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _register() async {
     final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
     final password = _passwordController.text;
     final confirm = _confirmController.text;
+    final email = _emailController.text.trim();
+    final abha = _abhaController.text.trim();
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty) {
-      _showError('Please fill in all fields.');
+    if (name.isEmpty) {
+      _showError('Please enter your full name.');
+      return;
+    }
+    if (phone.isEmpty) {
+      _showError('Phone number is compulsory.');
+      return;
+    }
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    if (cleanPhone.length < 10) {
+      _showError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+    if (password.isEmpty) {
+      _showError('Please enter a password.');
       return;
     }
     if (password != confirm) {
@@ -54,9 +73,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
 
-    await ref
-        .read(authProvider.notifier)
-        .register(name, email, password, _selectedRole);
+    await ref.read(authProvider.notifier).registerUser(
+      name: name,
+      password: password,
+      phoneNumber: cleanPhone,
+      role: _selectedRole,
+      email: email.isNotEmpty ? email : null,
+      abhaId: abha.isNotEmpty ? abha : null,
+    );
 
     if (!mounted) return;
 
@@ -157,22 +181,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     const SizedBox(height: 20),
                     _buildField(
                       controller: _nameController,
-                      label: 'Full Name',
+                      label: 'Full Name *',
                       icon: LucideIcons.user,
                       isDark: isDark,
                     ),
                     const SizedBox(height: 14),
                     _buildField(
-                      controller: _emailController,
-                      label: 'Email Address',
-                      icon: LucideIcons.mail,
+                      controller: _phoneController,
+                      label: 'Phone Number (Compulsory) *',
+                      icon: LucideIcons.phone,
                       isDark: isDark,
-                      keyboardType: TextInputType.emailAddress,
+                      keyboardType: TextInputType.phone,
                     ),
                     const SizedBox(height: 14),
                     _buildField(
                       controller: _passwordController,
-                      label: 'Password',
+                      label: 'Password *',
                       icon: LucideIcons.lock,
                       isDark: isDark,
                       obscureText: _obscurePassword,
@@ -182,12 +206,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     const SizedBox(height: 14),
                     _buildField(
                       controller: _confirmController,
-                      label: 'Confirm Password',
+                      label: 'Confirm Password *',
                       icon: LucideIcons.lock,
                       isDark: isDark,
                       obscureText: _obscureConfirm,
                       onToggleVisibility: () =>
                           setState(() => _obscureConfirm = !_obscureConfirm),
+                    ),
+                    const SizedBox(height: 14),
+                    _buildField(
+                      controller: _emailController,
+                      label: 'Email Address (Optional)',
+                      icon: LucideIcons.mail,
+                      isDark: isDark,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 14),
+                    _buildField(
+                      controller: _abhaController,
+                      label: 'ABHA ID (Optional)',
+                      icon: LucideIcons.creditCard,
+                      isDark: isDark,
                     ),
                     const SizedBox(height: 24),
                     isLoading

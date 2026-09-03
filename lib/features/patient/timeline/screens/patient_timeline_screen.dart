@@ -96,7 +96,7 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
               child: filteredEvents.isEmpty
                   ? _buildEmptyState(isDark)
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       itemCount: filteredEvents.length,
                       itemBuilder: (context, index) {
                         final event = filteredEvents[index];

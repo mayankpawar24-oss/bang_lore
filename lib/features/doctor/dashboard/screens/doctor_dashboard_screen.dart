@@ -75,7 +75,7 @@ class _DoctorDashboardScreenState extends ConsumerState<DoctorDashboardScreen> {
             }
           },
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

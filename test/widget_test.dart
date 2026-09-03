@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:continuum_health/data/models/patient_model.dart';
 import 'package:continuum_health/data/models/doctor_model.dart';
 import 'package:continuum_health/data/models/user_model.dart';
@@ -18,6 +19,7 @@ import 'package:continuum_health/features/patient/dashboard/widgets/health_insig
 import 'package:continuum_health/features/patient/dashboard/widgets/supporting_insight_cards.dart';
 import 'package:continuum_health/data/models/vital_model.dart';
 import 'package:continuum_health/data/models/medication_model.dart';
+import 'package:continuum_health/core/widgets/medication_card.dart';
 
 class FamilyMembersNotifierMock extends StateNotifier<List<FamilyMemberModel>> implements FamilyMembersNotifier {
   FamilyMembersNotifierMock() : super([
@@ -169,9 +171,9 @@ void main() {
     expect(find.byType(PatientProfileScreen), findsOneWidget);
     expect(find.text('Margaret Chen'), findsAtLeast(1));
     expect(find.text('Personal Information'), findsOneWidget);
-    expect(find.text('Medical Reports'), findsOneWidget);
-    expect(find.text('Account & Actions'), findsOneWidget);
-    expect(find.text('Telegram Connected'), findsOneWidget);
+    expect(find.text('Uploaded Reports'), findsOneWidget);
+    expect(find.text('Logs / Activity'), findsOneWidget);
+    expect(find.text('Download Health Data'), findsOneWidget);
   });
 
   testWidgets('DoctorProfileScreen renders without RenderBox errors', (WidgetTester tester) async {
@@ -399,5 +401,118 @@ void main() {
     expect(find.text('Medication'), findsOneWidget);
     expect(find.text('Consultation'), findsOneWidget);
     expect(find.text('Clinical Records'), findsOneWidget);
+  });
+
+  testWidgets('MedicationCard renders pending, taken, and skipped states with callbacks', (WidgetTester tester) async {
+    bool takenCalled = false;
+    bool skippedCalled = false;
+
+    // 1. Pending state: shows 'Take' and 'Skip' buttons
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MedicationCard(
+            name: 'Metformin',
+            dosage: '500 mg',
+            time: '08:00 AM',
+            isTaken: false,
+            isSkipped: false,
+            onMarkAsTaken: () => takenCalled = true,
+            onMarkAsSkipped: () => skippedCalled = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Metformin 500 mg'), findsOneWidget);
+    expect(find.text('Take'), findsOneWidget);
+    expect(find.text('Skip'), findsOneWidget);
+
+    await tester.tap(find.text('Take'));
+    expect(takenCalled, isTrue);
+
+    await tester.tap(find.text('Skip'));
+    expect(skippedCalled, isTrue);
+
+    // 2. Taken state: shows 'Taken' badge
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MedicationCard(
+            name: 'Metformin',
+            dosage: '500 mg',
+            time: '08:00 AM',
+            isTaken: true,
+            isSkipped: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Taken'), findsOneWidget);
+    expect(find.text('Take'), findsNothing);
+    expect(find.text('Skip'), findsNothing);
+
+    // 3. Skipped state: shows 'Skipped' badge
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MedicationCard(
+            name: 'Metformin',
+            dosage: '500 mg',
+            time: '08:00 AM',
+            isTaken: false,
+            isSkipped: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Skipped'), findsOneWidget);
+    expect(find.text('Take'), findsNothing);
+    expect(find.text('Skip'), findsNothing);
+
+    // 4. Edit and Delete action callbacks
+    bool editCalled = false;
+    bool deleteCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MedicationCard(
+            name: 'Atorvastatin',
+            dosage: '10 mg',
+            time: '09:00 PM',
+            instructions: 'Take after dinner',
+            isTaken: false,
+            onEdit: () => editCalled = true,
+            onDelete: () => deleteCalled = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Take after dinner'), findsOneWidget);
+
+    // Tap more options menu
+    await tester.tap(find.byIcon(LucideIcons.moreVertical));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+
+    // Tap Edit
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(editCalled, isTrue);
+
+    // Tap more options menu again
+    await tester.tap(find.byIcon(LucideIcons.moreVertical));
+    await tester.pumpAndSettle();
+
+    // Tap Delete
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(deleteCalled, isTrue);
   });
 }

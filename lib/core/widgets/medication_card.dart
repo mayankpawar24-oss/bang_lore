@@ -10,7 +10,11 @@ class MedicationCard extends StatelessWidget {
   final String time;
   final String? instructions;
   final bool isTaken;
+  final bool isSkipped;
   final VoidCallback? onMarkAsTaken;
+  final VoidCallback? onMarkAsSkipped;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback? onTap;
 
   const MedicationCard({
@@ -20,7 +24,11 @@ class MedicationCard extends StatelessWidget {
     required this.time,
     this.instructions,
     this.isTaken = false,
+    this.isSkipped = false,
     this.onMarkAsTaken,
+    this.onMarkAsSkipped,
+    this.onEdit,
+    this.onDelete,
     this.onTap,
   });
 
@@ -35,8 +43,10 @@ class MedicationCard extends StatelessWidget {
       elevation: 0.5,
       borderColor: isTaken
           ? AppColors.success.withValues(alpha: isDark ? 0.35 : 0.25)
-          : (isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.border.withValues(alpha: 0.7)),
-      onTap: onTap,
+          : isSkipped
+              ? AppColors.warning.withValues(alpha: isDark ? 0.35 : 0.25)
+              : (isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.border.withValues(alpha: 0.7)),
+      onTap: onTap ?? onEdit,
       child: Row(
         children: [
           Container(
@@ -44,12 +54,18 @@ class MedicationCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: isTaken
                   ? AppColors.success.withValues(alpha: isDark ? 0.2 : 0.12)
-                  : (isDark ? const Color(0xFF1E293B) : AppColors.softBlue),
+                  : isSkipped
+                      ? AppColors.warning.withValues(alpha: isDark ? 0.2 : 0.12)
+                      : (isDark ? const Color(0xFF1E293B) : AppColors.softBlue),
               shape: BoxShape.circle,
             ),
             child: Icon(
-              LucideIcons.pill,
-              color: isTaken ? AppColors.success : AppColors.primaryBlue,
+              isSkipped ? LucideIcons.skipForward : LucideIcons.pill,
+              color: isTaken
+                  ? AppColors.success
+                  : isSkipped
+                      ? AppColors.warning
+                      : AppColors.primaryBlue,
               size: 20,
             ),
           ),
@@ -66,6 +82,8 @@ class MedicationCard extends StatelessWidget {
                     color: isDark ? Colors.white : AppColors.navy,
                     letterSpacing: -0.2,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -91,11 +109,15 @@ class MedicationCard extends StatelessWidget {
                           color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
                         ),
                       ),
-                      Text(
-                        instructions!,
-                        style: TextStyle(
-                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                          fontSize: 12,
+                      Flexible(
+                        child: Text(
+                          instructions!,
+                          style: TextStyle(
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                            fontSize: 12,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -131,37 +153,141 @@ class MedicationCard extends StatelessWidget {
                 ],
               ),
             ).animate().scale(duration: 200.ms)
-          else
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onMarkAsTaken,
+          else if (isSkipped)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: isDark ? 0.2 : 0.12),
                 borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2563EB) : const Color(0xFF0B0C0E),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isDark ? const Color(0xFF2563EB) : const Color(0xFF0B0C0E))
-                            .withValues(alpha: 0.25),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Text(
-                    'Mark as taken',
+                border: Border.all(
+                  color: AppColors.warning.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(LucideIcons.skipForward, color: AppColors.warning, size: 13),
+                  SizedBox(width: 4),
+                  Text(
+                    'Skipped',
                     style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+                      color: AppColors.warning,
+                      fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
                   ),
-                ),
+                ],
               ),
+            ).animate().scale(duration: 200.ms)
+          else
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onMarkAsSkipped != null) ...[
+                  InkWell(
+                    onTap: onMarkAsSkipped,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white10 : AppColors.softBlue.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isDark ? Colors.white24 : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        'Skip',
+                        style: TextStyle(
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onMarkAsTaken,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF2563EB) : const Color(0xFF0B0C0E),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isDark ? const Color(0xFF2563EB) : const Color(0xFF0B0C0E))
+                                .withValues(alpha: 0.25),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'Take',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+          if (onEdit != null || onDelete != null) ...[
+            const SizedBox(width: 4),
+            PopupMenuButton<String>(
+              icon: Icon(
+                LucideIcons.moreVertical,
+                size: 16,
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.muted,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              onSelected: (value) {
+                if (value == 'edit') {
+                  onEdit?.call();
+                } else if (value == 'delete') {
+                  onDelete?.call();
+                }
+              },
+              itemBuilder: (ctx) => [
+                if (onEdit != null)
+                  PopupMenuItem(
+                    value: 'edit',
+                    height: 38,
+                    child: Row(
+                      children: [
+                        Icon(LucideIcons.pencil, size: 14, color: isDark ? Colors.white70 : AppColors.navy),
+                        const SizedBox(width: 8),
+                        Text('Edit', style: TextStyle(fontSize: 13, color: isDark ? Colors.white : AppColors.navy)),
+                      ],
+                    ),
+                  ),
+                if (onDelete != null)
+                  PopupMenuItem(
+                    value: 'delete',
+                    height: 38,
+                    child: Row(
+                      children: const [
+                        Icon(LucideIcons.trash2, size: 14, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Delete', style: TextStyle(fontSize: 13, color: Colors.red)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );

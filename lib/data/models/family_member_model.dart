@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum HydrationStatus { needed, active, done }
 enum WalkingStatus { needed, active, done }
@@ -67,7 +67,11 @@ class FamilyMember {
   final double? positionX;
   final double? positionY;
   final List<String> connectedToIds;
-  // Extended
+  // Extended & Verified User Reference
+  final String? memberUid;
+  final String? phoneNumber;
+  final String? abhaId;
+  final int? age;
   final String? gender;
   final int? birthYear;
   final String? notes;
@@ -89,6 +93,10 @@ class FamilyMember {
     this.positionX,
     this.positionY,
     this.connectedToIds = const [],
+    this.memberUid,
+    this.phoneNumber,
+    this.abhaId,
+    this.age,
     this.gender,
     this.birthYear,
     this.notes,
@@ -111,6 +119,10 @@ class FamilyMember {
     double? positionX,
     double? positionY,
     List<String>? connectedToIds,
+    String? memberUid,
+    String? phoneNumber,
+    String? abhaId,
+    int? age,
     String? gender,
     int? birthYear,
     String? notes,
@@ -132,6 +144,10 @@ class FamilyMember {
       positionX: positionX ?? this.positionX,
       positionY: positionY ?? this.positionY,
       connectedToIds: connectedToIds ?? this.connectedToIds,
+      memberUid: memberUid ?? this.memberUid,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      abhaId: abhaId ?? this.abhaId,
+      age: age ?? this.age,
       gender: gender ?? this.gender,
       birthYear: birthYear ?? this.birthYear,
       notes: notes ?? this.notes,
@@ -156,6 +172,10 @@ class FamilyMember {
       'positionX': positionX,
       'positionY': positionY,
       'connectedToIds': connectedToIds,
+      'memberUid': memberUid,
+      'phoneNumber': phoneNumber,
+      'abhaId': abhaId,
+      'age': age,
       'gender': gender,
       'birthYear': birthYear,
       'notes': notes,
@@ -180,6 +200,10 @@ class FamilyMember {
       positionX: (json['positionX'] as num?)?.toDouble(),
       positionY: (json['positionY'] as num?)?.toDouble(),
       connectedToIds: json['connectedToIds'] != null ? List<String>.from(json['connectedToIds']) : [],
+      memberUid: json['memberUid'] as String?,
+      phoneNumber: json['phoneNumber'] as String?,
+      abhaId: json['abhaId'] as String?,
+      age: json['age'] as int?,
       gender: json['gender'] as String?,
       birthYear: json['birthYear'] as int?,
       notes: json['notes'] as String?,
@@ -216,6 +240,10 @@ class FamilyMember {
       positionX: (data['positionX'] as num?)?.toDouble(),
       positionY: (data['positionY'] as num?)?.toDouble(),
       connectedToIds: List<String>.from(data['connectedToIds'] ?? []),
+      memberUid: data['memberUid'] as String?,
+      phoneNumber: data['phoneNumber'] as String?,
+      abhaId: data['abhaId'] as String?,
+      age: (data['age'] as num?)?.toInt(),
       gender: data['gender'] as String?,
       birthYear: (data['birthYear'] as num?)?.toInt(),
       notes: data['notes'] as String?,
@@ -239,6 +267,10 @@ class FamilyMember {
       'positionX': positionX,
       'positionY': positionY,
       'connectedToIds': connectedToIds,
+      'memberUid': memberUid,
+      'phoneNumber': phoneNumber,
+      'abhaId': abhaId,
+      'age': age,
       'gender': gender,
       'birthYear': birthYear,
       'notes': notes,

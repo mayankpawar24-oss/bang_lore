@@ -26,91 +26,98 @@ class PatientShellScreen extends StatelessWidget {
     final currentIndex = navigationShell.currentIndex;
 
     return Scaffold(
-      extendBody: true,
+      backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: navigationShell,
       bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        top: false,
+        child: Container(
+          height: 84,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.bottomCenter,
             children: [
               // Floating Glassmorphic Dock Container
-              ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                  child: Container(
-                    height: 66,
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF131C2E).withValues(alpha: 0.88)
-                          : Colors.white.withValues(alpha: 0.90),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    child: Container(
+                      height: 66,
+                      decoration: BoxDecoration(
                         color: isDark
-                            ? Colors.white.withValues(alpha: 0.12)
-                            : AppColors.border.withValues(alpha: 0.85),
-                        width: 1,
+                            ? const Color(0xFF131C2E).withValues(alpha: 0.95)
+                            : Colors.white.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : AppColors.border.withValues(alpha: 0.85),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.45 : 0.08),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF0F172A).withValues(alpha: isDark ? 0.45 : 0.08),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        // Left 2 Navigation Items: Home (0) & Family (1)
-                        Expanded(
-                          child: _buildNavItem(
-                            context,
-                            index: 0,
-                            currentIndex: currentIndex,
-                            icon: LucideIcons.home,
-                            label: 'Home',
-                            isDark: isDark,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          // Left 2 Navigation Items: Home (0) & Family (1)
+                          Expanded(
+                            child: _buildNavItem(
+                              context,
+                              index: 0,
+                              currentIndex: currentIndex,
+                              icon: LucideIcons.home,
+                              label: 'Home',
+                              isDark: isDark,
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: _buildNavItem(
-                            context,
-                            index: 1,
-                            currentIndex: currentIndex,
-                            icon: LucideIcons.users,
-                            label: 'Family',
-                            isDark: isDark,
+                          Expanded(
+                            child: _buildNavItem(
+                              context,
+                              index: 1,
+                              currentIndex: currentIndex,
+                              icon: LucideIcons.users,
+                              label: 'Family',
+                              isDark: isDark,
+                            ),
                           ),
-                        ),
 
-                        // Center Space Reserved for Emerged Button
-                        const SizedBox(width: 58),
+                          // Center Space Reserved for Emerged Button
+                          const SizedBox(width: 58),
 
-                        // Right 2 Navigation Items: Timeline (3) & Profile (4)
-                        Expanded(
-                          child: _buildNavItem(
-                            context,
-                            index: 3,
-                            currentIndex: currentIndex,
-                            icon: LucideIcons.clock,
-                            label: 'Timeline',
-                            isDark: isDark,
+                          // Right 2 Navigation Items: Timeline (3) & Profile (4)
+                          Expanded(
+                            child: _buildNavItem(
+                              context,
+                              index: 3,
+                              currentIndex: currentIndex,
+                              icon: LucideIcons.clock,
+                              label: 'Timeline',
+                              isDark: isDark,
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: _buildNavItem(
-                            context,
-                            index: 4,
-                            currentIndex: currentIndex,
-                            icon: LucideIcons.user,
-                            label: 'Profile',
-                            isDark: isDark,
+                          Expanded(
+                            child: _buildNavItem(
+                              context,
+                              index: 4,
+                              currentIndex: currentIndex,
+                              icon: LucideIcons.user,
+                              label: 'Profile',
+                              isDark: isDark,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -118,7 +125,7 @@ class PatientShellScreen extends StatelessWidget {
 
               // Emerged Central Blue Action Button (Branch 2: AI Care / Robinson Co-Pilot)
               Positioned(
-                top: -18,
+                top: 0,
                 child: GestureDetector(
                   onTap: () => _goBranch(2),
                   child: Column(

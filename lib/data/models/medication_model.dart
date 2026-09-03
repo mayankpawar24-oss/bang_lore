@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Medication {
   final String id;
@@ -6,6 +6,7 @@ class Medication {
   final String dosage;
   final String time;
   final bool isTaken;
+  final bool isSkipped;
   final DateTime date;
   // Extended
   final String? patientId;
@@ -15,6 +16,9 @@ class Medication {
   final DateTime? endDate;
   final int? stock;
   final bool active;
+  final DateTime? takenAt;
+  final DateTime? skippedAt;
+  final String? notes;
 
   const Medication({
     required this.id,
@@ -22,6 +26,7 @@ class Medication {
     required this.dosage,
     required this.time,
     required this.isTaken,
+    this.isSkipped = false,
     required this.date,
     this.patientId,
     this.frequency,
@@ -30,6 +35,9 @@ class Medication {
     this.endDate,
     this.stock,
     this.active = true,
+    this.takenAt,
+    this.skippedAt,
+    this.notes,
   });
 
   Medication copyWith({
@@ -38,6 +46,7 @@ class Medication {
     String? dosage,
     String? time,
     bool? isTaken,
+    bool? isSkipped,
     DateTime? date,
     String? patientId,
     String? frequency,
@@ -46,6 +55,9 @@ class Medication {
     DateTime? endDate,
     int? stock,
     bool? active,
+    DateTime? takenAt,
+    DateTime? skippedAt,
+    String? notes,
   }) {
     return Medication(
       id: id ?? this.id,
@@ -53,6 +65,7 @@ class Medication {
       dosage: dosage ?? this.dosage,
       time: time ?? this.time,
       isTaken: isTaken ?? this.isTaken,
+      isSkipped: isSkipped ?? this.isSkipped,
       date: date ?? this.date,
       patientId: patientId ?? this.patientId,
       frequency: frequency ?? this.frequency,
@@ -61,6 +74,9 @@ class Medication {
       endDate: endDate ?? this.endDate,
       stock: stock ?? this.stock,
       active: active ?? this.active,
+      takenAt: takenAt ?? this.takenAt,
+      skippedAt: skippedAt ?? this.skippedAt,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -71,6 +87,7 @@ class Medication {
       'dosage': dosage,
       'time': time,
       'isTaken': isTaken,
+      'isSkipped': isSkipped,
       'date': date.toIso8601String(),
       'patientId': patientId,
       'frequency': frequency,
@@ -79,6 +96,9 @@ class Medication {
       'endDate': endDate?.toIso8601String(),
       'stock': stock,
       'active': active,
+      'takenAt': takenAt?.toIso8601String(),
+      'skippedAt': skippedAt?.toIso8601String(),
+      'notes': notes,
     };
   }
 
@@ -88,7 +108,8 @@ class Medication {
       name: json['name'] as String,
       dosage: json['dosage'] as String,
       time: json['time'] as String,
-      isTaken: json['isTaken'] as bool,
+      isTaken: json['isTaken'] as bool? ?? false,
+      isSkipped: json['isSkipped'] as bool? ?? false,
       date: DateTime.parse(json['date'] as String),
       patientId: json['patientId'] as String?,
       frequency: json['frequency'] as String?,
@@ -97,6 +118,9 @@ class Medication {
       endDate: json['endDate'] != null ? DateTime.tryParse(json['endDate'] as String) : null,
       stock: json['stock'] as int?,
       active: json['active'] as bool? ?? true,
+      takenAt: json['takenAt'] != null ? DateTime.tryParse(json['takenAt'] as String) : null,
+      skippedAt: json['skippedAt'] != null ? DateTime.tryParse(json['skippedAt'] as String) : null,
+      notes: json['notes'] as String?,
     );
   }
 
@@ -108,6 +132,7 @@ class Medication {
       dosage: data['dosage'] as String? ?? '',
       time: data['time'] as String? ?? '',
       isTaken: data['isTaken'] as bool? ?? false,
+      isSkipped: data['isSkipped'] as bool? ?? false,
       date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
       patientId: data['patientId'] as String?,
       frequency: data['frequency'] as String?,
@@ -116,6 +141,9 @@ class Medication {
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
       stock: (data['stock'] as num?)?.toInt(),
       active: data['active'] as bool? ?? true,
+      takenAt: (data['takenAt'] as Timestamp?)?.toDate(),
+      skippedAt: (data['skippedAt'] as Timestamp?)?.toDate(),
+      notes: data['notes'] as String?,
     );
   }
 
@@ -125,6 +153,7 @@ class Medication {
       'dosage': dosage,
       'time': time,
       'isTaken': isTaken,
+      'isSkipped': isSkipped,
       'date': Timestamp.fromDate(date),
       'patientId': patientId,
       'frequency': frequency,
@@ -133,6 +162,9 @@ class Medication {
       'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
       'stock': stock,
       'active': active,
+      'takenAt': takenAt != null ? Timestamp.fromDate(takenAt!) : null,
+      'skippedAt': skippedAt != null ? Timestamp.fromDate(skippedAt!) : null,
+      'notes': notes,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }

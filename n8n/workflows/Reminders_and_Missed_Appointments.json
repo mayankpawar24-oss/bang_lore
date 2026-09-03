@@ -1,0 +1,258 @@
+{
+  "name": "Continuum Health — Reminders & Missed Appointments",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-2",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "query",
+        "projectId": "continuum-health-b54cb",
+        "query": "={\n  \"from\": [\n    {\n      \"collectionId\": \"appointments\"\n    }\n  ],\n  \"where\": {\n    \"fieldFilter\": {\n      \"field\": {\n        \"fieldPath\": \"status\"\n      },\n      \"op\": \"EQUAL\",\n      \"value\": {\n        \"stringValue\": \"approved\"\n      }\n    }\n  }\n}"
+      },
+      "id": "query-approved-appointments-1",
+      "name": "Query Approved Appointments",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Evaluate appointment time vs current time for Reminders and Missed Appointments\nconst items = $input.all();\nconst results = [];\nconst now = new Date();\n\nfor (const item of items) {\n  const data = item.json;\n  const apptId = data.id || data.appointmentId;\n  if (!apptId) continue;\n\n  let apptTime = null;\n  if (data.dateTime && data.dateTime._seconds) {\n    apptTime = new Date(data.dateTime._seconds * 1000);\n  } else if (data.dateTime) {\n    apptTime = new Date(data.dateTime);\n  }\n  if (!apptTime || isNaN(apptTime.getTime())) continue;\n\n  const durationMinutes = data.durationMinutes || data.duration || 30;\n  const endTime = new Date(apptTime.getTime() + durationMinutes * 60000);\n  const diffMinutes = (apptTime.getTime() - now.getTime()) / 60000;\n\n  const patientId = data.patientId || '';\n  const doctorId = data.doctorId || '';\n  const doctorName = data.doctorName || 'Doctor';\n  const patientName = data.patientName || 'Patient';\n\n  // CASE 1: Upcoming in next 60 minutes -> Reminder\n  if (diffMinutes > 0 && diffMinutes <= 60) {\n    const eventKey = `reminder_${apptId}_${apptTime.toISOString().substring(0, 13)}`;\n    results.push({\n      json: {\n        action: 'reminder',\n        eventKey,\n        appointmentId: apptId,\n        patientId,\n        doctorId,\n        doctorName,\n        patientName,\n        apptTime: apptTime.toISOString(),\n        patientTitle: 'Upcoming Appointment Reminder',\n        patientMessage: `Reminder: Consultation with Dr. ${doctorName} is scheduled in ${Math.round(diffMinutes)} minutes.`,\n        doctorTitle: 'Upcoming Patient Reminder',\n        doctorMessage: `Upcoming consultation with ${patientName} in ${Math.round(diffMinutes)} minutes.`\n      }\n    });\n  }\n  // CASE 2: Appointment end time passed without completion -> Missed Appointment\n  else if (now.getTime() > endTime.getTime() + 10 * 60000) {\n    const eventKey = `missed_${apptId}`;\n    results.push({\n      json: {\n        action: 'missed',\n        eventKey,\n        appointmentId: apptId,\n        patientId,\n        doctorId,\n        doctorName,\n        patientName,\n        apptTime: apptTime.toISOString(),\n        patientTitle: 'Appointment Missed',\n        patientMessage: `You missed your scheduled consultation with Dr. ${doctorName}. Please reschedule.`,\n        doctorTitle: 'Patient Missed Appointment',\n        doctorMessage: `Patient ${patientName} missed their scheduled consultation.`\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "evaluate-timing-1",
+      "name": "Evaluate Appointment Timing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "projectId": "continuum-health-b54cb",
+        "collection": "processedEvents",
+        "documentId": "={{ $json.eventKey }}"
+      },
+      "id": "check-reminder-idempotency-1",
+      "name": "Check Idempotency",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "continueOnFail": true,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.error != null || $json.id == null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-timing-unprocessed-1",
+      "name": "If Unprocessed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "projectId": "continuum-health-b54cb",
+        "collection": "processedEvents",
+        "documentId": "={{ $('Evaluate Appointment Timing').item.json.eventKey }}",
+        "columns": "eventKey,appointmentId,action,processedAt",
+        "options": {
+          "useServerTimestamp": true
+        }
+      },
+      "id": "record-timing-event-key-1",
+      "name": "Record Timing Event Key",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Evaluate Appointment Timing').item.json.action }}",
+              "value2": "missed"
+            }
+          ]
+        }
+      },
+      "id": "if-action-is-missed-1",
+      "name": "If Action Is Missed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "projectId": "continuum-health-b54cb",
+        "collection": "appointments",
+        "documentId": "={{ $('Evaluate Appointment Timing').item.json.appointmentId }}",
+        "columns": "status,missedAt,updatedAt",
+        "options": {}
+      },
+      "id": "mark-appointment-missed-1",
+      "name": "Mark Appointment Missed in Firestore",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1640, 100]
+    },
+    {
+      "parameters": {
+        "operation": "add",
+        "projectId": "continuum-health-b54cb",
+        "collection": "notifications",
+        "options": {}
+      },
+      "id": "create-patient-notification-1",
+      "name": "Create Patient In-App Notification",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [1860, 200]
+    },
+    {
+      "parameters": {
+        "operation": "add",
+        "projectId": "continuum-health-b54cb",
+        "collection": "notifications",
+        "options": {}
+      },
+      "id": "create-doctor-notification-1",
+      "name": "Create Doctor In-App Notification",
+      "type": "n8n-nodes-base.googleCloudFirestore",
+      "typeVersion": 1,
+      "position": [2080, 200]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Approved Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Approved Appointments": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Appointment Timing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Appointment Timing": {
+      "main": [
+        [
+          {
+            "node": "Check Idempotency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Idempotency": {
+      "main": [
+        [
+          {
+            "node": "If Unprocessed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Unprocessed": {
+      "main": [
+        [
+          {
+            "node": "Record Timing Event Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Timing Event Key": {
+      "main": [
+        [
+          {
+            "node": "If Action Is Missed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Action Is Missed": {
+      "main": [
+        [
+          {
+            "node": "Mark Appointment Missed in Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Patient In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Appointment Missed in Firestore": {
+      "main": [
+        [
+          {
+            "node": "Create Patient In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Patient In-App Notification": {
+      "main": [
+        [
+          {
+            "node": "Create Doctor In-App Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

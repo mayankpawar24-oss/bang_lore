@@ -88,7 +88,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
     return Column(
       children: [
         SizedBox(
-          height: 162,
+          height: 176,
           child: PageView.builder(
             controller: _pageController,
             onPageChanged: (index) {
@@ -144,7 +144,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
           borderRadius: BorderRadius.circular(24),
           onTap: slide.onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -152,6 +152,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -169,7 +170,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
                         slide.title,
                         maxLines: 1,
@@ -181,7 +182,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
                           letterSpacing: -0.3,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         slide.subtitle,
                         maxLines: 2,
@@ -189,10 +190,10 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.90),
                           fontSize: 12,
-                          height: 1.3,
+                          height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(

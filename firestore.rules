@@ -94,6 +94,11 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && request.auth.uid == patientId;
         allow create: if isSignedIn();
       }
+
+      match /activityLogs/{logId} {
+        allow read, write: if isSignedIn() && request.auth.uid == patientId;
+        allow create: if isSignedIn();
+      }
     }
 
     match /doctors/{doctorId} {
@@ -119,6 +124,11 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && request.auth.uid == doctorId;
         allow create: if isSignedIn();
       }
+
+      match /activityLogs/{logId} {
+        allow read, write: if isSignedIn() && request.auth.uid == doctorId;
+        allow create: if isSignedIn();
+      }
     }
 
     match /appointments/{appId} {
@@ -136,6 +146,19 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
         (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.doctorId);
       allow delete: if false;
+    }
+
+    match /notifications/{notifId} {
+      allow read, update: if isSignedIn() && (resource.data.recipientUid == request.auth.uid);
+      allow create: if isSignedIn();
+    }
+
+    match /processedEvents/{eventId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /telegramLinkCodes/{code} {
+      allow read, write: if isSignedIn();
     }
   }
 }

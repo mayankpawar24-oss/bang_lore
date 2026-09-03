@@ -1,4 +1,5 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:developer' as dev;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/medication_model.dart';
 
 abstract class MedicationRepository {
@@ -6,7 +7,9 @@ abstract class MedicationRepository {
   Future<void> addMedication(String patientId, Medication medication);
   Future<void> updateMedication(String patientId, Medication medication);
   Future<void> markTaken(String patientId, String medicationId);
+  Future<void> markSkipped(String patientId, String medicationId);
   Future<void> markMissed(String patientId, String medicationId);
+  Future<void> deleteMedication(String patientId, String medicationId);
   Stream<List<Medication>> medicationsStream(String patientId);
 }
 
@@ -33,11 +36,14 @@ class FirebaseMedicationRepository implements MedicationRepository {
 
   @override
   Future<void> addMedication(String patientId, Medication medication) async {
-    final ref = _meds(patientId).doc();
+    final ref = medication.id.isNotEmpty && !medication.id.startsWith('med_')
+        ? _meds(patientId).doc(medication.id)
+        : _meds(patientId).doc();
+    final withId = medication.copyWith(id: ref.id, patientId: patientId);
     await ref.set({
-      ...medication.toFirestore(),
+      ...withId.toFirestore(),
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 
   @override
@@ -52,6 +58,18 @@ class FirebaseMedicationRepository implements MedicationRepository {
   Future<void> markTaken(String patientId, String medicationId) async {
     await _meds(patientId).doc(medicationId).update({
       'isTaken': true,
+      'isSkipped': false,
+      'takenAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<void> markSkipped(String patientId, String medicationId) async {
+    await _meds(patientId).doc(medicationId).update({
+      'isTaken': false,
+      'isSkipped': true,
+      'skippedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -63,6 +81,19 @@ class FirebaseMedicationRepository implements MedicationRepository {
       'isMissed': true,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  @override
+  Future<void> deleteMedication(String patientId, String medicationId) async {
+    try {
+      dev.log('[MEDICATION] Deleting medication $medicationId for patient $patientId', name: 'MedicationRepository');
+      await _meds(patientId).doc(medicationId).delete();
+      await _db.collection('patients').doc(patientId).collection('reminders').doc('rem_$medicationId').delete().catchError((_) {});
+      dev.log('[MEDICATION] Successfully deleted medication and reminder for $medicationId', name: 'MedicationRepository');
+    } catch (e) {
+      dev.log('[MEDICATION] Error deleting medication $medicationId: $e', error: e, name: 'MedicationRepository');
+      rethrow;
+    }
   }
 }
 
@@ -90,12 +121,23 @@ class MockMedicationRepository implements MedicationRepository {
   @override
   Future<void> markTaken(String patientId, String medicationId) async {
     final idx = _meds.indexWhere((m) => m.id == medicationId);
-    if (idx >= 0) _meds[idx] = _meds[idx].copyWith(isTaken: true);
+    if (idx >= 0) _meds[idx] = _meds[idx].copyWith(isTaken: true, isSkipped: false);
+  }
+
+  @override
+  Future<void> markSkipped(String patientId, String medicationId) async {
+    final idx = _meds.indexWhere((m) => m.id == medicationId);
+    if (idx >= 0) _meds[idx] = _meds[idx].copyWith(isTaken: false, isSkipped: true);
   }
 
   @override
   Future<void> markMissed(String patientId, String medicationId) async {
     final idx = _meds.indexWhere((m) => m.id == medicationId);
     if (idx >= 0) _meds[idx] = _meds[idx].copyWith(isTaken: false);
+  }
+
+  @override
+  Future<void> deleteMedication(String patientId, String medicationId) async {
+    _meds.removeWhere((m) => m.id == medicationId);
   }
 }

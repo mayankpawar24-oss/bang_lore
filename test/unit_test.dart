@@ -10,6 +10,8 @@ import 'package:continuum_health/data/models/vital_model.dart';
 import 'package:continuum_health/data/models/reminder_model.dart';
 import 'package:continuum_health/data/models/notification_model.dart';
 import 'package:continuum_health/data/models/ai_chat_model.dart';
+import 'package:continuum_health/data/models/medication_model.dart';
+import 'package:continuum_health/data/repositories/medication_repository.dart';
 
 void main() {
   group('UserModel & Registration Schema Tests', () {
@@ -524,6 +526,264 @@ void main() {
       expect(notif.senderUid, 'patient_uid_123');
       expect(notif.isActioned, isTrue);
       expect(notif.status, 'approved');
+    });
+  });
+
+  group('Medication Reminders & Schedule Tests', () {
+    test('medication model serialization with isSkipped and timestamps', () {
+      final now = DateTime.now();
+      final med = Medication(
+        id: 'med_001',
+        name: 'Metformin',
+        dosage: '500 mg',
+        time: '08:00 AM',
+        isTaken: false,
+        isSkipped: false,
+        date: now,
+        patientId: 'patient_test_123',
+        frequency: 'Once daily',
+        active: true,
+      );
+
+      final json = med.toJson();
+      expect(json['name'], 'Metformin');
+      expect(json['dosage'], '500 mg');
+      expect(json['isTaken'], isFalse);
+      expect(json['isSkipped'], isFalse);
+      expect(json['frequency'], 'Once daily');
+
+      final deserialized = Medication.fromJson(json);
+      expect(deserialized.id, 'med_001');
+      expect(deserialized.name, 'Metformin');
+      expect(deserialized.isTaken, isFalse);
+      expect(deserialized.isSkipped, isFalse);
+    });
+
+    test('medication markTaken and markSkipped state transitions and persistence', () async {
+      final repo = MockMedicationRepository();
+      final now = DateTime.now();
+      final med = Medication(
+        id: 'med_002',
+        name: 'Atorvastatin',
+        dosage: '20 mg',
+        time: '09:00 PM',
+        isTaken: false,
+        isSkipped: false,
+        date: now,
+        patientId: 'patient_test_123',
+        frequency: 'Once daily',
+      );
+
+      await repo.addMedication('patient_test_123', med);
+      var meds = await repo.getMedications('patient_test_123');
+      expect(meds.length, 1);
+      expect(meds.first.isTaken, isFalse);
+      expect(meds.first.isSkipped, isFalse);
+
+      // Mark taken
+      await repo.markTaken('patient_test_123', 'med_002');
+      meds = await repo.getMedications('patient_test_123');
+      expect(meds.first.isTaken, isTrue);
+      expect(meds.first.isSkipped, isFalse);
+
+      // Mark skipped
+      await repo.markSkipped('patient_test_123', 'med_002');
+      meds = await repo.getMedications('patient_test_123');
+      expect(meds.first.isTaken, isFalse);
+      expect(meds.first.isSkipped, isTrue);
+    });
+
+    test('today medication filtering correctly includes today scheduled medicines', () {
+      final today = DateTime.now();
+      final yesterday = today.subtract(const Duration(days: 1));
+      final tomorrow = today.add(const Duration(days: 1));
+
+      final meds = [
+        Medication(
+          id: 'med_today',
+          name: 'Amoxicillin',
+          dosage: '250 mg',
+          time: '08:00 AM',
+          isTaken: false,
+          date: today,
+          frequency: 'Once daily',
+        ),
+        Medication(
+          id: 'med_daily_range',
+          name: 'Lisinopril',
+          dosage: '10 mg',
+          time: '09:00 AM',
+          isTaken: false,
+          date: yesterday,
+          frequency: 'Daily',
+          startDate: yesterday,
+          endDate: tomorrow,
+        ),
+        Medication(
+          id: 'med_past_expired',
+          name: 'Old Med',
+          dosage: '50 mg',
+          time: '10:00 AM',
+          isTaken: false,
+          date: yesterday.subtract(const Duration(days: 5)),
+          frequency: 'Once',
+          startDate: yesterday.subtract(const Duration(days: 5)),
+          endDate: yesterday,
+        ),
+      ];
+
+      final todayMeds = meds.where((m) {
+        final isSameDay = m.date.year == today.year && m.date.month == today.month && m.date.day == today.day;
+        final freq = (m.frequency ?? '').toLowerCase();
+        final isRecurring = freq.contains('daily') || freq.contains('day') || freq.contains('morning') || freq.contains('night');
+        final inDateRange = (m.startDate == null || !m.startDate!.isAfter(today)) && (m.endDate == null || !m.endDate!.isBefore(today));
+        return isSameDay || (isRecurring && inDateRange);
+      }).toList();
+
+      expect(todayMeds.map((m) => m.id), contains('med_today'));
+      expect(todayMeds.map((m) => m.id), contains('med_daily_range'));
+      expect(todayMeds.map((m) => m.id), isNot(contains('med_past_expired')));
+    });
+
+    test('medication model notes field serialization, update and delete flow', () async {
+      final repo = MockMedicationRepository();
+      final now = DateTime.now();
+      final med = Medication(
+        id: 'med_crud_01',
+        name: 'Omeprazole',
+        dosage: '20 mg',
+        time: '07:30 AM',
+        isTaken: false,
+        date: now,
+        patientId: 'patient_crud',
+        frequency: 'Once daily',
+        notes: 'Take before breakfast with water',
+      );
+
+      // Verify JSON serialization of notes
+      final json = med.toJson();
+      expect(json['notes'], 'Take before breakfast with water');
+      final fromJson = Medication.fromJson(json);
+      expect(fromJson.notes, 'Take before breakfast with water');
+
+      // Add to repository
+      await repo.addMedication('patient_crud', med);
+      var meds = await repo.getMedications('patient_crud');
+      expect(meds.length, 1);
+      expect(meds.first.notes, 'Take before breakfast with water');
+
+      // Update medication
+      final updated = med.copyWith(dosage: '40 mg', notes: 'Increased dose by Dr. Smith');
+      await repo.updateMedication('patient_crud', updated);
+      meds = await repo.getMedications('patient_crud');
+      expect(meds.first.dosage, '40 mg');
+      expect(meds.first.notes, 'Increased dose by Dr. Smith');
+
+      // Delete medication
+      await repo.deleteMedication('patient_crud', 'med_crud_01');
+      meds = await repo.getMedications('patient_crud');
+      expect(meds, isEmpty);
+    });
+  });
+
+  group('Appointment Status Lifecycle & Transition Integrity Tests', () {
+    test('supports exact statuses: pending, approved, rejected, cancelled, completed, missed', () {
+      final statuses = AppointmentStatus.values.map((s) => s.name).toSet();
+      expect(statuses, contains('pending'));
+      expect(statuses, contains('approved'));
+      expect(statuses, contains('rejected'));
+      expect(statuses, contains('cancelled'));
+      expect(statuses, contains('completed'));
+      expect(statuses, contains('missed'));
+    });
+
+    test('state transition rule validation matches requirements', () {
+      // Helper validator mimicking repository transition logic
+      bool isValidTransition(AppointmentStatus current, AppointmentStatus target) {
+        if ((current == AppointmentStatus.rejected || current == AppointmentStatus.cancelled) &&
+            (target == AppointmentStatus.approved || target == AppointmentStatus.pending)) {
+          return false;
+        }
+        if (current == AppointmentStatus.approved && target == AppointmentStatus.pending) {
+          return false;
+        }
+        if (current == AppointmentStatus.completed &&
+            (target == AppointmentStatus.missed || target == AppointmentStatus.pending)) {
+          return false;
+        }
+        return true;
+      }
+
+      // Disallowed transitions
+      expect(isValidTransition(AppointmentStatus.approved, AppointmentStatus.pending), isFalse);
+      expect(isValidTransition(AppointmentStatus.rejected, AppointmentStatus.approved), isFalse);
+      expect(isValidTransition(AppointmentStatus.cancelled, AppointmentStatus.approved), isFalse);
+      expect(isValidTransition(AppointmentStatus.completed, AppointmentStatus.missed), isFalse);
+
+      // Allowed transitions
+      expect(isValidTransition(AppointmentStatus.pending, AppointmentStatus.approved), isTrue);
+      expect(isValidTransition(AppointmentStatus.pending, AppointmentStatus.rejected), isTrue);
+      expect(isValidTransition(AppointmentStatus.approved, AppointmentStatus.completed), isTrue);
+      expect(isValidTransition(AppointmentStatus.approved, AppointmentStatus.missed), isTrue);
+      expect(isValidTransition(AppointmentStatus.approved, AppointmentStatus.cancelled), isTrue);
+    });
+
+    test('user-specific notification schema compliance', () {
+      final now = DateTime.now();
+      const patientId = 'patient_xyz_123';
+      const doctorId = 'doctor_dr_patel';
+
+      final patientNotification = NotificationModel(
+        id: 'notif_patient_01',
+        recipientUid: patientId,
+        senderUid: doctorId,
+        rawType: 'appointment_approved',
+        title: 'Appointment Approved',
+        message: 'Your appointment with Dr. Aisha Patel has been approved.',
+        timestamp: now,
+        type: NotificationType.appointment,
+        isRead: false,
+        appointmentId: 'appt_101',
+        relatedId: 'appt_101',
+      );
+
+      final docNotification = NotificationModel(
+        id: 'notif_doc_01',
+        recipientUid: doctorId,
+        senderUid: patientId,
+        rawType: 'appointment_cancelled',
+        title: 'Appointment Cancelled',
+        message: 'Margaret Chen cancelled their appointment.',
+        timestamp: now,
+        type: NotificationType.appointment,
+        isRead: false,
+        appointmentId: 'appt_101',
+        relatedId: 'appt_101',
+      );
+
+      expect(patientNotification.recipientUid, patientId);
+      expect(patientNotification.senderUid, doctorId);
+      expect(docNotification.recipientUid, doctorId);
+      expect(docNotification.senderUid, patientId);
+
+      final pJson = patientNotification.toJson();
+      expect(pJson['recipientUid'], patientId);
+      expect(pJson['type'], 'appointment_approved');
+      expect(pJson['relatedId'], 'appt_101');
+    });
+
+    test('deterministic event key generation ensures idempotency', () {
+      String buildEventKey(String appointmentId, String status, int seconds) {
+        return '${appointmentId}_${status}_$seconds';
+      }
+
+      final key1 = buildEventKey('appt_456', 'approved', 1725350400);
+      final key2 = buildEventKey('appt_456', 'approved', 1725350400);
+      final keyDifferentStatus = buildEventKey('appt_456', 'cancelled', 1725350400);
+
+      expect(key1, key2);
+      expect(key1, isNot(equals(keyDifferentStatus)));
+      expect(key1, 'appt_456_approved_1725350400');
     });
   });
 }

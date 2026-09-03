@@ -12,8 +12,11 @@ import '../../../../data/models/doctor_model.dart';
 import '../../../../data/models/medication_model.dart';
 import '../../../../data/models/appointment_model.dart';
 import '../../../../data/models/vital_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../data/models/reminder_model.dart';
 import '../../../../data/models/report_model.dart';
+import '../../../../data/services/awesome_notification_service.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/doctor_card.dart';
@@ -641,12 +644,15 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
               color: isDark ? Colors.white : AppColors.navy,
             ),
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             label,
             style: const TextStyle(fontSize: 10, color: AppColors.muted),
             textAlign: TextAlign.center,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -660,6 +666,15 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     String? uid,
     List<MedicationModel> medications,
   ) {
+    final today = DateTime.now();
+    final todayMeds = medications.where((m) {
+      final isSameDay = m.date.year == today.year && m.date.month == today.month && m.date.day == today.day;
+      final freq = (m.frequency ?? '').toLowerCase();
+      final isRecurring = freq.contains('daily') || freq.contains('day') || freq.contains('morning') || freq.contains('night');
+      final inDateRange = (m.startDate == null || !m.startDate!.isAfter(today)) && (m.endDate == null || !m.endDate!.isBefore(today));
+      return isSameDay || (isRecurring && inDateRange);
+    }).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -667,11 +682,23 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           title: 'Today\'s Medications',
           actionText: 'View All',
           onActionTap: () => context.push('/patient/timeline'),
+          trailing: ElevatedButton.icon(
+            onPressed: () => _showAddMedicationSheet(context, isDark, uid),
+            icon: const Icon(LucideIcons.plus, size: 14, color: Colors.white),
+            label: const Text('Add Medicine', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryBlue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
         ),
         const SizedBox(height: 10),
-        if (medications.isEmpty)
+        if (todayMeds.isEmpty)
           AppCard(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             borderRadius: 16,
             child: Row(
               children: [
@@ -683,27 +710,895 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 13),
                   ),
                 ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _showAddMedicationSheet(context, isDark, uid),
+                  icon: const Icon(LucideIcons.plus, size: 13, color: Colors.white),
+                  label: const Text('Add Medicine', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
               ],
             ),
           )
         else
-          ...medications.take(3).map(
+          ...todayMeds.take(5).map(
                 (med) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: MedicationCard(
                     name: med.name,
                     dosage: med.dosage,
                     time: med.time,
+                    instructions: med.notes,
                     isTaken: med.isTaken,
-                    onMarkAsTaken: () {
+                    isSkipped: med.isSkipped,
+                    onMarkAsTaken: () async {
                       if (uid != null) {
-                        ref.read(medicationRepositoryProvider).markTaken(uid, med.id);
+                        try {
+                          await ref.read(medicationRepositoryProvider).markTaken(uid, med.id);
+                          dev.log('[MEDICATION] Marked ${med.name} as taken', name: 'PatientDashboard');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Marked ${med.name} as taken.'), backgroundColor: AppColors.success),
+                            );
+                          }
+                        } catch (e) {
+                          dev.log('[MEDICATION] Error marking taken: $e', error: e, name: 'PatientDashboard');
+                        }
                       }
                     },
+                    onMarkAsSkipped: () async {
+                      if (uid != null) {
+                        try {
+                          await ref.read(medicationRepositoryProvider).markSkipped(uid, med.id);
+                          dev.log('[MEDICATION] Marked ${med.name} as skipped', name: 'PatientDashboard');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Marked ${med.name} as skipped.'), backgroundColor: AppColors.warning),
+                            );
+                          }
+                        } catch (e) {
+                          dev.log('[MEDICATION] Error marking skipped: $e', error: e, name: 'PatientDashboard');
+                        }
+                      }
+                    },
+                    onEdit: () => _showEditMedicationSheet(context, isDark, uid, med),
+                    onDelete: () => _confirmDeleteMedication(context, uid, med),
                   ),
                 ),
               ),
       ],
+    );
+  }
+
+  void _showAddMedicationSheet(BuildContext context, bool isDark, String? uid) {
+    final effectiveUid = (uid != null && uid.isNotEmpty) ? uid : FirebaseAuth.instance.currentUser?.uid;
+    if (effectiveUid == null || effectiveUid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to add medication reminders.')),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final dosageController = TextEditingController();
+    final notesController = TextEditingController();
+    TimeOfDay selectedTime = const TimeOfDay(hour: 8, minute: 0);
+    String selectedFrequency = 'Once daily';
+    final frequencies = ['Once daily', 'Twice daily', 'Three times daily', 'Morning & Night', 'As needed'];
+    String? formError;
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final now = DateTime.now();
+          final dtFormat = DateFormat('h:mm a');
+          final timeDisplay = dtFormat.format(DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute));
+
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              top: 24,
+              left: 20,
+              right: 20,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(LucideIcons.pill, color: AppColors.primaryBlue, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Add Medicine',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(LucideIcons.x, size: 20, color: isDark ? Colors.white70 : AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (formError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertCircle, size: 16, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formError!,
+                              style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // Medicine Name
+                  Text(
+                    'Medicine Name *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Metformin, Paracetamol, Atorvastatin',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Dosage
+                  Text(
+                    'Dosage *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: dosageController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. 500 mg, 1 tablet, 5 ml',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Reminder Time Picker
+                  Text(
+                    'Reminder Time *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedTime = picked);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark ? Colors.white12 : AppColors.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.clock, size: 18, color: AppColors.primaryBlue),
+                              const SizedBox(width: 10),
+                              Text(
+                                timeDisplay,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Change Time',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Frequency Selection
+                  Text(
+                    'Frequency *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: frequencies.map((freq) {
+                      final isSelected = selectedFrequency == freq;
+                      return ChoiceChip(
+                        label: Text(freq),
+                        selected: isSelected,
+                        selectedColor: AppColors.primaryBlue,
+                        backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : AppColors.navy),
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        ),
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedFrequency = freq);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Optional Notes
+                  Text(
+                    'Instructions / Notes (Optional)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: notesController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Take after meal with warm water',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final name = nameController.text.trim();
+                              final dosage = dosageController.text.trim();
+                              if (name.isEmpty) {
+                                setModalState(() => formError = 'Please enter medicine name.');
+                                return;
+                              }
+                              if (dosage.isEmpty) {
+                                setModalState(() => formError = 'Please enter dosage (e.g. 500mg).');
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSaving = true;
+                                formError = null;
+                              });
+
+                              try {
+                                final now = DateTime.now();
+                                final scheduledDateTime = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day,
+                                  selectedTime.hour,
+                                  selectedTime.minute,
+                                );
+
+                                final docRef = FirebaseFirestore.instance
+                                    .collection('patients')
+                                    .doc(effectiveUid)
+                                    .collection('medications')
+                                    .doc();
+
+                                final med = Medication(
+                                  id: docRef.id,
+                                  name: name,
+                                  dosage: dosage,
+                                  time: timeDisplay,
+                                  isTaken: false,
+                                  isSkipped: false,
+                                  date: scheduledDateTime,
+                                  patientId: effectiveUid,
+                                  frequency: selectedFrequency,
+                                  notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+                                  startDate: scheduledDateTime,
+                                  active: true,
+                                );
+
+                                dev.log('[FIRESTORE] Writing medication ${docRef.id} under patient $effectiveUid', name: 'PatientDashboard');
+                                await ref.read(medicationRepositoryProvider).addMedication(effectiveUid, med);
+
+                                // Also persist to Reminder collection for unified schedule
+                                final reminder = Reminder(
+                                  id: 'rem_${docRef.id}',
+                                  title: '$name ($dosage)',
+                                  description: notesController.text.trim().isNotEmpty
+                                      ? notesController.text.trim()
+                                      : 'Scheduled medication reminder • $selectedFrequency',
+                                  type: ReminderType.medicine,
+                                  dateTime: scheduledDateTime,
+                                  isCompleted: false,
+                                  patientId: effectiveUid,
+                                );
+                                await ref.read(reminderRepositoryProvider).addReminder(effectiveUid, reminder);
+
+                                // Trigger actual local notification via awesome_notifications
+                                await AwesomeNotificationService.scheduleMedicationReminder(
+                                  id: docRef.id.hashCode,
+                                  medicineName: name,
+                                  dosage: dosage,
+                                  scheduledTime: scheduledDateTime,
+                                  medicationId: docRef.id,
+                                );
+                                dev.log('[MEDICATION] Successfully added medication $name and scheduled reminder', name: 'PatientDashboard');
+
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Medication reminder for $name scheduled for $timeDisplay.'),
+                                      backgroundColor: AppColors.success,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                dev.log('[MEDICATION] Error saving medication: $e', error: e, name: 'PatientDashboard');
+                                setModalState(() {
+                                  isSaving = false;
+                                  formError = 'Failed to save reminder: $e';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Save Medicine',
+                              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showEditMedicationSheet(BuildContext context, bool isDark, String? uid, MedicationModel med) {
+    final effectiveUid = (uid != null && uid.isNotEmpty) ? uid : (med.patientId ?? FirebaseAuth.instance.currentUser?.uid);
+    if (effectiveUid == null || effectiveUid.isEmpty) return;
+
+    final nameController = TextEditingController(text: med.name);
+    final dosageController = TextEditingController(text: med.dosage);
+    final notesController = TextEditingController(text: med.notes ?? '');
+
+    TimeOfDay selectedTime = const TimeOfDay(hour: 8, minute: 0);
+    try {
+      final parsed = DateFormat('h:mm a').parse(med.time);
+      selectedTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
+    } catch (_) {
+      try {
+        final parsed24 = DateFormat('HH:mm').parse(med.time);
+        selectedTime = TimeOfDay(hour: parsed24.hour, minute: parsed24.minute);
+      } catch (_) {}
+    }
+
+    String selectedFrequency = med.frequency ?? 'Once daily';
+    final frequencies = ['Once daily', 'Twice daily', 'Three times daily', 'Morning & Night', 'As needed'];
+    if (!frequencies.contains(selectedFrequency)) frequencies.add(selectedFrequency);
+    String? formError;
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final now = DateTime.now();
+          final dtFormat = DateFormat('h:mm a');
+          final timeDisplay = dtFormat.format(DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute));
+
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              top: 24,
+              left: 20,
+              right: 20,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(LucideIcons.pencil, color: AppColors.primaryBlue, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Edit Medication',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(LucideIcons.x, size: 20, color: isDark ? Colors.white70 : AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (formError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertCircle, size: 16, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formError!,
+                              style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // Medicine Name
+                  Text(
+                    'Medicine Name *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Metformin, Paracetamol',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Dosage
+                  Text(
+                    'Dosage *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: dosageController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. 500 mg, 1 tablet',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Time
+                  Text(
+                    'Reminder Time *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedTime = picked);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark ? Colors.white12 : AppColors.border,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.clock, size: 18, color: AppColors.primaryBlue),
+                              const SizedBox(width: 10),
+                              Text(
+                                timeDisplay,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Change Time',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Frequency
+                  Text(
+                    'Frequency *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: frequencies.map((freq) {
+                      final isSelected = selectedFrequency == freq;
+                      return ChoiceChip(
+                        label: Text(freq),
+                        selected: isSelected,
+                        selectedColor: AppColors.primaryBlue,
+                        backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        labelStyle: TextStyle(
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark ? Colors.white70 : AppColors.navy),
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        ),
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedFrequency = freq);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Optional Notes
+                  Text(
+                    'Instructions / Notes (Optional)',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: notesController,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Take with warm water after meals',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final name = nameController.text.trim();
+                              final dosage = dosageController.text.trim();
+                              if (name.isEmpty) {
+                                setModalState(() => formError = 'Please enter medicine name.');
+                                return;
+                              }
+                              if (dosage.isEmpty) {
+                                setModalState(() => formError = 'Please enter dosage (e.g. 500mg).');
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSaving = true;
+                                formError = null;
+                              });
+
+                              try {
+                                final now = DateTime.now();
+                                final scheduledDateTime = DateTime(
+                                  now.year,
+                                  now.month,
+                                  now.day,
+                                  selectedTime.hour,
+                                  selectedTime.minute,
+                                );
+
+                                final updatedMed = med.copyWith(
+                                  name: name,
+                                  dosage: dosage,
+                                  time: timeDisplay,
+                                  frequency: selectedFrequency,
+                                  notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
+                                  date: scheduledDateTime,
+                                );
+
+                                await ref.read(medicationRepositoryProvider).updateMedication(effectiveUid, updatedMed);
+                                dev.log('[MEDICATION] Updated medication ${med.id} in Firestore', name: 'PatientDashboard');
+
+                                // Update corresponding reminder
+                                final updatedReminder = Reminder(
+                                  id: 'rem_${med.id}',
+                                  title: '$name ($dosage)',
+                                  description: notesController.text.trim().isNotEmpty
+                                      ? notesController.text.trim()
+                                      : 'Scheduled medication reminder • $selectedFrequency',
+                                  type: ReminderType.medicine,
+                                  dateTime: scheduledDateTime,
+                                  isCompleted: med.isTaken,
+                                  patientId: effectiveUid,
+                                );
+                                await ref.read(reminderRepositoryProvider).addReminder(effectiveUid, updatedReminder);
+
+                                // Reschedule local notification
+                                await AwesomeNotificationService.scheduleMedicationReminder(
+                                  id: med.id.hashCode,
+                                  medicineName: name,
+                                  dosage: dosage,
+                                  scheduledTime: scheduledDateTime,
+                                  medicationId: med.id,
+                                );
+
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Updated $name successfully.'),
+                                      backgroundColor: AppColors.success,
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                dev.log('[MEDICATION] Error updating medication: $e', error: e, name: 'PatientDashboard');
+                                setModalState(() {
+                                  isSaving = false;
+                                  formError = 'Failed to update: $e';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Update Medication',
+                              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _confirmDeleteMedication(BuildContext context, String? uid, MedicationModel med) {
+    final effectiveUid = (uid != null && uid.isNotEmpty) ? uid : (med.patientId ?? FirebaseAuth.instance.currentUser?.uid);
+    if (effectiveUid == null || effectiveUid.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete Medication'),
+        content: Text('Are you sure you want to delete ${med.name} (${med.dosage})? This will cancel all upcoming reminders for this medicine.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              try {
+                await ref.read(medicationRepositoryProvider).deleteMedication(effectiveUid, med.id);
+                await AwesomeNotificationService.cancelMedicationReminder(med.id.hashCode);
+                dev.log('[MEDICATION] Successfully deleted ${med.id}', name: 'PatientDashboard');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Deleted ${med.name}.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } catch (e) {
+                dev.log('[MEDICATION] Failed to delete: $e', error: e, name: 'PatientDashboard');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1063,7 +1958,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => Padding(
+      builder: (ctx) => SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
@@ -1162,7 +2057,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          return Padding(
+          return SingleChildScrollView(
             padding: EdgeInsets.only(
               left: 20,
               right: 20,

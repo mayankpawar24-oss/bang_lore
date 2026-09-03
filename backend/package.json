@@ -10,7 +10,13 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
-  "keywords": ["healthcare", "firebase", "express", "ai", "fhir"],
+  "keywords": [
+    "healthcare",
+    "firebase",
+    "express",
+    "ai",
+    "fhir"
+  ],
   "author": "Continuum Health Team",
   "license": "UNLICENSED",
   "private": true,
@@ -26,13 +32,18 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "nodemon": "^3.1.4",
+    "nodemon": "^3.1.14",
     "supertest": "^7.0.0"
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"],
-    "collectCoverageFrom": ["src/**/*.js", "!src/index.js"]
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/index.js"
+    ]
   },
   "engines": {
     "node": ">=18.0.0"

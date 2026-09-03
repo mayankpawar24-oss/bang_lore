@@ -2,6 +2,7 @@ import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/appointment_model.dart';
+import '../services/awesome_notification_service.dart';
 
 abstract class AppointmentRepository {
   Future<List<Appointment>> getAppointments(String userId);
@@ -169,15 +170,16 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Write 4: Doctor notification (ONLY under the selected doctor's UID)
-      // Deployed rule: match /doctors/{doctorId}/notifications/{notifId} { allow create: if isSignedIn(); }
+      // Write 4: Doctor notification (under doctor's UID and synced to root notifications)
       final dNotifRef = _db.collection('doctors').doc(doctorId).collection('notifications').doc();
+      final rootNotifRef = _db.collection('notifications').doc(dNotifRef.id);
       final patientDisplayName = withId.patientName.isNotEmpty ? withId.patientName : "a patient";
       final timeStr = '${withId.dateTime.day}/${withId.dateTime.month} at ${withId.dateTime.hour}:${withId.dateTime.minute.toString().padLeft(2, '0')}';
-      batch.set(dNotifRef, {
+      final dNotifData = {
         'id': dNotifRef.id,
         'notificationId': dNotifRef.id,
         'recipientUid': doctorId,
+        'recipientRole': 'doctor',
         'senderUid': patientId,
         'title': 'New Appointment Request',
         'message': 'New appointment request from $patientDisplayName for $timeStr',
@@ -192,12 +194,25 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
         'notes': withId.notes ?? '',
         'status': 'pending',
         'isRead': false,
+        'read': false,
         'timestamp': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+      batch.set(dNotifRef, dNotifData);
+      batch.set(rootNotifRef, dNotifData);
 
       await batch.commit();
       dev.log('[APPOINTMENT] Core appointment $apptId created in Firestore with status "pending"', name: 'FirebaseAppointmentRepository');
+
+      try {
+        await AwesomeNotificationService.showLocalNotification(
+          id: apptId.hashCode,
+          title: 'Appointment Request Submitted',
+          body: 'Appointment request with ${withId.doctorName.isNotEmpty ? "Dr. ${withId.doctorName}" : "Doctor"} scheduled.',
+        );
+      } catch (e) {
+        dev.log('[AWESOME NOTIFICATION] Booking notification note: $e', name: 'FirebaseAppointmentRepository');
+      }
     } catch (e) {
       dev.log('[APPOINTMENT] exception: $e', name: 'FirebaseAppointmentRepository');
       rethrow;
@@ -229,6 +244,27 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
     dev.log('[APPOINTMENT] Firebase UID: $currentUid', name: 'FirebaseAppointmentRepository');
     dev.log('[APPOINTMENT] doctorId: $doctorId', name: 'FirebaseAppointmentRepository');
     dev.log('[APPOINTMENT] appointmentId: $appointmentId', name: 'FirebaseAppointmentRepository');
+
+    // Enforce strict appointment state transitions
+    try {
+      final currentDoc = await _db.collection('appointments').doc(appointmentId).get();
+      if (currentDoc.exists) {
+        final currentStatusStr = (currentDoc.data()?['status'] as String? ?? 'pending').toLowerCase();
+        if ((currentStatusStr == 'rejected' || currentStatusStr == 'cancelled') &&
+            (newStatus == AppointmentStatus.approved || newStatus == AppointmentStatus.pending)) {
+          throw Exception('Cannot approve or revert a $currentStatusStr appointment.');
+        }
+        if (currentStatusStr == 'approved' && newStatus == AppointmentStatus.pending) {
+          throw Exception('Cannot revert an approved appointment to pending.');
+        }
+        if (currentStatusStr == 'completed' && (newStatus == AppointmentStatus.missed || newStatus == AppointmentStatus.pending)) {
+          throw Exception('Cannot mark a completed appointment as ${newStatus.name}.');
+        }
+      }
+    } catch (e) {
+      if (e.toString().contains('Cannot')) rethrow;
+      dev.log('[APPOINTMENT] State transition pre-check note: $e', name: 'FirebaseAppointmentRepository');
+    }
 
     final updateData = <String, dynamic>{
       'status': newStatus.name,
@@ -282,36 +318,52 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
       dev.log('[APPOINTMENT] Availability slot update note: $e', name: 'FirebaseAppointmentRepository');
     }
 
-    // Defensive notification write
+    // Bidirectional notification write (user-specific + root collection sync)
     try {
       if (updatedByDoctor) {
         final pNotifRef = _db.collection('patients').doc(patientId).collection('notifications').doc();
+        final rootNotifRef = _db.collection('notifications').doc(pNotifRef.id);
         final isApproved = newStatus == AppointmentStatus.approved ||
             newStatus == AppointmentStatus.confirmed ||
             newStatus == AppointmentStatus.scheduled;
         final isRejected = newStatus == AppointmentStatus.rejected;
+        final isCompleted = newStatus == AppointmentStatus.completed;
+        final isMissed = newStatus == AppointmentStatus.missed;
         final docDisplayName = doctorName ?? "Doctor";
 
         final type = isApproved
-            ? 'appointment_confirmed'
+            ? 'appointment_approved'
             : isRejected
                 ? 'appointment_rejected'
-                : 'appointment_cancelled';
+                : isCompleted
+                    ? 'appointment_completed'
+                    : isMissed
+                        ? 'appointment_missed'
+                        : 'appointment_cancelled';
         final title = isApproved
             ? 'Appointment Approved'
             : isRejected
                 ? 'Appointment Rejected'
-                : 'Appointment Cancelled';
+                : isCompleted
+                    ? 'Appointment Completed'
+                    : isMissed
+                        ? 'Appointment Missed'
+                        : 'Appointment Cancelled';
         final msg = isApproved
-            ? 'Your appointment with $docDisplayName has been approved.'
+            ? 'Your appointment with Dr. $docDisplayName has been approved.'
             : isRejected
-                ? 'Your appointment request with $docDisplayName was rejected.'
-                : 'Your appointment status was updated to ${newStatus.name}.';
+                ? 'Your appointment request with Dr. $docDisplayName was rejected.'
+                : isCompleted
+                    ? 'Your consultation with Dr. $docDisplayName has concluded.'
+                    : isMissed
+                        ? 'Your scheduled appointment with Dr. $docDisplayName was missed. Please reschedule.'
+                        : 'Your appointment with Dr. $docDisplayName was cancelled.';
 
-        await pNotifRef.set({
+        final notifPayload = {
           'id': pNotifRef.id,
           'notificationId': pNotifRef.id,
           'recipientUid': patientId,
+          'recipientRole': 'patient',
           'senderUid': doctorId,
           'title': title,
           'message': msg,
@@ -322,11 +374,25 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
           'doctorName': docDisplayName,
           'patientId': patientId,
           'patientName': patientName ?? '',
-          'status': isApproved ? 'approved' : (isRejected ? 'rejected' : 'cancelled'),
+          'status': newStatus.name,
           'isRead': false,
+          'read': false,
           'timestamp': FieldValue.serverTimestamp(),
           'createdAt': FieldValue.serverTimestamp(),
-        });
+        };
+
+        await pNotifRef.set(notifPayload);
+        await rootNotifRef.set(notifPayload);
+
+        try {
+          await AwesomeNotificationService.showLocalNotification(
+            id: appointmentId.hashCode,
+            title: title,
+            body: msg,
+          );
+        } catch (e) {
+          dev.log('[AWESOME NOTIFICATION] Status update notification error: $e', name: 'FirebaseAppointmentRepository');
+        }
 
         // Also update the doctor's pending notification to actioned/rejected
         try {
@@ -338,17 +404,64 @@ class FirebaseAppointmentRepository implements AppointmentRepository {
               .get();
           for (final d in docNotifs.docs) {
             await d.reference.update({
-              'status': isApproved ? 'actioned' : 'rejected',
+              'status': isApproved ? 'actioned' : (isRejected ? 'rejected' : 'cancelled'),
               'isRead': true,
+              'read': true,
               'updatedAt': FieldValue.serverTimestamp(),
             });
           }
         } catch (e) {
           dev.log('[APPOINTMENT] Doctor notification status update note: $e', name: 'FirebaseAppointmentRepository');
         }
+      } else {
+        // Patient initiated status update/cancellation -> Notify doctor
+        final dNotifRef = _db.collection('doctors').doc(doctorId).collection('notifications').doc();
+        final rootNotifRef = _db.collection('notifications').doc(dNotifRef.id);
+        final pName = (patientName != null && patientName.isNotEmpty) ? patientName : "Patient";
+        final title = newStatus == AppointmentStatus.cancelled
+            ? 'Appointment Cancelled'
+            : 'Appointment Update';
+        final msg = newStatus == AppointmentStatus.cancelled
+            ? '$pName cancelled their appointment.'
+            : '$pName updated the appointment status to ${newStatus.name}.';
+
+        final dNotifPayload = {
+          'id': dNotifRef.id,
+          'notificationId': dNotifRef.id,
+          'recipientUid': doctorId,
+          'recipientRole': 'doctor',
+          'senderUid': patientId,
+          'title': title,
+          'message': msg,
+          'type': 'appointment_cancelled',
+          'appointmentId': appointmentId,
+          'relatedId': appointmentId,
+          'doctorId': doctorId,
+          'doctorName': doctorName ?? '',
+          'patientId': patientId,
+          'patientName': pName,
+          'status': 'cancelled',
+          'isRead': false,
+          'read': false,
+          'timestamp': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+        };
+
+        await dNotifRef.set(dNotifPayload);
+        await rootNotifRef.set(dNotifPayload);
+
+        try {
+          await AwesomeNotificationService.showLocalNotification(
+            id: appointmentId.hashCode,
+            title: title,
+            body: msg,
+          );
+        } catch (e) {
+          dev.log('[AWESOME NOTIFICATION] Doctor notification error: $e', name: 'FirebaseAppointmentRepository');
+        }
       }
     } catch (e) {
-      dev.log('[APPOINTMENT] Patient notification write skipped (handled via real-time stream): $e', name: 'FirebaseAppointmentRepository');
+      dev.log('[APPOINTMENT] Notification write error: $e', name: 'FirebaseAppointmentRepository');
     }
   }
 

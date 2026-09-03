@@ -9,6 +9,9 @@ class Doctor {
   final double distance;
   final String avatarUrl;
   final String phone;
+  final String? phoneNumber;
+  final String? email;
+  final String? abhaId;
   final String about;
   final List<String> availableDays;
   final bool isAvailable;
@@ -26,6 +29,9 @@ class Doctor {
     required this.distance,
     required this.avatarUrl,
     required this.phone,
+    this.phoneNumber,
+    this.email,
+    this.abhaId,
     required this.about,
     required this.availableDays,
     required this.isAvailable,
@@ -43,6 +49,9 @@ class Doctor {
     double? distance,
     String? avatarUrl,
     String? phone,
+    String? phoneNumber,
+    String? email,
+    String? abhaId,
     String? about,
     List<String>? availableDays,
     bool? isAvailable,
@@ -50,6 +59,7 @@ class Doctor {
     String? uid,
     DateTime? createdAt,
   }) {
+    final effectivePhone = phone ?? phoneNumber ?? this.phone;
     return Doctor(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -58,7 +68,10 @@ class Doctor {
       rating: rating ?? this.rating,
       distance: distance ?? this.distance,
       avatarUrl: avatarUrl ?? this.avatarUrl,
-      phone: phone ?? this.phone,
+      phone: effectivePhone,
+      phoneNumber: phoneNumber ?? effectivePhone,
+      email: email ?? this.email,
+      abhaId: abhaId ?? this.abhaId,
       about: about ?? this.about,
       availableDays: availableDays ?? this.availableDays,
       isAvailable: isAvailable ?? this.isAvailable,
@@ -78,6 +91,9 @@ class Doctor {
       'distance': distance,
       'avatarUrl': avatarUrl,
       'phone': phone,
+      'phoneNumber': phoneNumber ?? phone,
+      if (email != null && email!.isNotEmpty) 'email': email,
+      if (abhaId != null && abhaId!.isNotEmpty) 'abhaId': abhaId,
       'about': about,
       'availableDays': availableDays,
       'isAvailable': isAvailable,
@@ -87,6 +103,7 @@ class Doctor {
   }
 
   factory Doctor.fromJson(Map<String, dynamic> json) {
+    final p = (json['phoneNumber'] as String?) ?? (json['phone'] as String? ?? '');
     return Doctor(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -95,7 +112,10 @@ class Doctor {
       rating: (json['rating'] as num).toDouble(),
       distance: (json['distance'] as num).toDouble(),
       avatarUrl: json['avatarUrl'] as String,
-      phone: json['phone'] as String,
+      phone: p,
+      phoneNumber: p,
+      email: json['email'] as String?,
+      abhaId: json['abhaId'] as String?,
       about: json['about'] as String,
       availableDays: List<String>.from(json['availableDays']),
       isAvailable: json['isAvailable'] as bool,
@@ -106,6 +126,7 @@ class Doctor {
 
   factory Doctor.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
+    final p = (data['phoneNumber'] as String?) ?? (data['phone'] as String? ?? '');
     return Doctor(
       id: doc.id,
       name: data['name'] as String? ?? '',
@@ -114,7 +135,10 @@ class Doctor {
       rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
       distance: (data['distance'] as num?)?.toDouble() ?? 0.0,
       avatarUrl: data['avatarUrl'] as String? ?? '',
-      phone: data['phone'] as String? ?? '',
+      phone: p,
+      phoneNumber: p,
+      email: data['email'] as String?,
+      abhaId: data['abhaId'] as String?,
       about: data['about'] as String? ?? '',
       availableDays: List<String>.from(data['availableDays'] ?? []),
       isAvailable: data['isAvailable'] as bool? ?? true,
@@ -125,6 +149,7 @@ class Doctor {
   }
 
   Map<String, dynamic> toFirestore() {
+    final p = phoneNumber ?? phone;
     return {
       'uid': uid ?? id,
       'name': name,
@@ -133,7 +158,10 @@ class Doctor {
       'rating': rating,
       'distance': distance,
       'avatarUrl': avatarUrl,
-      'phone': phone,
+      'phone': p,
+      'phoneNumber': p,
+      if (email != null && email!.isNotEmpty) 'email': email,
+      if (abhaId != null && abhaId!.isNotEmpty) 'abhaId': abhaId,
       'about': about,
       'availableDays': availableDays,
       'isAvailable': isAvailable,

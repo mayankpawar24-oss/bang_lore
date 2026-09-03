@@ -2,6 +2,7 @@ import 'dart:developer' as dev;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/patient_model.dart';
 import '../models/permission_request_model.dart';
+import '../services/awesome_notification_service.dart';
 
 abstract class PatientRepository {
   Future<List<Patient>> getPatients();
@@ -216,6 +217,16 @@ class FirebasePatientRepository implements PatientRepository {
       rethrow;
     }
 
+    try {
+      await AwesomeNotificationService.showAccessRequestNotification(
+        id: docId.hashCode,
+        doctorName: doctorName.isNotEmpty ? "Dr. $doctorName" : "A doctor",
+        requestId: docId,
+      );
+    } catch (e) {
+      dev.log('[AWESOME NOTIFICATION] Access request trigger error: $e', name: 'PatientRepository');
+    }
+
     return perm;
   }
 
@@ -293,6 +304,36 @@ class FirebasePatientRepository implements PatientRepository {
         });
       } catch (e) {
         dev.log('[NOTIFICATION] [FIRESTORE] Exception writing doctor notification: $e', name: 'PatientRepository');
+      }
+
+      // Explicitly write approved consent records
+      if (patientId.isNotEmpty) {
+        try {
+          await _patients.doc(patientId).collection('consents').doc(doctorId).set({
+            'doctorId': doctorId,
+            'patientId': patientId,
+            'status': 'approved',
+            'permissions': permissions ?? ['profile', 'vitals', 'medications', 'appointments', 'reports', 'aiChat'],
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          await _db.collection('doctors').doc(doctorId).collection('authorizedPatients').doc(patientId).set({
+            'patientId': patientId,
+            'doctorId': doctorId,
+            'patientName': patientName,
+            'status': 'approved',
+            'permissions': permissions ?? ['profile', 'vitals', 'medications', 'appointments', 'reports', 'aiChat'],
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          await AwesomeNotificationService.showLocalNotification(
+            id: permissionId.hashCode,
+            title: 'Access Approved',
+            body: '$patientName approved your health profile access request.',
+          );
+        } catch (e) {
+          dev.log('[ACCESS] Consent document write error: $e', name: 'PatientRepository');
+        }
       }
     }
 
@@ -396,6 +437,33 @@ class FirebasePatientRepository implements PatientRepository {
         });
       } catch (e) {
         dev.log('[NOTIFICATION] [FIRESTORE] Exception writing doctor notification: $e', name: 'PatientRepository');
+      }
+
+      // Explicitly write declined consent records
+      if (patientId.isNotEmpty) {
+        try {
+          await _patients.doc(patientId).collection('consents').doc(doctorId).set({
+            'doctorId': doctorId,
+            'patientId': patientId,
+            'status': 'declined',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          await _db.collection('doctors').doc(doctorId).collection('authorizedPatients').doc(patientId).set({
+            'patientId': patientId,
+            'doctorId': doctorId,
+            'status': 'declined',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          await AwesomeNotificationService.showLocalNotification(
+            id: permissionId.hashCode,
+            title: 'Access Declined',
+            body: '$patientName declined your access request.',
+          );
+        } catch (e) {
+          dev.log('[ACCESS] Consent decline document write error: $e', name: 'PatientRepository');
+        }
       }
     }
 

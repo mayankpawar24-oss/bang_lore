@@ -26,15 +26,20 @@ class ReportModel {
   final bool sharedWithDoctor;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  // Firebase Storage Document Metadata
+  // Document Metadata & Storage
   final String? documentId;
   final String? fileName;
   final String? fileType;
   final String? storagePath;
+  final String? storageReference;
+  final String? protonDriveReference;
   final String? downloadUrl;
   final String? uploadedBy;
+  final String? uploaderId;
+  final String? uploaderRole;
   final DateTime? uploadedAt;
   final String? documentCategory;
+  final bool ocrCompleted;
 
   const ReportModel({
     required this.id,
@@ -55,10 +60,15 @@ class ReportModel {
     this.fileName,
     this.fileType,
     this.storagePath,
+    this.storageReference,
+    this.protonDriveReference,
     this.downloadUrl,
     this.uploadedBy,
+    this.uploaderId,
+    this.uploaderRole,
     this.uploadedAt,
     this.documentCategory,
+    this.ocrCompleted = false,
   });
 
   ReportModel copyWith({
@@ -80,11 +90,18 @@ class ReportModel {
     String? fileName,
     String? fileType,
     String? storagePath,
+    String? storageReference,
+    String? protonDriveReference,
     String? downloadUrl,
     String? uploadedBy,
+    String? uploaderId,
+    String? uploaderRole,
     DateTime? uploadedAt,
     String? documentCategory,
+    bool? ocrCompleted,
   }) {
+    final effectiveUploaderId = uploaderId ?? uploadedBy ?? this.uploaderId ?? this.uploadedBy;
+    final effectiveStorageRef = storageReference ?? storagePath ?? this.storageReference ?? this.storagePath;
     return ReportModel(
       id: id ?? this.id,
       patientId: patientId ?? this.patientId,
@@ -103,11 +120,16 @@ class ReportModel {
       documentId: documentId ?? this.documentId,
       fileName: fileName ?? this.fileName,
       fileType: fileType ?? this.fileType,
-      storagePath: storagePath ?? this.storagePath,
+      storagePath: effectiveStorageRef,
+      storageReference: effectiveStorageRef,
+      protonDriveReference: protonDriveReference ?? this.protonDriveReference,
       downloadUrl: downloadUrl ?? this.downloadUrl,
-      uploadedBy: uploadedBy ?? this.uploadedBy,
+      uploadedBy: effectiveUploaderId,
+      uploaderId: effectiveUploaderId,
+      uploaderRole: uploaderRole ?? this.uploaderRole,
       uploadedAt: uploadedAt ?? this.uploadedAt,
       documentCategory: documentCategory ?? this.documentCategory,
+      ocrCompleted: ocrCompleted ?? this.ocrCompleted,
     );
   }
 
@@ -116,10 +138,12 @@ class ReportModel {
     final docId = data['documentId'] as String? ?? doc.id;
     final catName = data['documentCategory'] as String? ?? data['category'] as String? ?? 'other';
     final uploadedAtDate = (data['uploadedAt'] as Timestamp?)?.toDate();
+    final uploader = data['uploaderId'] as String? ?? data['uploadedBy'] as String? ?? data['patientId'] as String?;
+    final sRef = data['storageReference'] as String? ?? data['storagePath'] as String?;
 
     return ReportModel(
       id: doc.id,
-      patientId: data['patientId'] as String? ?? data['uploadedBy'] as String? ?? '',
+      patientId: data['patientId'] as String? ?? uploader ?? '',
       title: data['title'] as String? ?? data['fileName'] as String? ?? 'Medical Document',
       category: ReportCategory.values.firstWhere(
         (e) => e.name == catName,
@@ -141,32 +165,44 @@ class ReportModel {
       documentId: docId,
       fileName: data['fileName'] as String?,
       fileType: data['fileType'] as String?,
-      storagePath: data['storagePath'] as String?,
+      storagePath: sRef,
+      storageReference: sRef,
+      protonDriveReference: data['protonDriveReference'] as String?,
       downloadUrl: data['downloadUrl'] as String?,
-      uploadedBy: data['uploadedBy'] as String? ?? data['patientId'] as String?,
+      uploadedBy: uploader,
+      uploaderId: uploader,
+      uploaderRole: data['uploaderRole'] as String?,
       uploadedAt: uploadedAtDate,
       documentCategory: catName,
+      ocrCompleted: data['ocrCompleted'] as bool? ?? false,
     );
   }
 
   Map<String, dynamic> toFirestore() {
+    final sRef = storageReference ?? storagePath;
+    final uploader = uploaderId ?? uploadedBy ?? patientId;
     return {
       'documentId': documentId ?? id,
       'patientId': patientId,
+      'uploaderId': uploader,
+      'uploaderRole': uploaderRole ?? 'patient',
       'title': title,
       'category': category.name,
       'documentCategory': documentCategory ?? category.name,
       'fileName': fileName ?? title,
       'fileType': fileType ?? 'application/pdf',
-      'storagePath': storagePath,
+      'storagePath': sRef,
+      'storageReference': sRef,
+      'protonDriveReference': protonDriveReference,
       'downloadUrl': downloadUrl,
-      'uploadedBy': uploadedBy ?? patientId,
+      'uploadedBy': uploader,
       'uploadedAt': uploadedAt != null ? Timestamp.fromDate(uploadedAt!) : FieldValue.serverTimestamp(),
       'date': Timestamp.fromDate(date),
       'doctorOrFacility': doctorOrFacility,
       'summary': summary,
       'rawContent': rawContent,
       'extractedData': extractedData,
+      'ocrCompleted': ocrCompleted,
       'followUpDate': followUpDate != null ? Timestamp.fromDate(followUpDate!) : null,
       'followUpInstructions': followUpInstructions,
       'sharedWithDoctor': sharedWithDoctor,
@@ -182,24 +218,31 @@ class ReportModel {
   }
 
   Map<String, dynamic> toJson() {
+    final sRef = storageReference ?? storagePath;
+    final uploader = uploaderId ?? uploadedBy ?? patientId;
     return {
       'id': id,
       'documentId': documentId ?? id,
       'patientId': patientId,
+      'uploaderId': uploader,
+      'uploaderRole': uploaderRole,
       'title': title,
       'category': category.name,
       'documentCategory': documentCategory ?? category.name,
       'fileName': fileName,
       'fileType': fileType,
-      'storagePath': storagePath,
+      'storagePath': sRef,
+      'storageReference': sRef,
+      'protonDriveReference': protonDriveReference,
       'downloadUrl': downloadUrl,
-      'uploadedBy': uploadedBy ?? patientId,
+      'uploadedBy': uploader,
       'uploadedAt': uploadedAt?.toIso8601String(),
       'date': date.toIso8601String(),
       'doctorOrFacility': doctorOrFacility,
       'summary': summary,
       'rawContent': rawContent,
       'extractedData': extractedData,
+      'ocrCompleted': ocrCompleted,
       'followUpDate': followUpDate?.toIso8601String(),
       'followUpInstructions': followUpInstructions,
       'sharedWithDoctor': sharedWithDoctor,
@@ -208,9 +251,11 @@ class ReportModel {
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
     final catName = json['documentCategory'] as String? ?? json['category'] as String? ?? 'other';
+    final uploader = json['uploaderId'] as String? ?? json['uploadedBy'] as String? ?? json['patientId'] as String?;
+    final sRef = json['storageReference'] as String? ?? json['storagePath'] as String?;
     return ReportModel(
       id: json['id'] as String? ?? json['documentId'] as String? ?? '',
-      patientId: json['patientId'] as String? ?? json['uploadedBy'] as String? ?? '',
+      patientId: json['patientId'] as String? ?? uploader ?? '',
       title: json['title'] as String? ?? json['fileName'] as String? ?? 'Medical Document',
       category: ReportCategory.values.firstWhere(
         (e) => e.name == catName,
@@ -231,11 +276,16 @@ class ReportModel {
       documentId: json['documentId'] as String?,
       fileName: json['fileName'] as String?,
       fileType: json['fileType'] as String?,
-      storagePath: json['storagePath'] as String?,
+      storagePath: sRef,
+      storageReference: sRef,
+      protonDriveReference: json['protonDriveReference'] as String?,
       downloadUrl: json['downloadUrl'] as String?,
-      uploadedBy: json['uploadedBy'] as String?,
+      uploadedBy: uploader,
+      uploaderId: uploader,
+      uploaderRole: json['uploaderRole'] as String?,
       uploadedAt: json['uploadedAt'] != null ? DateTime.tryParse(json['uploadedAt'] as String) : null,
       documentCategory: catName,
+      ocrCompleted: json['ocrCompleted'] as bool? ?? false,
     );
   }
 }
