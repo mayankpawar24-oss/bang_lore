@@ -41,13 +41,19 @@ class ActivityRecognitionService {
     );
   }
 
-  /// Ingests a new sensor sample into the rolling window.
+  /// Ingests a new sensor sample into the rolling window with sliding hop.
   void addSample(SensorSample sample) {
     _sampleWindow.add(sample);
 
     if (_sampleWindow.length >= windowSampleCount) {
       final classified = classifyWindow(List.from(_sampleWindow), cadence: _currentCadence);
-      _sampleWindow.clear();
+      // Sliding window hop: retain 80% overlap for smooth, responsive state transitions
+      const hopSize = 10;
+      if (_sampleWindow.length > hopSize) {
+        _sampleWindow.removeRange(0, hopSize);
+      } else {
+        _sampleWindow.clear();
+      }
       _handleClassifiedWindow(classified);
     }
   }

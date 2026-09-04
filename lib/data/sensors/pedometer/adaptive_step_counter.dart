@@ -73,9 +73,9 @@ class AdaptivePeakValleyStepCounter {
   int _stepCount = 0;
 
   AdaptivePeakValleyStepCounter({
-    this.alpha = 0.25,
-    this.windowSize = 40,
-    this.minMagnitudeSwing = 1.4,
+    this.alpha = 0.22,
+    this.windowSize = 50,
+    this.minMagnitudeSwing = 0.85,
     this.minStepIntervalMs = 220,
     this.maxStepIntervalMs = 2000,
     this.maxGyroRotationThreshold = 2.5, // > 2.5 rad/s (~143 deg/s) indicates fast hand rotation
@@ -150,8 +150,8 @@ class AdaptivePeakValleyStepCounter {
     }
 
     final dynamicSwing = maxVal - minVal;
-    final deltaPeak = math.max(0.6, 0.35 * (maxVal - mean));
-    final deltaValley = math.max(0.6, 0.35 * (mean - minVal));
+    final deltaPeak = math.max(0.35, 0.28 * (maxVal - mean));
+    final deltaValley = math.max(0.35, 0.28 * (mean - minVal));
     final peakThreshold = mean + deltaPeak;
     final valleyThreshold = mean - deltaValley;
 

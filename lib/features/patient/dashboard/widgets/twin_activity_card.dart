@@ -52,13 +52,28 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
       _ownsCoordinator = true;
       _coordinator.initialize();
     }
+    if (widget.twinState?.activitySummary.stepsToday != null) {
+      _coordinator.seedInitialSteps(widget.twinState!.activitySummary.stepsToday ?? 0);
+    }
+    _coordinator.twinStateNotifier.addListener(_onTwinStateUpdated);
+  }
+
+  void _onTwinStateUpdated() {
+    if (mounted && _coordinator.twinStateNotifier.value != null) {
+      setState(() {});
+      widget.onRefresh?.call();
+    }
   }
 
   @override
   void didUpdateWidget(covariant TwinActivityCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.twinState?.activitySummary.stepsToday != null) {
+      _coordinator.seedInitialSteps(widget.twinState!.activitySummary.stepsToday ?? 0);
+    }
     if (widget.patientId != oldWidget.patientId ||
         widget.sensorCoordinator != oldWidget.sensorCoordinator) {
+      _coordinator.twinStateNotifier.removeListener(_onTwinStateUpdated);
       if (_ownsCoordinator) {
         _coordinator.dispose();
       }
@@ -73,11 +88,13 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
         _ownsCoordinator = true;
         _coordinator.initialize();
       }
+      _coordinator.twinStateNotifier.addListener(_onTwinStateUpdated);
     }
   }
 
   @override
   void dispose() {
+    _coordinator.twinStateNotifier.removeListener(_onTwinStateUpdated);
     if (_ownsCoordinator) {
       _coordinator.dispose();
     }
@@ -339,7 +356,9 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                   builder: (ctx, liveActivity, _) {
                     final activityStr = liveActivity != TwinActivityType.unknown
                         ? liveActivity.label
-                        : (summary?.currentActivity ?? 'Stationary');
+                        : (summary != null && summary.currentActivity.isNotEmpty
+                            ? summary.currentActivity
+                            : (_coordinator.diagnosticsNotifier.value.accelReceiving ? 'Stationary' : 'Unknown'));
 
                     final durMins = summary?.currentDurationMinutes ?? 0;
                     final hours = durMins ~/ 60;
@@ -751,11 +770,13 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
   Widget _buildHardwareStatusRow(bool isDark) {
     return AnimatedBuilder(
       animation: Listenable.merge([
+        _coordinator.diagnosticsNotifier,
         _coordinator.bleHrStatusNotifier,
         _coordinator.esp32StatusNotifier,
         _coordinator.healthStatusNotifier,
       ]),
       builder: (ctx, _) {
+        final diag = _coordinator.diagnosticsNotifier.value;
         final bleStatus = _coordinator.bleHrStatusNotifier.value;
         final espStatus = _coordinator.esp32StatusNotifier.value;
         final healthStatus = _coordinator.healthStatusNotifier.value;
@@ -764,6 +785,16 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
+              _buildStatusPill(
+                icon: LucideIcons.compass,
+                label: 'Phone IMU',
+                status: diag.accelReceiving
+                    ? (diag.accelEstimatedHz > 0 ? '${diag.accelEstimatedHz.toInt()} Hz' : 'Active')
+                    : 'Standby',
+                isActive: diag.accelReceiving,
+                onTap: () => SensorDiagnosticsSheet.show(context, _coordinator),
+              ),
+              const SizedBox(width: 8),
               _buildStatusPill(
                 icon: LucideIcons.heart,
                 label: 'BLE HR',

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/sensor_diagnostics_model.dart';
@@ -145,14 +146,28 @@ class PhoneMotionPipeline {
   bool get isActive => _isActive;
   SensorDiagnosticsData get currentDiagnostics => diagnosticsNotifier.value;
 
-  /// Starts listening to phone internal accelerometer & gyroscope.
+  /// Requests necessary mobile sensor permissions (e.g. ACTIVITY_RECOGNITION).
+  Future<void> requestPermissions() async {
+    if (!kIsWeb) {
+      try {
+        final status = await Permission.activityRecognition.status;
+        if (!status.isGranted) {
+          await Permission.activityRecognition.request();
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Starts listening to phone internal accelerometer & gyroscope at 50 Hz (gameInterval).
   void start() {
     if (_isActive) return;
     _isActive = true;
 
-    // 1. Subscribe to Accelerometer
+    requestPermissions();
+
+    // 1. Subscribe to Accelerometer (50 Hz)
     final accelStream = customAccelStream ??
-        accelerometerEventStream(samplingPeriod: SensorInterval.normalInterval);
+        accelerometerEventStream(samplingPeriod: SensorInterval.gameInterval);
 
     try {
       _accelSub = accelStream.listen(
@@ -169,9 +184,9 @@ class PhoneMotionPipeline {
       );
     }
 
-    // 2. Subscribe to Gyroscope
+    // 2. Subscribe to Gyroscope (50 Hz)
     final gyroStream = customGyroStream ??
-        gyroscopeEventStream(samplingPeriod: SensorInterval.normalInterval);
+        gyroscopeEventStream(samplingPeriod: SensorInterval.gameInterval);
 
     try {
       _gyroSub = gyroStream.listen(
@@ -306,6 +321,7 @@ class PhoneMotionPipeline {
   /// Updates downstream processor diagnostics (step count, activity, confidence).
   void updateProcessorDiagnostics({
     int? detectedSteps,
+    double? currentCadence,
     TwinActivityType? currentActivity,
     double? confidence,
     DateTime? lastTransitionTime,
@@ -315,6 +331,7 @@ class PhoneMotionPipeline {
   }) {
     diagnosticsNotifier.value = diagnosticsNotifier.value.copyWith(
       detectedSteps: detectedSteps,
+      currentCadence: currentCadence,
       currentActivity: currentActivity,
       confidence: confidence,
       lastTransitionTime: lastTransitionTime,

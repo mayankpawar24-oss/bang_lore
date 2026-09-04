@@ -12,6 +12,7 @@ enum StepSensorSource {
 /// Service managing real phone step detection using internal accelerometer & gyroscope.
 class PedometerService {
   final _stepController = StreamController<NormalizedStepCount>.broadcast();
+  final _cadenceController = StreamController<double>.broadcast();
   final AdaptivePeakValleyStepCounter _counter;
 
   StreamSubscription<SensorSample>? _pipelineSub;
@@ -23,6 +24,7 @@ class PedometerService {
       : _counter = counter ?? AdaptivePeakValleyStepCounter();
 
   Stream<NormalizedStepCount> get stepStream => _stepController.stream;
+  Stream<double> get cadenceStream => _cadenceController.stream;
   StepSensorSource get activeSource => _activeSource;
   int get currentSteps => _currentSteps;
   StepDetectionResult? get latestResult => _latestResult;
@@ -38,13 +40,17 @@ class PedometerService {
         final result = _counter.processSensorSample(sample);
         _latestResult = result;
 
+        if (!_cadenceController.isClosed) {
+          _cadenceController.add(result.cadenceEstimate);
+        }
+
         if (result.isStep) {
-          _currentSteps = result.totalSteps;
+          _currentSteps++;
           final signal = NormalizedStepCount(
-            steps: _currentSteps,
+            steps: 1, // 1 step delta detected by internal hardware sensors
             timestamp: result.timestamp,
             source: TwinSignalSource.phoneSensor,
-            isCumulative: true,
+            isCumulative: false,
             confidence: result.confidence >= 0.8
                 ? TwinSignalConfidence.high
                 : TwinSignalConfidence.medium,
@@ -77,5 +83,6 @@ class PedometerService {
   void dispose() {
     stop();
     _stepController.close();
+    _cadenceController.close();
   }
 }

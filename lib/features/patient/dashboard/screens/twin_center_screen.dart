@@ -7,6 +7,7 @@ import '../../../../data/sensors/ble/ble_device_manager.dart';
 import '../../../../data/sensors/health/health_platform_service.dart';
 import '../../../../data/sensors/twin_sensor_coordinator.dart';
 import '../../../../data/sensors/models/sensor_diagnostics_model.dart';
+import '../../../../data/sensors/models/twin_sensor_signals.dart';
 import '../../../../data/services/backend_service.dart';
 import '../widgets/twin_decision_trace_sheet.dart';
 import '../widgets/sensor_diagnostics_sheet.dart';
@@ -62,11 +63,22 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
       _coordinator.initialize();
     }
 
+    _coordinator.twinStateNotifier.addListener(_onTwinStateUpdated);
     _loadData();
+  }
+
+  void _onTwinStateUpdated() {
+    if (mounted && _coordinator.twinStateNotifier.value != null) {
+      setState(() {
+        _twinState = _coordinator.twinStateNotifier.value;
+        _memory = _twinState?.behavioralMemory ?? _memory;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _coordinator.twinStateNotifier.removeListener(_onTwinStateUpdated);
     if (_ownsCoordinator) {
       _coordinator.dispose();
     }
@@ -93,6 +105,9 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
           _memory = mem ?? state?.behavioralMemory;
           _isLoading = false;
         });
+        if (state?.activitySummary.stepsToday != null) {
+          _coordinator.seedInitialSteps(state!.activitySummary.stepsToday ?? 0);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -485,95 +500,130 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
   }
 
   Widget _buildTelemetryGrid() {
-    final activity = _twinState?.activitySummary.currentActivity ?? 'UNKNOWN';
-    final duration = _twinState?.activitySummary.currentDurationMinutes ?? 0;
-    final steps = _twinState?.activitySummary.stepsToday ?? 0;
     final stepGoal = _twinState?.activitySummary.stepGoal ?? 6000;
-    final hr = _twinState?.heartRate;
     final spo2 = _twinState?.spo2;
-    final temp = _twinState?.temperature;
-    final humidity = _twinState?.humidity;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Live Sensor Telemetry',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        Row(
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _coordinator.currentActivityNotifier,
+        _coordinator.currentStepsNotifier,
+        _coordinator.currentHeartRateNotifier,
+        _coordinator.currentTemperatureNotifier,
+        _coordinator.currentHumidityNotifier,
+        _coordinator.diagnosticsNotifier,
+      ]),
+      builder: (ctx, _) {
+        final liveActivity = _coordinator.currentActivityNotifier.value;
+        final liveSteps = _coordinator.currentStepsNotifier.value;
+        final liveHr = _coordinator.currentHeartRateNotifier.value?.bpm;
+        final liveTemp = _coordinator.currentTemperatureNotifier.value ?? _twinState?.temperature;
+        final liveHumidity = _coordinator.currentHumidityNotifier.value ?? _twinState?.humidity;
+        final diag = _coordinator.diagnosticsNotifier.value;
+
+        final activity = liveActivity != TwinActivityType.unknown
+            ? liveActivity.label
+            : (_twinState?.activitySummary.currentActivity != null &&
+                    _twinState!.activitySummary.currentActivity.isNotEmpty
+                ? _twinState!.activitySummary.currentActivity
+                : (diag.accelReceiving ? 'Stationary' : 'Unknown'));
+
+        final steps = liveSteps > 0
+            ? liveSteps
+            : (_twinState?.activitySummary.stepsToday ?? 0);
+
+        final duration = _twinState?.activitySummary.currentDurationMinutes ?? 0;
+        final hr = liveHr ?? _twinState?.heartRate;
+
+        final activitySubtitle = liveActivity == TwinActivityType.walking
+            ? 'Cadence ~${diag.currentCadence.toInt()} spm'
+            : (liveActivity != TwinActivityType.unknown
+                ? '${liveActivity.label} Active'
+                : (diag.accelReceiving ? 'Phone IMU Active' : '$duration mins current'));
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Activity',
-                value: activity,
-                subtitle: '$duration mins current',
-                icon: LucideIcons.footprints,
-                color: Colors.blue.shade700,
-              ),
+            const Text(
+              'Live Sensor Telemetry',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Steps Today',
-                value: '$steps',
-                subtitle: 'Goal: $stepGoal',
-                icon: LucideIcons.flame,
-                color: Colors.orange.shade700,
-              ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Activity',
+                    value: activity,
+                    subtitle: activitySubtitle,
+                    icon: LucideIcons.footprints,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Steps Today',
+                    value: '$steps',
+                    subtitle: 'Goal: $stepGoal',
+                    icon: LucideIcons.flame,
+                    color: Colors.orange.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Heart Rate',
+                    value: hr != null ? '${hr.toInt()} BPM' : '--',
+                    subtitle: liveHr != null
+                        ? 'BLE Telemetry'
+                        : (hr != null ? 'Telemetry Active' : 'Sensor Ready'),
+                    icon: LucideIcons.heartPulse,
+                    color: Colors.red.shade600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Blood Oxygen (SpO2)',
+                    value: spo2 != null ? '${spo2.toInt()}%' : '--',
+                    subtitle: spo2 != null ? (spo2 >= 95 ? 'Normal Range' : 'Low') : 'Sensor Ready',
+                    icon: LucideIcons.activity,
+                    color: Colors.teal.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Ambient Temperature',
+                    value: liveTemp != null ? '${liveTemp.toStringAsFixed(1)} °C' : '--',
+                    subtitle: 'ESP32 Telemetry',
+                    icon: LucideIcons.thermometer,
+                    color: Colors.indigo.shade600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildMetricTile(
+                    title: 'Ambient Humidity',
+                    value: liveHumidity != null ? '${liveHumidity.toInt()}%' : '--',
+                    subtitle: 'Indoor Climate',
+                    icon: LucideIcons.droplets,
+                    color: Colors.cyan.shade700,
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Heart Rate',
-                value: hr != null ? '${hr.toInt()} BPM' : '--',
-                subtitle: hr != null ? 'Telemetry Active' : 'Connecting...',
-                icon: LucideIcons.heartPulse,
-                color: Colors.red.shade600,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Blood Oxygen (SpO2)',
-                value: spo2 != null ? '${spo2.toInt()}%' : '--',
-                subtitle: spo2 != null ? (spo2 >= 95 ? 'Normal Range' : 'Low') : 'Sensor Ready',
-                icon: LucideIcons.activity,
-                color: Colors.teal.shade700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Ambient Temperature',
-                value: temp != null ? '${temp.toStringAsFixed(1)} °C' : '--',
-                subtitle: 'ESP32 Telemetry',
-                icon: LucideIcons.thermometer,
-                color: Colors.indigo.shade600,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildMetricTile(
-                title: 'Ambient Humidity',
-                value: humidity != null ? '${humidity.toInt()}%' : '--',
-                subtitle: 'Indoor Climate',
-                icon: LucideIcons.droplets,
-                color: Colors.cyan.shade700,
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 

@@ -31,6 +31,7 @@ class SensorDiagnosticsData {
 
   // Output State
   final int detectedSteps;
+  final double currentCadence;
   final TwinActivityType currentActivity;
   final double confidence;
   final DateTime? lastTransitionTime;
@@ -60,6 +61,7 @@ class SensorDiagnosticsData {
     this.stepDetectorActive = false,
     this.activityClassifierActive = false,
     this.detectedSteps = 0,
+    this.currentCadence = 0.0,
     this.currentActivity = TwinActivityType.unknown,
     this.confidence = 0.0,
     this.lastTransitionTime,
@@ -90,6 +92,7 @@ class SensorDiagnosticsData {
     bool? stepDetectorActive,
     bool? activityClassifierActive,
     int? detectedSteps,
+    double? currentCadence,
     TwinActivityType? currentActivity,
     double? confidence,
     DateTime? lastTransitionTime,
@@ -119,6 +122,7 @@ class SensorDiagnosticsData {
       stepDetectorActive: stepDetectorActive ?? this.stepDetectorActive,
       activityClassifierActive: activityClassifierActive ?? this.activityClassifierActive,
       detectedSteps: detectedSteps ?? this.detectedSteps,
+      currentCadence: currentCadence ?? this.currentCadence,
       currentActivity: currentActivity ?? this.currentActivity,
       confidence: confidence ?? this.confidence,
       lastTransitionTime: lastTransitionTime ?? this.lastTransitionTime,

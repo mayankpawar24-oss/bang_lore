@@ -161,6 +161,15 @@ class SensorDataReconciler {
     return null;
   }
 
+  /// Seeds today's baseline steps from backend TWIN state or historical record.
+  void seedDailySteps(int baselineSteps) {
+    if (baselineSteps > _highestRecordedStepsToday) {
+      _highestRecordedStepsToday = baselineSteps;
+    }
+  }
+
+  int get currentDailySteps => _highestRecordedStepsToday;
+
   void resetDaily() {
     _highestRecordedStepsToday = 0;
     _lastStepTimestamp = null;

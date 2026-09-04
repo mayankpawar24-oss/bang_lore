@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 
+import '../models/twin_state_model.dart';
 import '../services/backend_service.dart';
 import 'ble/ble_device_manager.dart';
 import 'ble/heart_rate_ble_adapter.dart';
@@ -42,6 +43,8 @@ class TwinSensorCoordinator {
       ValueNotifier(BleDeviceStatus.disconnected);
   final ValueNotifier<HealthPlatformStatus> healthStatusNotifier =
       ValueNotifier(HealthPlatformStatus.unavailable);
+  final ValueNotifier<TwinStateModel?> twinStateNotifier =
+      ValueNotifier(null);
 
   // Subscriptions
   final List<StreamSubscription> _subscriptions = [];
@@ -105,6 +108,14 @@ class TwinSensorCoordinator {
     _subscriptions.add(
       pedometerService.stepStream.listen(_onStepsReceived),
     );
+    _subscriptions.add(
+      pedometerService.cadenceStream.listen((cadence) {
+        activityService.updateCadence(cadence);
+        motionPipeline.updateProcessorDiagnostics(
+          currentCadence: cadence,
+        );
+      }),
+    );
 
     // 4. Listen to Motion Activity Recognition
     _subscriptions.add(
@@ -158,6 +169,16 @@ class TwinSensorCoordinator {
       currentHumidityNotifier.value = env.value;
     }
     _enqueueSignal(env.toTwinSignal(patientId));
+  }
+
+  /// Seeds today's baseline steps from backend TWIN state so new sensor steps accumulate accurately.
+  void seedInitialSteps(int steps) {
+    if (steps > 0) {
+      reconciler.seedDailySteps(steps);
+      if (currentStepsNotifier.value < steps) {
+        currentStepsNotifier.value = steps;
+      }
+    }
   }
 
   void _onStepsReceived(NormalizedStepCount steps) {
@@ -277,6 +298,7 @@ class TwinSensorCoordinator {
       final updatedState = await backendService.sendTwinSignals(patientId, batch);
       if (updatedState != null) {
         _signalQueue.removeRange(0, batch.length);
+        twinStateNotifier.value = updatedState;
       }
     } catch (_) {
       // Retained in queue for subsequent retry (offline resilience)
@@ -321,6 +343,7 @@ class TwinSensorCoordinator {
     bleHrStatusNotifier.dispose();
     esp32StatusNotifier.dispose();
     healthStatusNotifier.dispose();
+    twinStateNotifier.dispose();
     _isInitialized = false;
   }
 }
