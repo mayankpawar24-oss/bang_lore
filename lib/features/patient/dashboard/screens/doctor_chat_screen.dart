@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/doctor_chat_model.dart';
+import '../../../../data/repositories/doctor_chat_repository.dart';
+import '../../../video_call/screens/video_call_screen.dart';
 
 class DoctorChatScreen extends ConsumerStatefulWidget {
   final String doctorId;
@@ -56,12 +59,12 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
   Future<void> _initConversation() async {
     final user = ref.read(currentUserProvider).valueOrNull;
-    final currentUid = user?.id ?? ref.read(currentUidProvider) ?? '';
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? user?.id ?? ref.read(currentUidProvider) ?? '';
 
     final effectivePatientId = _isDoctorView ? widget.patientId! : currentUid;
     final effectiveDoctorId = _isDoctorView ? currentUid : widget.doctorId;
 
-    if (effectivePatientId.isEmpty) {
+    if (effectivePatientId.isEmpty || effectiveDoctorId.isEmpty) {
       if (mounted) setState(() => _isInitializing = false);
       return;
     }
@@ -94,7 +97,13 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       }
     } catch (e) {
       dev.log('[DOCTOR_CHAT ERROR] _initConversation: $e', name: 'DoctorChatScreen');
-      if (mounted) setState(() => _isInitializing = false);
+      final fallbackId = FirebaseDoctorChatRepository.generateChatId(effectivePatientId, effectiveDoctorId);
+      if (mounted) {
+        setState(() {
+          _chatId = fallbackId;
+          _isInitializing = false;
+        });
+      }
     }
   }
 
@@ -113,7 +122,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
     if (text.isEmpty || _chatId == null || _isSending) return;
 
     final currentUser = ref.read(currentUserProvider).valueOrNull;
-    final senderId = currentUser?.id ?? ref.read(currentUidProvider) ?? '';
+    final senderId = FirebaseAuth.instance.currentUser?.uid ?? currentUser?.id ?? ref.read(currentUidProvider) ?? '';
     final senderRole = _isDoctorView ? 'doctor' : 'patient';
     final senderName = currentUser?.name ?? (_isDoctorView ? 'Doctor' : 'Patient');
     final senderPhoto = currentUser?.avatarUrl;
@@ -137,6 +146,58 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
       dev.log('[DOCTOR_CHAT ERROR] Failed to send: $e', name: 'DoctorChatScreen');
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _startVideoCall() async {
+    final user = ref.read(currentUserProvider).valueOrNull;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? user?.id ?? ref.read(currentUidProvider) ?? '';
+    if (currentUid.isEmpty) return;
+
+    final isDoctor = _isDoctorView;
+    final callerName = user?.name ?? (isDoctor ? 'Doctor' : 'Patient');
+    final callerRole = isDoctor ? 'doctor' : 'patient';
+    final callerPhoto = user?.avatarUrl;
+
+    final receiverId = isDoctor ? (widget.patientId ?? '') : widget.doctorId;
+    final receiverName = isDoctor ? (widget.patientName ?? 'Patient') : (widget.doctorName ?? 'Doctor');
+    final receiverRole = isDoctor ? 'patient' : 'doctor';
+
+    try {
+      final call = await ref.read(callRepositoryProvider).startCall(
+        callerId: currentUid,
+        callerName: callerName,
+        callerRole: callerRole,
+        callerPhoto: callerPhoto,
+        receiverId: receiverId,
+        receiverName: receiverName,
+        receiverRole: receiverRole,
+      );
+
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => VideoCallScreen(
+              callId: call.id,
+              channelId: call.channelId,
+              isCaller: true,
+              otherUserName: receiverName,
+              otherUserAvatar: isDoctor ? widget.patientAvatar : widget.doctorAvatar,
+              otherUserRole: receiverRole,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      dev.log('[VIDEO_CALL ERROR] Failed to start call: $e', name: 'DoctorChatScreen');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to initiate video call: $e'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
     }
   }
 
@@ -205,13 +266,15 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 5),
-                      Text(
-                        displaySpecialty,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      Expanded(
+                        child: Text(
+                          displaySpecialty,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -221,50 +284,11 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           ],
         ),
         actions: [
-          // Video Consultation Architecture Preparation (VC later)
+          // Live Video Consultation Button
           IconButton(
-            icon: const Icon(LucideIcons.video, color: AppColors.primaryBlue, size: 20),
-            tooltip: 'Video Consultation',
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  title: Row(
-                    children: const [
-                      Icon(LucideIcons.video, color: AppColors.primaryBlue, size: 22),
-                      SizedBox(width: 10),
-                      Text('Video Consultation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  content: Text(
-                    'Direct encrypted Video Consultation with $displayName will be available during your scheduled appointment session.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? const Color(0xFFCBD5E1) : AppColors.slate,
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Understood', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue)),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        context.push('/patient/schedule/book/${widget.doctorId}');
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryBlue,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: const Text('Book Slot', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                    ),
-                  ],
-                ),
-              );
-            },
+            icon: const Icon(LucideIcons.video, color: AppColors.primaryBlue, size: 22),
+            tooltip: 'Live Video Consultation',
+            onPressed: _startVideoCall,
           ),
           const SizedBox(width: 6),
         ],
@@ -273,22 +297,26 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Chat Security Notice
+                // Chat Security Notice (Flexible to prevent right overflow)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   color: isDark ? const Color(0xFF131C2E).withValues(alpha: 0.6) : AppColors.softBlue.withValues(alpha: 0.5),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       const Icon(LucideIcons.shieldCheck, size: 14, color: AppColors.primaryBlue),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Private & encrypted medical consultation between patient and doctor.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Private & encrypted medical consultation between patient and doctor.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],
@@ -305,7 +333,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
 
                             return messagesAsync.when(
                               loading: () => const Center(child: CircularProgressIndicator()),
-                              error: (e, _) => Center(child: Text('Error: $e')),
+                              error: (e, _) => Center(child: Text('Error loading messages: $e')),
                               data: (messages) {
                                 if (messages.isEmpty) {
                                   return _buildEmptyState(displayName, isDark);
@@ -319,9 +347,8 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                                   itemCount: messages.length,
                                   itemBuilder: (context, idx) {
                                     final msg = messages[idx];
-                                    final isMe = _isDoctorView
-                                        ? (msg.senderRole == 'doctor' || msg.senderId == currentUserId)
-                                        : (msg.senderRole == 'patient' || msg.senderId == currentUserId);
+                                    final isMe = msg.senderId == currentUserId ||
+                                        (_isDoctorView ? msg.senderRole == 'doctor' : msg.senderRole == 'patient');
                                     return _buildMessageBubble(msg, isMe, isDark);
                                   },
                                 );
@@ -396,7 +423,7 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                   : null,
               child: (msg.senderPhoto == null || msg.senderPhoto!.isEmpty)
                   ? Text(
-                      msg.senderName.isNotEmpty ? msg.senderName[0] : 'D',
+                      msg.senderName.isNotEmpty ? msg.senderName[0] : 'U',
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
                     )
                   : null,
@@ -451,14 +478,23 @@ class _DoctorChatScreenState extends ConsumerState<DoctorChatScreen> {
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    timeStr,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isMe
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : (isDark ? const Color(0xFF94A3B8) : AppColors.muted),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        timeStr,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isMe
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : (isDark ? const Color(0xFF94A3B8) : AppColors.muted),
+                        ),
+                      ),
+                      if (isMe) ...[
+                        const SizedBox(width: 4),
+                        const Icon(LucideIcons.checkCheck, size: 12, color: Colors.white70),
+                      ],
+                    ],
                   ),
                 ],
               ),

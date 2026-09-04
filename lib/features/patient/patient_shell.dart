@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../video_call/widgets/incoming_call_overlay.dart';
 
 class PatientShellScreen extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -27,7 +28,7 @@ class PatientShellScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
-      body: navigationShell,
+      body: IncomingCallListener(child: navigationShell),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(

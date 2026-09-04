@@ -10,6 +10,7 @@ import '../../data/models/notification_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/models/appointment_model.dart';
 import '../../data/repositories/notification_repository.dart';
+import '../../features/patient/dashboard/screens/doctor_chat_screen.dart';
 
 class NotificationSheet extends ConsumerWidget {
   const NotificationSheet({super.key});
@@ -187,6 +188,7 @@ class NotificationSheet extends ConsumerWidget {
     final isProfileAccessRequest = !isDoctor && (rawType.contains('profile_access_request') || rawType.contains('access_request') || item.type == NotificationType.permission);
     final isSos = item.type == NotificationType.sos || rawType.contains('sos') || item.isCritical;
     final isFamily = item.type == NotificationType.familyMessage || item.type == NotificationType.familyReminder || rawType.contains('family');
+    final isDoctorChat = rawType.contains('doctor_message') || rawType.contains('doctor_chat') || (rawType.contains('doctor') && rawType.contains('message'));
     final coords = _extractCoordinates(item);
     final hasValidMapsUrl = item.mapsUrl != null &&
         item.mapsUrl!.trim().isNotEmpty &&
@@ -197,6 +199,30 @@ class NotificationSheet extends ConsumerWidget {
       onTap: () {
         if (currentUid.isNotEmpty) {
           ref.read(notificationRepositoryProvider).markAsRead(currentUid, userType, item.id);
+        }
+        if (isDoctorChat) {
+          Navigator.pop(context);
+          if (isDoctor) {
+            final patId = item.patientId ?? item.senderUid ?? '';
+            if (patId.isNotEmpty) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DoctorChatScreen(
+                    doctorId: currentUid,
+                    patientId: patId,
+                    patientName: item.patientName ?? 'Patient',
+                  ),
+                ),
+              );
+            }
+          } else {
+            final docId = item.doctorId ?? item.senderUid ?? '';
+            if (docId.isNotEmpty) {
+              context.push('/patient/dashboard/doctor-chat/$docId', extra: {
+                'doctorName': item.doctorName ?? 'Doctor',
+              });
+            }
+          }
         }
       },
       child: Container(
@@ -328,6 +354,45 @@ class NotificationSheet extends ConsumerWidget {
                           Icon(LucideIcons.users, size: 13, color: AppColors.primaryBlue),
                           SizedBox(width: 4),
                           Text('Open Family Circle', style: TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Doctor Chat Shortcut Button
+                  if (isDoctorChat) ...[
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        if (isDoctor) {
+                          final patId = item.patientId ?? item.senderUid ?? '';
+                          if (patId.isNotEmpty) {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => DoctorChatScreen(
+                                  doctorId: currentUid,
+                                  patientId: patId,
+                                  patientName: item.patientName ?? 'Patient',
+                                ),
+                              ),
+                            );
+                          }
+                        } else {
+                          final docId = item.doctorId ?? item.senderUid ?? '';
+                          if (docId.isNotEmpty) {
+                            context.push('/patient/dashboard/doctor-chat/$docId', extra: {
+                              'doctorName': item.doctorName ?? 'Doctor',
+                            });
+                          }
+                        }
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(LucideIcons.messageSquare, size: 13, color: AppColors.primaryBlue),
+                          SizedBox(width: 4),
+                          Text('Reply in Doctor Chat', style: TextStyle(fontSize: 12, color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),

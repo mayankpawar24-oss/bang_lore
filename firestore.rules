@@ -246,16 +246,71 @@ service cloud.firestore {
       }
     }
 
-    match /doctorChats/{chatId} {
-      allow read, write: if isSignedIn() && (
+    match /doctor_chats/{chatId} {
+      allow create: if isSignedIn() && (
+        request.auth.uid == request.resource.data.patientId ||
+        request.auth.uid == request.resource.data.doctorId ||
+        request.auth.uid in request.resource.data.participants
+      );
+      allow read, update: if isSignedIn() && (
         resource == null ||
         request.auth.uid == resource.data.patientId ||
         request.auth.uid == resource.data.doctorId ||
-        request.auth.uid == request.resource.data.patientId ||
-        request.auth.uid == request.resource.data.doctorId
+        request.auth.uid in resource.data.participants
       );
 
       match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    match /doctorChats/{chatId} {
+      allow create: if isSignedIn() && (
+        request.auth.uid == request.resource.data.patientId ||
+        request.auth.uid == request.resource.data.doctorId ||
+        request.auth.uid in request.resource.data.participants
+      );
+      allow read, update: if isSignedIn() && (
+        resource == null ||
+        request.auth.uid == resource.data.patientId ||
+        request.auth.uid == resource.data.doctorId ||
+        request.auth.uid in resource.data.participants
+      );
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+        allow update, delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    match /calls/{callId} {
+      allow create: if isSignedIn() && (
+        request.auth.uid == request.resource.data.callerId
+      );
+      allow read, update: if isSignedIn() && (
+        resource == null ||
+        request.auth.uid == resource.data.callerId ||
+        request.auth.uid == resource.data.receiverId ||
+        (resource.data.participants != null && request.auth.uid in resource.data.participants) ||
+        request.auth.uid == request.resource.data.callerId ||
+        request.auth.uid == request.resource.data.receiverId ||
+        (request.resource.data.participants != null && request.auth.uid in request.resource.data.participants)
+      );
+      allow delete: if isSignedIn() && (
+        request.auth.uid == resource.data.callerId ||
+        request.auth.uid == resource.data.receiverId
+      );
+
+      match /callerCandidates/{candId} {
+        allow read, write: if isSignedIn();
+      }
+      match /receiverCandidates/{candId} {
+        allow read, write: if isSignedIn();
+      }
+      match /signaling/{docId} {
         allow read, write: if isSignedIn();
       }
     }

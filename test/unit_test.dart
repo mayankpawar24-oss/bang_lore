@@ -15,6 +15,10 @@ import 'package:continuum_health/data/models/activity_log_model.dart';
 import 'package:continuum_health/data/models/family_message_model.dart';
 import 'package:continuum_health/data/models/family_relationship_model.dart';
 import 'package:continuum_health/data/repositories/medication_repository.dart';
+import 'package:continuum_health/data/models/doctor_chat_model.dart';
+import 'package:continuum_health/data/models/call_model.dart';
+import 'package:continuum_health/data/repositories/doctor_chat_repository.dart';
+import 'package:continuum_health/core/config/agora_config.dart';
 
 void main() {
   group('UserModel & Registration Schema Tests', () {
@@ -1319,6 +1323,118 @@ This medication was not marked as taken.
     test('returns null when location is unavailable', () {
       final coords = extractCoordinates(null, 'Location: Unavailable (Permission denied or GPS disabled)', 'SOS triggered');
       expect(coords, isNull);
+    });
+  });
+
+  group('Doctor Chat & Video Call RTC Tests', () {
+    test('deterministic conversation ID generation', () {
+      final id1 = FirebaseDoctorChatRepository.generateChatId('patient_abc', 'doctor_xyz');
+      final id2 = FirebaseDoctorChatRepository.generateChatId('doctor_xyz', 'patient_abc');
+      expect(id1, id2);
+      expect(id1, 'doctor_xyz_patient_abc');
+    });
+
+    test('DoctorChatMessage serialization and deserialization', () {
+      final now = DateTime(2026, 9, 4, 10, 30);
+      final msg = DoctorChatMessage(
+        id: 'msg_100',
+        conversationId: 'doctor_1_patient_2',
+        senderId: 'patient_2',
+        receiverId: 'doctor_1',
+        senderRole: 'patient',
+        senderName: 'Jane Patient',
+        text: 'Hello Doctor, I have a question about my medication.',
+        createdAt: now,
+      );
+
+      final map = msg.toFirestore();
+      expect(map['id'], 'msg_100');
+      expect(map['senderId'], 'patient_2');
+      expect(map['receiverId'], 'doctor_1');
+      expect(map['senderRole'], 'patient');
+      expect(map['text'], 'Hello Doctor, I have a question about my medication.');
+      expect(map['type'], 'text');
+      expect(map['isRead'], isFalse);
+    });
+
+    test('DoctorConversation participants schema serialization', () {
+      final now = DateTime(2026, 9, 4, 10, 0);
+      final conv = DoctorConversation(
+        id: 'doctor_1_patient_2',
+        patientId: 'patient_2',
+        doctorId: 'doctor_1',
+        participants: ['doctor_1', 'patient_2'],
+        doctorName: 'Dr. House',
+        patientName: 'Jane Patient',
+        createdAt: now,
+      );
+
+      final map = conv.toFirestore();
+      expect(map['id'], 'doctor_1_patient_2');
+      expect(map['participants'], contains('doctor_1'));
+      expect(map['participants'], contains('patient_2'));
+      expect(map['doctorName'], 'Dr. House');
+      expect(map['patientName'], 'Jane Patient');
+    });
+
+    test('CallModel status transitions and serialization', () {
+      final now = DateTime(2026, 9, 4, 11, 0);
+      final call = CallModel(
+        id: 'call_999',
+        callerId: 'patient_2',
+        callerName: 'Jane Patient',
+        callerRole: 'patient',
+        receiverId: 'doctor_1',
+        receiverName: 'Dr. House',
+        receiverRole: 'doctor',
+        channelId: 'call_call_999',
+        status: 'ringing',
+        createdAt: now,
+      );
+
+      expect(call.isRinging, isTrue);
+      expect(call.isAccepted, isFalse);
+      expect(call.isEnded, isFalse);
+      expect(call.isActive, isTrue);
+
+      final accepted = call.copyWith(status: 'accepted', acceptedAt: now.add(const Duration(seconds: 5)));
+      expect(accepted.isAccepted, isTrue);
+      expect(accepted.isRinging, isFalse);
+      expect(accepted.isActive, isTrue);
+
+      final ended = accepted.copyWith(status: 'ended', endedAt: now.add(const Duration(minutes: 10)));
+      expect(ended.isEnded, isTrue);
+      expect(ended.isActive, isFalse);
+
+      final map = call.toFirestore();
+      expect(map['callerId'], 'patient_2');
+      expect(map['receiverId'], 'doctor_1');
+      expect(map['channelId'], 'call_call_999');
+      expect(map['status'], 'ringing');
+      expect(map['participants'], containsAll(['patient_2', 'doctor_1']));
+
+      // WebRTC Offer & Answer serialization
+      final callWithOffer = call.copyWith(
+        offer: {'type': 'offer', 'sdp': 'v=0...'},
+        answer: {'type': 'answer', 'sdp': 'v=0...'},
+      );
+      expect(callWithOffer.offer?['type'], 'offer');
+      expect(callWithOffer.answer?['type'], 'answer');
+      final mapWithSDP = callWithOffer.toFirestore();
+      expect(mapWithSDP['offer']['type'], 'offer');
+      expect(mapWithSDP['answer']['type'], 'answer');
+    });
+
+    test('DoctorChat deterministic conversation ID property with reversed inputs', () {
+      final id1 = FirebaseDoctorChatRepository.generateChatId('patient_ABC', 'doctor_XYZ');
+      final id2 = FirebaseDoctorChatRepository.generateChatId('doctor_XYZ', 'patient_ABC');
+      expect(id1, equals(id2));
+      expect(id1, equals('doctor_XYZ_patient_ABC'));
+    });
+
+    test('AgoraConfig constants and fallback structure', () {
+      expect(AgoraConfig.appId, isNotEmpty);
+      expect(AgoraConfig.isConfigured, isTrue);
     });
   });
 }

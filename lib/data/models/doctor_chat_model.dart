@@ -31,10 +31,10 @@ class DoctorChatMessage {
 
   factory DoctorChatMessage.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
-    final createdTs = data['createdAt'] as Timestamp?;
+    final createdTs = (data['createdAt'] as Timestamp?) ?? (data['timestamp'] as Timestamp?);
     return DoctorChatMessage(
       id: doc.id,
-      conversationId: data['conversationId'] as String? ?? '',
+      conversationId: data['conversationId'] as String? ?? data['chatId'] as String? ?? '',
       senderId: data['senderId'] as String? ?? '',
       senderRole: data['senderRole'] as String? ?? 'patient',
       senderName: data['senderName'] as String? ?? '',
@@ -49,8 +49,10 @@ class DoctorChatMessage {
 
   Map<String, dynamic> toFirestore() {
     return {
+      'id': id,
       'messageId': id,
       'conversationId': conversationId,
+      'chatId': conversationId,
       'senderId': senderId,
       if (receiverId != null) 'receiverId': receiverId,
       'senderRole': senderRole,
@@ -58,6 +60,7 @@ class DoctorChatMessage {
       'senderPhoto': senderPhoto,
       'text': text,
       'createdAt': Timestamp.fromDate(createdAt),
+      'timestamp': Timestamp.fromDate(createdAt),
       'type': type,
       'isRead': isRead,
     };
@@ -68,6 +71,7 @@ class DoctorConversation {
   final String id;
   final String patientId;
   final String doctorId;
+  final List<String> participants;
   final String? patientName;
   final String? patientAvatar;
   final String? doctorName;
@@ -86,6 +90,7 @@ class DoctorConversation {
     required this.id,
     required this.patientId,
     required this.doctorId,
+    this.participants = const [],
     this.patientName,
     this.patientAvatar,
     this.doctorName,
@@ -102,11 +107,15 @@ class DoctorConversation {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     final lastMsgTs = data['lastMessageAt'] as Timestamp?;
     final createdTs = data['createdAt'] as Timestamp?;
+    final pId = data['patientId'] as String? ?? '';
+    final dId = data['doctorId'] as String? ?? '';
+    final parts = (data['participants'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [pId, dId];
 
     return DoctorConversation(
       id: doc.id,
-      patientId: data['patientId'] as String? ?? '',
-      doctorId: data['doctorId'] as String? ?? '',
+      patientId: pId,
+      doctorId: dId,
+      participants: parts,
       patientName: data['patientName'] as String?,
       patientAvatar: data['patientAvatar'] as String?,
       doctorName: data['doctorName'] as String?,
@@ -122,9 +131,11 @@ class DoctorConversation {
 
   Map<String, dynamic> toFirestore() {
     return {
+      'id': id,
       'chatId': id,
       'patientId': patientId,
       'doctorId': doctorId,
+      'participants': participants.isNotEmpty ? participants : [patientId, doctorId],
       'patientName': patientName,
       'patientAvatar': patientAvatar,
       'doctorName': doctorName,

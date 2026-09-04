@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../core/theme/app_colors.dart';
+import '../video_call/widgets/incoming_call_overlay.dart';
 
 class DoctorShellScreen extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -23,7 +24,7 @@ class DoctorShellScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      body: navigationShell,
+      body: IncomingCallListener(child: navigationShell),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF131C2E) : Colors.white,

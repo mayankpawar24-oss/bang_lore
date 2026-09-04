@@ -46,6 +46,8 @@ import '../services/emergency_service.dart';
 import '../services/missed_events_service.dart';
 import '../models/family_relationship_model.dart';
 import '../services/patient_resolution_service.dart';
+import '../models/call_model.dart';
+import '../repositories/call_repository.dart';
 
 // ════════════════════════════════════════════
 // FIREBASE SINGLETON PROVIDERS
@@ -659,13 +661,16 @@ final familyGroupMessagesStreamProvider = StreamProvider.family<List<FamilyMessa
 final doctorChatRepositoryProvider = Provider<DoctorChatRepository>((ref) {
   FirebaseFirestore? db;
   ActivityLogService? actService;
+  FirebaseNotificationRepository? notifRepo;
   try {
     db = ref.read(firestoreProvider);
     actService = ref.read(activityLogServiceProvider);
+    notifRepo = ref.read(notificationRepositoryProvider);
   } catch (_) {}
   return FirebaseDoctorChatRepository(
     db: db,
     activityLogService: actService,
+    notificationRepository: notifRepo,
   );
 });
 
@@ -685,6 +690,33 @@ final patientDoctorConversationsStreamProvider = StreamProvider.family<List<Doct
 final doctorConversationsStreamProvider = StreamProvider.family<List<DoctorConversation>, String>((ref, doctorId) {
   if (doctorId.isEmpty) return Stream.value([]);
   return ref.read(doctorChatRepositoryProvider).streamDoctorConversations(doctorId);
+});
+
+/// Video Call Repository Provider
+final callRepositoryProvider = Provider<CallRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return FirebaseCallRepository(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of active incoming video calls for current authenticated user
+final incomingCallStreamProvider = StreamProvider<CallModel?>((ref) {
+  final currentUid = ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+  if (currentUid.isEmpty) return Stream.value(null);
+  return ref.watch(callRepositoryProvider).streamIncomingCalls(currentUid);
+});
+
+/// Stream of a specific call's state
+final callStreamProvider = StreamProvider.family<CallModel?, String>((ref, callId) {
+  if (callId.isEmpty) return Stream.value(null);
+  return ref.watch(callRepositoryProvider).streamCall(callId);
 });
 
 /// Emergency Service Provider
