@@ -1,94 +1,205 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:sensors_plus/sensors_plus.dart';
-
 import '../models/twin_sensor_signals.dart';
+import 'phone_motion_pipeline.dart';
 
-/// Classifies motion into normalized activity states locally in windows.
+/// Classifies motion into normalized activity states locally using multi-sensor
+/// windowed feature extraction from real phone accelerometer and gyroscope signals.
 ///
-/// Ensures raw high-frequency accelerometer/gyroscope data is NEVER streamed
-/// to backend or Gemini, but aggregated locally into bounded activity events.
+/// Ensures raw high-frequency sensor streams are processed entirely on-device,
+/// emitting only structured, normalized activity events to TWIN.
 class ActivityRecognitionService {
   final _activityController = StreamController<NormalizedActivity>.broadcast();
-  StreamSubscription<UserAccelerometerEvent>? _userAccelSubscription;
+  StreamSubscription<SensorSample>? _pipelineSub;
 
   final int windowSampleCount;
-  final List<double> _windowMagnitudes = [];
+  final List<SensorSample> _sampleWindow = [];
 
   TwinActivityType _currentActivity = TwinActivityType.unknown;
   DateTime _currentActivityStartedAt = DateTime.now();
-  int _consecutiveWindowCount = 0;
-  TwinActivityType _candidateActivity = TwinActivityType.unknown;
 
-  ActivityRecognitionService({this.windowSampleCount = 25});
+  // Hysteresis & Stabilization State
+  int _consecutiveCandidateWindows = 0;
+  TwinActivityType _candidateActivity = TwinActivityType.unknown;
+  DateTime? _lastSignificantMotionTime;
+  double _currentCadence = 0.0;
+
+  ActivityRecognitionService({this.windowSampleCount = 30});
 
   Stream<NormalizedActivity> get activityStream => _activityController.stream;
   TwinActivityType get currentActivity => _currentActivity;
   DateTime get currentActivityStartedAt => _currentActivityStartedAt;
 
-  /// Starts listening to phone motion sensors for windowed activity classification.
-  void start() {
+  /// Starts listening to the [PhoneMotionPipeline] stream.
+  void start(PhoneMotionPipeline pipeline) {
     stop();
     _currentActivityStartedAt = DateTime.now();
 
-    try {
-      _userAccelSubscription = userAccelerometerEventStream().listen(
-        (event) {
-          // User accelerometer isolates movement from Earth's gravity (9.8 m/s^2)
-          final mag = math.sqrt(
-            event.x * event.x + event.y * event.y + event.z * event.z,
-          );
-          _addSample(mag);
-        },
-        onError: (_) {},
-      );
-    } catch (_) {}
+    _pipelineSub = pipeline.sampleStream.listen(
+      addSample,
+      onError: (_) {},
+    );
   }
 
-  void _addSample(double magnitude) {
-    _windowMagnitudes.add(magnitude);
+  /// Ingests a new sensor sample into the rolling window.
+  void addSample(SensorSample sample) {
+    _sampleWindow.add(sample);
 
-    if (_windowMagnitudes.length >= windowSampleCount) {
-      final classified = classifyWindow(List.from(_windowMagnitudes));
-      _windowMagnitudes.clear();
+    if (_sampleWindow.length >= windowSampleCount) {
+      final classified = classifyWindow(List.from(_sampleWindow), cadence: _currentCadence);
+      _sampleWindow.clear();
       _handleClassifiedWindow(classified);
     }
   }
 
-  /// Classifies a window of acceleration magnitudes into a [TwinActivityType].
-  static TwinActivityType classifyWindow(List<double> magnitudes) {
-    if (magnitudes.isEmpty) return TwinActivityType.unknown;
+  /// Updates current step cadence (steps/minute) to enhance classification accuracy.
+  void updateCadence(double cadence) {
+    _currentCadence = cadence;
+  }
 
-    double sum = 0.0;
-    for (final m in magnitudes) {
-      sum += m;
+  /// Classifies a window of [SensorSample]s into a [TwinActivityType].
+  static TwinActivityType classifyWindow(List<SensorSample> samples, {double cadence = 0.0}) {
+    if (samples.isEmpty) return TwinActivityType.unknown;
+
+    final n = samples.length;
+
+    // 1. Acceleration Metrics
+    double sumMag = 0.0;
+    double sumSqMag = 0.0;
+    double maxMag = samples[0].accelMagnitude;
+    double minMag = samples[0].accelMagnitude;
+
+    double sumUserMag = 0.0;
+
+    // 2. Gyroscope Metrics
+    double sumGyro = 0.0;
+
+    for (final s in samples) {
+      final aMag = s.accelMagnitude;
+      final uMag = s.userAccelMagnitude;
+      final gMag = s.gyroMagnitude;
+
+      sumMag += aMag;
+      sumSqMag += aMag * aMag;
+      if (aMag > maxMag) maxMag = aMag;
+      if (aMag < minMag) minMag = aMag;
+
+      sumUserMag += uMag;
+      sumGyro += gMag;
     }
-    final mean = sum / magnitudes.length;
+
+    final meanMag = sumMag / n;
+    final rmsAccel = math.sqrt(sumSqMag / n);
+    final meanUserMag = sumUserMag / n;
+    final meanGyro = sumGyro / n;
+    final swing = maxMag - minMag;
 
     double varianceSum = 0.0;
-    double maxVal = magnitudes[0];
-    for (final m in magnitudes) {
-      varianceSum += (m - mean) * (m - mean);
-      if (m > maxVal) maxVal = m;
+    for (final s in samples) {
+      final diff = s.accelMagnitude - meanMag;
+      varianceSum += diff * diff;
     }
-    final variance = varianceSum / magnitudes.length;
+    final variance = varianceSum / n;
     final stdDev = math.sqrt(variance);
 
-    // Classification heuristics based on human biomechanics
-    if (stdDev < 0.20 && mean < 0.35) {
+    // 3. Multi-Feature Biomechanical Classification
+    // A. Stationary: very low acceleration variance, low user motion, minimal rotation
+    if (stdDev < 0.22 && meanUserMag < 0.35 && meanGyro < 0.25 && cadence < 15) {
       return TwinActivityType.stationary;
-    } else if (stdDev >= 0.20 && stdDev < 1.8 && maxVal < 4.5) {
-      return TwinActivityType.walking;
-    } else if (stdDev >= 1.8 && (stdDev < 3.5 && maxVal < 8.0)) {
-      return TwinActivityType.running;
-    } else if (stdDev >= 3.5 || maxVal >= 8.0) {
+    }
+
+    // B. Automotive: low-frequency continuous vibration with no cadence and flat user trajectory
+    if (stdDev >= 0.15 && stdDev < 0.40 && cadence == 0 && meanGyro < 0.20 && swing < 1.6) {
+      return TwinActivityType.automotive;
+    }
+
+    // C. Cycling: smooth periodic angular momentum with low vertical impact swing
+    if (meanGyro > 0.8 && stdDev < 1.2 && cadence < 30 && meanUserMag > 0.4) {
+      return TwinActivityType.cycling;
+    }
+
+    // D. High Activity: extreme variance, explosive acceleration, or very high RMS
+    if (rmsAccel > 16.0 || stdDev >= 4.0 || maxMag >= 18.0) {
       return TwinActivityType.highActivity;
+    }
+
+    // E. Running: high acceleration variance, high swing, high cadence
+    if (stdDev >= 1.8 && (stdDev < 4.0 && maxMag < 18.0) || cadence > 140) {
+      return TwinActivityType.running;
+    }
+
+    // F. Walking: standard periodic human gait (moderate variance, rhythm, cadence > 0)
+    if ((stdDev >= 0.22 && stdDev < 1.8 && maxMag < 16.0) || cadence >= 20) {
+      return TwinActivityType.walking;
     }
 
     return TwinActivityType.other;
   }
 
-  /// Manually injects or reports a platform-recognized activity (e.g. from Android Activity Recognition / Apple CoreMotion).
+  void _handleClassifiedWindow(TwinActivityType windowActivity) {
+    final now = DateTime.now();
+
+    if (windowActivity != TwinActivityType.stationary) {
+      _lastSignificantMotionTime = now;
+    }
+
+    // Hysteresis State Machine:
+    // Require 2 consecutive matching windows before switching candidates
+    if (windowActivity == _candidateActivity) {
+      _consecutiveCandidateWindows++;
+    } else {
+      _candidateActivity = windowActivity;
+      _consecutiveCandidateWindows = 1;
+    }
+
+    // Debounce transition from WALKING to STATIONARY:
+    // Ensure walking doesn't drop to stationary during a brief pause (e.g. stopping at crosswalk)
+    bool allowTransition = true;
+    if (_currentActivity == TwinActivityType.walking &&
+        _candidateActivity == TwinActivityType.stationary) {
+      if (_lastSignificantMotionTime != null &&
+          now.difference(_lastSignificantMotionTime!).inSeconds < 4) {
+        allowTransition = false; // Hold walking state during brief pauses
+      }
+    }
+
+    if (_consecutiveCandidateWindows >= 2 &&
+        _candidateActivity != _currentActivity &&
+        allowTransition) {
+      _currentActivity = _candidateActivity;
+      _currentActivityStartedAt = now;
+
+      final signal = NormalizedActivity(
+        activity: _currentActivity,
+        startTime: now,
+        durationSeconds: 0,
+        confidence: TwinSignalConfidence.high,
+        source: TwinSignalSource.phoneSensor,
+      );
+
+      if (!_activityController.isClosed) {
+        _activityController.add(signal);
+      }
+    } else if (_candidateActivity == _currentActivity &&
+        _currentActivity != TwinActivityType.unknown) {
+      // Heartbeat signal every 30 windows (~30-45s) updating active duration
+      if (_consecutiveCandidateWindows > 0 && _consecutiveCandidateWindows % 30 == 0) {
+        final elapsed = now.difference(_currentActivityStartedAt).inSeconds;
+        final signal = NormalizedActivity(
+          activity: _currentActivity,
+          startTime: _currentActivityStartedAt,
+          durationSeconds: elapsed,
+          confidence: TwinSignalConfidence.high,
+          source: TwinSignalSource.phoneSensor,
+        );
+        if (!_activityController.isClosed) {
+          _activityController.add(signal);
+        }
+      }
+    }
+  }
+
+  /// Manually reports platform activity (e.g. from Health Platform or external source).
   void reportPlatformActivity(
     TwinActivityType activity, {
     TwinSignalConfidence confidence = TwinSignalConfidence.high,
@@ -115,54 +226,11 @@ class ActivityRecognitionService {
     }
   }
 
-  void _handleClassifiedWindow(TwinActivityType windowActivity) {
-    if (windowActivity == _candidateActivity) {
-      _consecutiveWindowCount++;
-    } else {
-      _candidateActivity = windowActivity;
-      _consecutiveWindowCount = 1;
-    }
-
-    // Require 2 consecutive matching windows (debounce momentary jitter)
-    if (_consecutiveWindowCount >= 2 && _candidateActivity != _currentActivity) {
-      final now = DateTime.now();
-      _currentActivity = _candidateActivity;
-      _currentActivityStartedAt = now;
-
-      final signal = NormalizedActivity(
-        activity: _currentActivity,
-        startTime: now,
-        durationSeconds: 0,
-        confidence: TwinSignalConfidence.high,
-        source: TwinSignalSource.phoneSensor,
-      );
-
-      if (!_activityController.isClosed) {
-        _activityController.add(signal);
-      }
-    } else if (_candidateActivity == _currentActivity && _currentActivity != TwinActivityType.unknown) {
-      // Periodic heartbeat every 30 consecutive windows (~45-60s) to keep activity duration live
-      if (_consecutiveWindowCount > 0 && _consecutiveWindowCount % 30 == 0) {
-        final now = DateTime.now();
-        final elapsed = now.difference(_currentActivityStartedAt).inSeconds;
-        final signal = NormalizedActivity(
-          activity: _currentActivity,
-          startTime: _currentActivityStartedAt,
-          durationSeconds: elapsed,
-          confidence: TwinSignalConfidence.high,
-          source: TwinSignalSource.phoneSensor,
-        );
-        if (!_activityController.isClosed) {
-          _activityController.add(signal);
-        }
-      }
-    }
-  }
-
   void stop() {
-    _userAccelSubscription?.cancel();
-    _userAccelSubscription = null;
-    _windowMagnitudes.clear();
+    _pipelineSub?.cancel();
+    _pipelineSub = null;
+    _sampleWindow.clear();
+    _consecutiveCandidateWindows = 0;
   }
 
   void dispose() {

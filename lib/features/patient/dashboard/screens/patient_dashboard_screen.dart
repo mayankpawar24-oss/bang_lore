@@ -33,6 +33,7 @@ import '../widgets/health_insights_summary_card.dart';
 import '../widgets/supporting_insight_cards.dart';
 import '../widgets/twin_activity_card.dart';
 import '../../../../data/models/twin_state_model.dart';
+import '../../../../data/sensors/twin_sensor_provider.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
   const PatientDashboardScreen({super.key});
@@ -210,14 +211,23 @@ reminderTime = $timeDisplay
                   const SizedBox(height: 16),
 
                   // 2.5 Personal Activity & Behavior Twin
-                  FutureBuilder<TwinStateModel?>(
-                    future: ref.read(backendServiceProvider).getTwinState(uid ?? ''),
-                    builder: (context, snapshot) {
-                      return TwinActivityCard(
-                        twinState: snapshot.data,
-                        patientId: uid ?? '',
-                        backendService: ref.read(backendServiceProvider),
-                        onRefresh: () => setState(() {}),
+                  Builder(
+                    builder: (context) {
+                      final effectivePatientId = (uid != null && uid.isNotEmpty)
+                          ? uid
+                          : 'dev-token-patient-alex';
+                      final coordinator = ref.watch(twinSensorCoordinatorProvider(effectivePatientId));
+                      return FutureBuilder<TwinStateModel?>(
+                        future: ref.read(backendServiceProvider).getTwinState(effectivePatientId),
+                        builder: (context, snapshot) {
+                          return TwinActivityCard(
+                            twinState: snapshot.data,
+                            patientId: effectivePatientId,
+                            backendService: ref.read(backendServiceProvider),
+                            sensorCoordinator: coordinator,
+                            onRefresh: () => setState(() {}),
+                          );
+                        },
                       );
                     },
                   ),

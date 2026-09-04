@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:continuum_health/data/sensors/pedometer/adaptive_step_counter.dart';
+import 'package:continuum_health/data/sensors/motion/phone_motion_pipeline.dart';
 
 void main() {
   group('AdaptivePeakValleyStepCounter', () {
@@ -152,6 +153,86 @@ void main() {
       // Step counter successfully resumed counting after pause timeout
       expect(stepsAfterPause, greaterThanOrEqualTo(2));
       expect(counter.totalSteps, stepsAfterPause);
+    });
+
+    test('gyroscope rotational false-positive suppression: phone rotation does not trigger steps', () {
+      final baseTime = DateTime(2026, 9, 5, 12, 0, 0);
+
+      // Phone being spun on a desk or rotated in hand:
+      // High angular velocity (3.5 rad/s) but minimal vertical translation swing (swing < 2.0 m/s^2)
+      int stepsDetected = 0;
+      for (int i = 0; i < 60; i++) {
+        final t = i * 0.05;
+        // Mild acceleration variance from tilt
+        final ax = 0.8 * math.sin(t * 3.0);
+        final ay = 9.81 + 0.6 * math.cos(t * 3.0);
+        final az = 0.4;
+
+        // High rotation rate (spins up to 4.0 rad/s)
+        final gx = 3.5 * math.sin(t * 3.0);
+        final gy = 2.8 * math.cos(t * 3.0);
+        final gz = 1.0;
+
+        final sample = SensorSample.fromRaw(
+          timestamp: baseTime.add(Duration(milliseconds: i * 50)),
+          ax: ax,
+          ay: ay,
+          az: az,
+          gx: gx,
+          gy: gy,
+          gz: gz,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        );
+
+        final res = counter.processSensorSample(sample);
+        if (res.isStep) stepsDetected++;
+      }
+
+      // Pure rotation is suppressed by the gyroscope threshold
+      expect(stepsDetected, 0);
+      expect(counter.totalSteps, 0);
+    });
+
+    test('fused SensorSample detects footsteps while walking naturally with phone', () {
+      final baseTime = DateTime(2026, 9, 5, 12, 0, 0);
+      final int sampleRateHz = 20; // 50ms per sample
+      final double stepFrequencyHz = 1.8; // ~108 steps per minute
+      final int totalSeconds = 5;
+
+      int stepsDetected = 0;
+      final totalSamples = totalSeconds * sampleRateHz;
+
+      for (int i = 0; i < totalSamples; i++) {
+        final tSeconds = i / sampleRateHz;
+        // Natural human walking: vertical acceleration swing ~ 2.6 m/s^2, mild wrist sway ~ 0.5 rad/s
+        final ay = 9.81 + 2.6 * math.sin(2 * math.pi * stepFrequencyHz * tSeconds);
+        final gx = 0.4 * math.cos(2 * math.pi * stepFrequencyHz * tSeconds);
+
+        final sample = SensorSample.fromRaw(
+          timestamp: baseTime.add(Duration(milliseconds: (tSeconds * 1000).toInt())),
+          ax: 0.3,
+          ay: ay,
+          az: 0.2,
+          gx: gx,
+          gy: 0.2,
+          gz: 0.1,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        );
+
+        final res = counter.processSensorSample(sample);
+        if (res.isStep) {
+          stepsDetected++;
+          expect(res.confidence, greaterThanOrEqualTo(0.6));
+        }
+      }
+
+      // Expected ~ 5s * 1.8 steps/s = 8-10 steps
+      expect(stepsDetected, inInclusiveRange(7, 10));
+      expect(counter.totalSteps, stepsDetected);
     });
   });
 }

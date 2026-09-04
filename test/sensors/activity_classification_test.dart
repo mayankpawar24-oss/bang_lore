@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:continuum_health/data/sensors/models/twin_sensor_signals.dart';
 import 'package:continuum_health/data/sensors/motion/activity_recognition_service.dart';
+import 'package:continuum_health/data/sensors/motion/phone_motion_pipeline.dart';
 
 void main() {
   group('ActivityRecognitionService - Windowed Classification', () {
@@ -9,31 +10,87 @@ void main() {
     });
 
     test('classifies low variance stationary window', () {
-      // User sitting still: user accelerometer near 0 (gravitational offset removed)
-      final restingWindow = List.generate(25, (i) => 0.05 + 0.02 * (i % 3));
-      final result = ActivityRecognitionService.classifyWindow(restingWindow);
+      final now = DateTime(2026, 9, 5, 12, 0, 0);
+      final restingWindow = List.generate(
+        30,
+        (i) => SensorSample.fromRaw(
+          timestamp: now.add(Duration(milliseconds: i * 50)),
+          ax: 0.05 + 0.01 * (i % 2),
+          ay: 9.81 + 0.02 * (i % 2),
+          az: 0.05,
+          gx: 0.01,
+          gy: 0.01,
+          gz: 0.01,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        ),
+      );
+      final result = ActivityRecognitionService.classifyWindow(restingWindow, cadence: 0.0);
       expect(result, TwinActivityType.stationary);
     });
 
     test('classifies moderate variance walking window', () {
-      // User walking: rhythmic user acceleration between 0.2 and 1.8 m/s^2
-      final walkingWindow = List.generate(25, (i) => 0.8 + 0.6 * (i % 2 == 0 ? 1 : -1));
-      final result = ActivityRecognitionService.classifyWindow(walkingWindow);
+      final now = DateTime(2026, 9, 5, 12, 0, 0);
+      final walkingWindow = List.generate(
+        30,
+        (i) => SensorSample.fromRaw(
+          timestamp: now.add(Duration(milliseconds: i * 50)),
+          ax: 0.2,
+          ay: 9.81 + 1.0 * (i % 2 == 0 ? 1.0 : -1.0),
+          az: 0.3,
+          gx: 0.3,
+          gy: 0.4,
+          gz: 0.2,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        ),
+      );
+      final result = ActivityRecognitionService.classifyWindow(walkingWindow, cadence: 100.0);
       expect(result, TwinActivityType.walking);
     });
 
-    test('classifies high variance running window', () {
-      // User running: dynamic energy
-      final runningWindow = List.generate(25, (i) => 2.0 + 2.0 * (i % 2 == 0 ? 1 : -1));
-      final result = ActivityRecognitionService.classifyWindow(runningWindow);
+    test('classifies high dynamic running window', () {
+      final now = DateTime(2026, 9, 5, 12, 0, 0);
+      final runningWindow = List.generate(
+        30,
+        (i) => SensorSample.fromRaw(
+          timestamp: now.add(Duration(milliseconds: i * 50)),
+          ax: 1.0,
+          ay: 9.81 + 2.8 * (i % 2 == 0 ? 1.0 : -1.0),
+          az: 1.2,
+          gx: 1.5,
+          gy: 1.2,
+          gz: 0.8,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        ),
+      );
+      final result = ActivityRecognitionService.classifyWindow(runningWindow, cadence: 160.0);
       expect(result, TwinActivityType.running);
     });
 
-    test('classifies extreme variance as highActivity', () {
-      // Vigorous sprinting / intense aerobic exercise: large acceleration spikes > 8.0 m/s^2
-      final extremeWindow = List.generate(25, (i) => 5.0 + 4.5 * (i % 2 == 0 ? 1 : -1));
-      final result = ActivityRecognitionService.classifyWindow(extremeWindow);
-      expect(result, TwinActivityType.highActivity);
+    test('classifies automotive low-frequency sustained vibration with zero cadence', () {
+      final now = DateTime(2026, 9, 5, 12, 0, 0);
+      final carWindow = List.generate(
+        30,
+        (i) => SensorSample.fromRaw(
+          timestamp: now.add(Duration(milliseconds: i * 50)),
+          ax: 0.1,
+          ay: 9.81 + 0.3 * (i % 2 == 0 ? 1.0 : -1.0),
+          az: 0.1,
+          gx: 0.05,
+          gy: 0.05,
+          gz: 0.05,
+          gravityX: 0.0,
+          gravityY: 9.81,
+          gravityZ: 0.0,
+        ),
+      );
+      final result = ActivityRecognitionService.classifyWindow(carWindow, cadence: 0.0);
+      expect(result, TwinActivityType.automotive);
     });
 
     test('reportPlatformActivity emits normalized platform signals', () async {

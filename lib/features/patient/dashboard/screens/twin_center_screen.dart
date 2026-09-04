@@ -6,8 +6,10 @@ import '../../../../data/models/twin_state_model.dart';
 import '../../../../data/sensors/ble/ble_device_manager.dart';
 import '../../../../data/sensors/health/health_platform_service.dart';
 import '../../../../data/sensors/twin_sensor_coordinator.dart';
+import '../../../../data/sensors/models/sensor_diagnostics_model.dart';
 import '../../../../data/services/backend_service.dart';
 import '../widgets/twin_decision_trace_sheet.dart';
+import '../widgets/sensor_diagnostics_sheet.dart';
 
 /// Dedicated Personal Activity & Behavior Twin Center.
 ///
@@ -149,6 +151,11 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.gauge, color: Color(0xFF3B82F6)),
+            tooltip: 'Sensor Diagnostics (Dev)',
+            onPressed: () => SensorDiagnosticsSheet.show(context, _coordinator),
+          ),
           IconButton(
             icon: const Icon(LucideIcons.refreshCw),
             tooltip: 'Sync & Refresh',
@@ -317,6 +324,58 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          ValueListenableBuilder<SensorDiagnosticsData>(
+            valueListenable: _coordinator.diagnosticsNotifier,
+            builder: (ctx, diag, _) {
+              final active = diag.accelReceiving;
+              final hzText = diag.accelEstimatedHz > 0 ? '~${diag.accelEstimatedHz} Hz' : 'Active';
+              return InkWell(
+                onTap: () => SensorDiagnosticsSheet.show(context, _coordinator),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: active ? Colors.blue.shade50 : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: active ? Colors.blue.shade200 : Colors.grey.shade300,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.move, size: 14, color: active ? Colors.blue.shade700 : Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Phone Accelerometer & Gyroscope',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: active ? Colors.blue.shade900 : Colors.grey.shade700,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: active ? Colors.blue.shade100 : Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          active ? '$hzText • Tap for Diagnostics' : 'Standby',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: active ? Colors.blue.shade800 : Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),

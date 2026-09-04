@@ -11,6 +11,7 @@ import '../../../../data/sensors/twin_sensor_coordinator.dart';
 import '../../../../data/services/backend_service.dart';
 import '../screens/twin_center_screen.dart';
 import 'twin_decision_trace_sheet.dart';
+import 'sensor_diagnostics_sheet.dart';
 
 class TwinActivityCard extends StatefulWidget {
   final TwinStateModel? twinState;
@@ -260,6 +261,13 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                     tooltip: 'Manage Devices',
                     visualDensity: VisualDensity.compact,
                     color: const Color(0xFF3B82F6),
+                  ),
+                  IconButton(
+                    onPressed: () => SensorDiagnosticsSheet.show(context, _coordinator),
+                    icon: const Icon(LucideIcons.gauge, size: 18),
+                    tooltip: 'Sensor Diagnostics (Dev)',
+                    visualDensity: VisualDensity.compact,
+                    color: const Color(0xFF10B981),
                   ),
                   const SizedBox(width: 4),
                   InkWell(

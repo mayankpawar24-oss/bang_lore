@@ -6,8 +6,10 @@ import 'ble/ble_device_manager.dart';
 import 'ble/heart_rate_ble_adapter.dart';
 import 'health/health_platform_service.dart';
 import 'iot/esp32_environment_adapter.dart';
+import 'models/sensor_diagnostics_model.dart';
 import 'models/twin_sensor_signals.dart';
 import 'motion/activity_recognition_service.dart';
+import 'motion/phone_motion_pipeline.dart';
 import 'pedometer/pedometer_service.dart';
 import 'reconciliation/sensor_data_reconciler.dart';
 
@@ -17,6 +19,7 @@ class TwinSensorCoordinator {
   final String patientId;
   final BackendService backendService;
 
+  final PhoneMotionPipeline motionPipeline;
   final HeartRateBleAdapter heartRateAdapter;
   final Esp32EnvironmentAdapter esp32Adapter;
   final PedometerService pedometerService;
@@ -49,17 +52,20 @@ class TwinSensorCoordinator {
   final List<Map<String, dynamic>> _signalQueue = [];
   static const int _maxQueueSize = 50;
   bool _isFlushing = false;
+  bool _isInitialized = false;
 
   TwinSensorCoordinator({
     required this.patientId,
     required this.backendService,
+    PhoneMotionPipeline? motionPipeline,
     HeartRateBleAdapter? heartRateAdapter,
     Esp32EnvironmentAdapter? esp32Adapter,
     PedometerService? pedometerService,
     ActivityRecognitionService? activityService,
     IHealthPlatformService? healthPlatformService,
     SensorDataReconciler? reconciler,
-  })  : heartRateAdapter = heartRateAdapter ?? HeartRateBleAdapter(),
+  })  : motionPipeline = motionPipeline ?? PhoneMotionPipeline(),
+        heartRateAdapter = heartRateAdapter ?? HeartRateBleAdapter(),
         esp32Adapter = esp32Adapter ?? Esp32EnvironmentAdapter(),
         pedometerService = pedometerService ?? PedometerService(),
         activityService = activityService ?? ActivityRecognitionService(),
@@ -67,8 +73,14 @@ class TwinSensorCoordinator {
             healthPlatformService ?? HealthPlatformService(),
         reconciler = reconciler ?? SensorDataReconciler();
 
+  ValueNotifier<SensorDiagnosticsData> get diagnosticsNotifier =>
+      motionPipeline.diagnosticsNotifier;
+
   /// Initializes all sensors, connects streams, and starts background synchronization.
   Future<void> initialize() async {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
     // 1. Listen to BLE Heart Rate
     _subscriptions.add(
       heartRateAdapter.heartRateStream.listen(_onHeartRateReceived),
@@ -99,27 +111,33 @@ class TwinSensorCoordinator {
       activityService.activityStream.listen(_onActivityReceived),
     );
 
-    // 5. Check Health Platform Status
+    // 5. Start Phone Internal Accelerometer + Gyroscope Motion Pipeline
+    motionPipeline.start();
+    pedometerService.start(motionPipeline);
+    activityService.start(motionPipeline);
+
+    motionPipeline.updateProcessorDiagnostics(
+      stepDetectorActive: true,
+      activityClassifierActive: true,
+    );
+
+    // 6. Check Health Platform Status
     final status = await healthPlatformService.checkStatus();
     healthStatusNotifier.value = status;
 
-    // Start local sensor streams
-    await pedometerService.start();
-    activityService.start();
-
-    // Start batch flusher (every 15 seconds)
+    // 7. Start batch flusher (every 15 seconds)
     _batchFlushTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) => flushQueue(),
     );
 
-    // Start periodic HealthKit / Health Connect sync (every 5 minutes)
+    // 8. Start periodic HealthKit / Health Connect sync (every 5 minutes)
     _periodicHealthSyncTimer = Timer.periodic(
       const Duration(minutes: 5),
       (_) => syncHealthPlatform(),
     );
 
-    // Initial platform sync
+    // Initial platform sync if permitted
     if (status == HealthPlatformStatus.permissionsGranted) {
       await syncHealthPlatform();
     }
@@ -146,150 +164,163 @@ class TwinSensorCoordinator {
     final reconciled = reconciler.reconcileSteps(steps);
     if (reconciled != null) {
       currentStepsNotifier.value = reconciled.steps;
+      motionPipeline.updateProcessorDiagnostics(
+        detectedSteps: reconciled.steps,
+        lastTwinSignalEmittedAt: reconciled.timestamp,
+      );
       _enqueueSignal(reconciled.toTwinSignal(patientId));
     }
   }
 
   void _onActivityReceived(NormalizedActivity act) {
     currentActivityNotifier.value = act.activity;
+    motionPipeline.updateProcessorDiagnostics(
+      currentActivity: act.activity,
+      lastTransitionTime: act.startTime,
+      lastTwinSignalEmittedAt: act.startTime,
+    );
     _enqueueSignal(act.toTwinSignal(patientId));
   }
 
   /// Manually or externally report SpO2 from a connected oximeter
   void reportSpo2(double spo2, {String source = 'BLE', String confidence = 'HIGH'}) {
     currentSpo2Notifier.value = spo2;
+    final now = DateTime.now().toUtc();
     _enqueueSignal({
-      'signal_id': 'sig_spo2_${DateTime.now().millisecondsSinceEpoch}',
       'patient_id': patientId,
-      'signal_type': 'SPO2_SIGNAL_CHANGED',
-      'timestamp': DateTime.now().toUtc().toIso8601String(),
+      'signal_type': 'SPO2',
       'source': source,
+      'metric': 'spo2',
+      'value': spo2,
+      'unit': '%',
       'confidence': confidence,
-      'spo2': spo2,
+      'timestamp': now.toIso8601String(),
     });
   }
 
-  /// Synchronizes data from Apple HealthKit or Android Health Connect.
+  /// Synchronizes background health platform records (HealthKit / Health Connect).
   Future<void> syncHealthPlatform() async {
+    final status = await healthPlatformService.checkStatus();
+    healthStatusNotifier.value = status;
+    if (status != HealthPlatformStatus.permissionsGranted) return;
+
+    final now = DateTime.now();
     final snapshot = await healthPlatformService.fetchSnapshot();
-    final pSource = healthPlatformService.platformSource;
 
-    // Sync steps
+    // Sync cumulative daily steps
     if (snapshot.stepsToday != null) {
-      final stepSignal = NormalizedStepCount(
+      final normSteps = NormalizedStepCount(
         steps: snapshot.stepsToday!,
-        timestamp: DateTime.now(),
-        source: pSource,
+        timestamp: now,
+        source: healthPlatformService.platformSource,
         isCumulative: true,
-      );
-      _onStepsReceived(stepSignal);
-    }
-
-    // Sync heart rate (if fresh)
-    if (snapshot.heartRateBpm != null && !snapshot.isHeartRateStale) {
-      final hrSignal = NormalizedHeartRate(
-        bpm: snapshot.heartRateBpm!,
-        timestamp: snapshot.heartRateTimestamp ?? DateTime.now(),
-        source: pSource,
         confidence: TwinSignalConfidence.high,
       );
-      _onHeartRateReceived(hrSignal);
+      _onStepsReceived(normSteps);
+    }
+
+    // Sync latest resting heart rate
+    if (snapshot.heartRateBpm != null && !snapshot.isHeartRateStale) {
+      final normHr = NormalizedHeartRate(
+        bpm: snapshot.heartRateBpm!,
+        timestamp: snapshot.heartRateTimestamp ?? now,
+        source: healthPlatformService.platformSource,
+        confidence: TwinSignalConfidence.high,
+      );
+      _onHeartRateReceived(normHr);
+    }
+
+    // Sync sleep duration
+    if (snapshot.sleepHoursLastNight != null) {
+      _enqueueSignal({
+        'patient_id': patientId,
+        'signal_type': 'HEALTH_METRIC',
+        'source': healthPlatformService.platformSource.name.toUpperCase(),
+        'metric': 'sleep_duration_minutes',
+        'value': snapshot.sleepHoursLastNight! * 60.0,
+        'unit': 'minutes',
+        'confidence': 'HIGH',
+        'timestamp': now.toUtc().toIso8601String(),
+      });
     }
   }
 
-  void _enqueueSignal(Map<String, dynamic> signalMap) {
-    _signalQueue.add(signalMap);
+  // Facade methods for device management UI
+  Future<bool> requestHealthPermissions() =>
+      healthPlatformService.requestPermissions();
+
+  Stream<DiscoveredBleDevice> scanHeartRateMonitors() =>
+      heartRateAdapter.scanForHeartRateMonitors();
+
+  Future<void> connectHeartRateMonitor(String id) =>
+      heartRateAdapter.connect(id);
+
+  Stream<DiscoveredBleDevice> scanEsp32Sensors() =>
+      esp32Adapter.scanForEsp32Sensors();
+
+  Future<void> connectEsp32(String id) => esp32Adapter.connect(id);
+
+  void _enqueueSignal(Map<String, dynamic> signal) {
+    _signalQueue.add(signal);
     if (_signalQueue.length > _maxQueueSize) {
-      _signalQueue.removeAt(0); // Bounded in-memory FIFO
+      _signalQueue.removeAt(0); // Evict oldest telemetry if offline backlog fills
     }
   }
 
-  /// Flushes queued signals to the backend TWIN endpoint.
+  /// Flushes queued signals to the Continuum backend API.
   Future<void> flushQueue() async {
-    if (_isFlushing || _signalQueue.isEmpty) return;
+    if (_signalQueue.isEmpty || _isFlushing) return;
     _isFlushing = true;
 
-    final inFlight = List<Map<String, dynamic>>.from(_signalQueue);
-    _signalQueue.clear();
-
+    final batch = List<Map<String, dynamic>>.from(_signalQueue);
     try {
-      final result = await backendService.sendTwinSignals(patientId, inFlight);
-      if (result == null) {
-        // Backend returned failure status; restore in-flight signals
-        _restoreInFlight(inFlight);
+      final updatedState = await backendService.sendTwinSignals(patientId, batch);
+      if (updatedState != null) {
+        _signalQueue.removeRange(0, batch.length);
       }
     } catch (_) {
-      // Network failure; restore in-flight signals for retry
-      _restoreInFlight(inFlight);
+      // Retained in queue for subsequent retry (offline resilience)
     } finally {
       _isFlushing = false;
     }
   }
 
-  void _restoreInFlight(List<Map<String, dynamic>> failedItems) {
-    _signalQueue.insertAll(0, failedItems);
-    while (_signalQueue.length > _maxQueueSize) {
-      _signalQueue.removeLast();
-    }
+  /// Pauses sensor polling (e.g. app backgrounded).
+  void pause() {
+    motionPipeline.stop();
   }
 
-  // Device management convenience APIs for UI
-
-  Stream<DiscoveredBleDevice> scanHeartRateMonitors() {
-    return heartRateAdapter.scanForHeartRateMonitors();
+  /// Resumes sensor polling (e.g. app resumed to foreground).
+  void resume() {
+    motionPipeline.start();
+    pedometerService.start(motionPipeline);
+    activityService.start(motionPipeline);
   }
 
-  Future<void> connectHeartRateMonitor(String deviceId) async {
-    await heartRateAdapter.connect(deviceId);
-  }
-
-  Future<void> disconnectHeartRateMonitor() async {
-    await heartRateAdapter.disconnect();
-  }
-
-  Stream<DiscoveredBleDevice> scanEsp32Sensors() {
-    return esp32Adapter.scanForEsp32Sensors();
-  }
-
-  Future<void> connectEsp32(String deviceId) async {
-    await esp32Adapter.connect(deviceId);
-  }
-
-  Future<void> disconnectEsp32() async {
-    await esp32Adapter.disconnect();
-  }
-
-  Future<bool> requestHealthPermissions() async {
-    final granted = await healthPlatformService.requestPermissions();
-    healthStatusNotifier.value = granted
-        ? HealthPlatformStatus.permissionsGranted
-        : HealthPlatformStatus.permissionsDenied;
-    if (granted) {
-      await syncHealthPlatform();
-    }
-    return granted;
-  }
-
+  /// Disposes coordinator, timers, and adapter streams.
   void dispose() {
     _batchFlushTimer?.cancel();
     _periodicHealthSyncTimer?.cancel();
-    for (final s in _subscriptions) {
-      s.cancel();
+    for (final sub in _subscriptions) {
+      sub.cancel();
     }
     _subscriptions.clear();
 
-    heartRateAdapter.dispose();
-    esp32Adapter.dispose();
+    motionPipeline.dispose();
     pedometerService.dispose();
     activityService.dispose();
+    heartRateAdapter.dispose();
+    esp32Adapter.dispose();
 
     currentActivityNotifier.dispose();
     currentStepsNotifier.dispose();
     currentHeartRateNotifier.dispose();
+    currentSpo2Notifier.dispose();
     currentTemperatureNotifier.dispose();
     currentHumidityNotifier.dispose();
     bleHrStatusNotifier.dispose();
     esp32StatusNotifier.dispose();
     healthStatusNotifier.dispose();
+    _isInitialized = false;
   }
 }
