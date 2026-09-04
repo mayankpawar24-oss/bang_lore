@@ -20,6 +20,7 @@ import '../../features/patient/schedule/screens/book_appointment_screen.dart';
 import '../../features/patient/ai/screens/ai_chat_screen.dart';
 import '../../features/patient/timeline/screens/patient_timeline_screen.dart';
 import '../../features/patient/followup/screens/followup_center_screen.dart';
+import '../../features/patient/dashboard/screens/twin_center_screen.dart';
 import '../../features/patient/patient_shell.dart';
 import '../../features/doctor/doctor_shell.dart';
 import '../../features/doctor/dashboard/screens/doctor_dashboard_screen.dart';
@@ -143,11 +144,27 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'followups',
                     builder: (context, state) => const FollowUpCenterScreen(),
                   ),
+                  GoRoute(
+                    path: 'twin',
+                    builder: (context, state) {
+                      final extra = state.extra as Map<String, dynamic>?;
+                      final patientId = extra?['patientId'] as String? ?? 'dev-patient-alex';
+                      return TwinCenterScreen(patientId: patientId);
+                    },
+                  ),
                 ],
               ),
               GoRoute(
                 path: '/patient/followups',
                 builder: (context, state) => const FollowUpCenterScreen(),
+              ),
+              GoRoute(
+                path: '/patient/twin',
+                builder: (context, state) {
+                  final extra = state.extra as Map<String, dynamic>?;
+                  final patientId = extra?['patientId'] as String? ?? 'dev-patient-alex';
+                  return TwinCenterScreen(patientId: patientId);
+                },
               ),
             ],
           ),

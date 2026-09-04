@@ -9,6 +9,8 @@ import '../../../../data/sensors/health/health_platform_service.dart';
 import '../../../../data/sensors/models/twin_sensor_signals.dart';
 import '../../../../data/sensors/twin_sensor_coordinator.dart';
 import '../../../../data/services/backend_service.dart';
+import '../screens/twin_center_screen.dart';
+import 'twin_decision_trace_sheet.dart';
 
 class TwinActivityCard extends StatefulWidget {
   final TwinStateModel? twinState;
@@ -260,37 +262,51 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                     color: const Color(0xFF3B82F6),
                   ),
                   const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                        width: 1,
+                  InkWell(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (ctx) => TwinCenterScreen(
+                            patientId: widget.patientId,
+                            backendService: widget.backendService,
+                            sensorCoordinator: _coordinator,
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF10B981),
-                            shape: BoxShape.circle,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'TWIN Active',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+                          const SizedBox(width: 6),
+                          Text(
+                            'TWIN Center →',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -931,8 +947,21 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
           ],
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              TextButton.icon(
+                onPressed: () {
+                  TwinDecisionTraceSheet.show(
+                    context,
+                    patientId: widget.patientId,
+                    recommendationId: rec.recommendationId,
+                    backendService: widget.backendService,
+                    recommendation: rec,
+                  );
+                },
+                icon: const Icon(LucideIcons.gitBranch, size: 13),
+                label: const Text('Trace', style: TextStyle(fontSize: 12)),
+              ),
+              const Spacer(),
               TextButton(
                 onPressed: _isResponding
                     ? null

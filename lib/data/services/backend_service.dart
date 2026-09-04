@@ -340,6 +340,72 @@ class BackendService {
     return null;
   }
 
+  /// Fetch 7-stage explainable Decision Trace for a recommendation
+  Future<TwinDecisionTraceModel?> getTwinDecisionTrace(
+    String patientId,
+    String recommendationId,
+  ) async {
+    final headers = await _authHeaders();
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/patients/$patientId/twin/recommendations/$recommendationId/trace'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return TwinDecisionTraceModel.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetch persistent behavioral memory and learned patterns
+  Future<TwinBehavioralMemoryModel?> getTwinBehavioralMemory(
+    String patientId,
+  ) async {
+    final headers = await _authHeaders();
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/patients/$patientId/twin/memory'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return TwinBehavioralMemoryModel.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Update clinical and care context for the TWIN engine
+  Future<TwinStateModel?> updateTwinCareContext(
+    String patientId,
+    Map<String, dynamic> careContext,
+  ) async {
+    final headers = await _authHeaders();
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/patients/$patientId/twin/care-context'),
+            headers: headers,
+            body: jsonEncode(careContext),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return TwinStateModel.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Record adherence event into canonical event bus
   Future<bool> recordAdherenceEvent({
     required String patientId,

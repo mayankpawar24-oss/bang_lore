@@ -30,6 +30,7 @@ class TwinSensorCoordinator {
   final ValueNotifier<int> currentStepsNotifier = ValueNotifier(0);
   final ValueNotifier<NormalizedHeartRate?> currentHeartRateNotifier =
       ValueNotifier(null);
+  final ValueNotifier<double?> currentSpo2Notifier = ValueNotifier(null);
   final ValueNotifier<double?> currentTemperatureNotifier = ValueNotifier(null);
   final ValueNotifier<double?> currentHumidityNotifier = ValueNotifier(null);
   final ValueNotifier<BleDeviceStatus> bleHrStatusNotifier =
@@ -152,6 +153,20 @@ class TwinSensorCoordinator {
   void _onActivityReceived(NormalizedActivity act) {
     currentActivityNotifier.value = act.activity;
     _enqueueSignal(act.toTwinSignal(patientId));
+  }
+
+  /// Manually or externally report SpO2 from a connected oximeter
+  void reportSpo2(double spo2, {String source = 'BLE', String confidence = 'HIGH'}) {
+    currentSpo2Notifier.value = spo2;
+    _enqueueSignal({
+      'signal_id': 'sig_spo2_${DateTime.now().millisecondsSinceEpoch}',
+      'patient_id': patientId,
+      'signal_type': 'SPO2_SIGNAL_CHANGED',
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+      'source': source,
+      'confidence': confidence,
+      'spo2': spo2,
+    });
   }
 
   /// Synchronizes data from Apple HealthKit or Android Health Connect.
