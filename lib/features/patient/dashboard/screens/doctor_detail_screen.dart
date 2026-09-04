@@ -193,13 +193,36 @@ class DoctorDetailScreen extends ConsumerWidget {
                     }).toList(),
                   ).animate().fadeIn().slideY(begin: 0.05),
                   const SizedBox(height: 32),
+                  // Primary Action 1: Chat with Doctor
                   PrimaryButton(
-                    label: 'Book Appointment',
+                    label: 'Chat with Doctor',
+                    onPressed: () {
+                      context.push('/patient/dashboard/doctor-chat/${doctor.id}', extra: {
+                        'doctorName': doctor.name,
+                        'doctorSpecialty': doctor.specialty,
+                        'doctorAvatar': doctor.avatarUrl,
+                      });
+                    },
+                    icon: LucideIcons.messageSquare,
+                  ).animate().fadeIn().slideY(begin: 0.1),
+                  const SizedBox(height: 12),
+                  // Primary Action 2: Book Appointment (Preserved)
+                  OutlinedButton.icon(
                     onPressed: () {
                       context.push('/patient/schedule/book/${doctor.id}');
                     },
-                    icon: LucideIcons.calendar,
-                  ).animate().fadeIn().slideY(begin: 0.1),
+                    icon: const Icon(LucideIcons.calendar, size: 18),
+                    label: const Text(
+                      'Book Appointment',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryBlue,
+                      side: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ).animate().fadeIn(delay: 50.ms).slideY(begin: 0.1),
                   const SizedBox(height: 20),
                 ],
               ),

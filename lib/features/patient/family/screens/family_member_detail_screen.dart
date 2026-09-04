@@ -3,11 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'dart:developer' as dev;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/section_header.dart';
+import '../../../../core/widgets/primary_button.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/family_member_model.dart';
+import '../../../../data/models/reminder_model.dart';
+import '../../../../data/models/medication_model.dart';
 
 class FamilyMemberDetailScreen extends ConsumerWidget {
   final String memberId;
@@ -54,6 +60,14 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
           icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => _showAddReminderForMember(context, ref, member, isDark),
+            icon: const Icon(LucideIcons.bellPlus, size: 16, color: AppColors.primaryBlue),
+            label: const Text('Add Reminder', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primaryBlue)),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -380,6 +394,357 @@ class FamilyMemberDetailScreen extends ConsumerWidget {
           ),
         );
       }).toList(),
+    );
+  }
+
+  void _showAddReminderForMember(
+    BuildContext context,
+    WidgetRef ref,
+    FamilyMemberModel member,
+    bool isDark,
+  ) {
+    final titleCtrl = TextEditingController();
+    final dosageCtrl = TextEditingController(text: '1 tablet');
+    final notesCtrl = TextEditingController();
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(DateTime.now().add(const Duration(minutes: 2)));
+    String selectedFrequency = 'Daily';
+    bool isSaving = false;
+    String? formError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final now = DateTime.now();
+          final tempDate = DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute);
+          final timeDisplay = DateFormat('hh:mm a').format(tempDate);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 24,
+              right: 24,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Reminder for ${member.name.split(" ").first}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(LucideIcons.x, size: 20, color: isDark ? Colors.white70 : AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (formError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.alertCircle, size: 16, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formError!,
+                              style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Medicine Name Field
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Medicine Name *',
+                      hintText: 'e.g. Metformin, Dolo, BP Tablet',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Dosage Field
+                  TextField(
+                    controller: dosageCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Dosage *',
+                      hintText: 'e.g. 500mg, 1 tablet',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Time Picker
+                  Text(
+                    'Reminder Time *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedTime = picked);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: isDark ? Colors.white12 : AppColors.border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(LucideIcons.clock, size: 18, color: AppColors.primaryBlue),
+                              const SizedBox(width: 10),
+                              Text(
+                                timeDisplay,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Text(
+                            'Change Time',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Frequency Selection
+                  Text(
+                    'Frequency *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['Once', 'Daily', 'Twice daily', 'Weekly'].map((freq) {
+                      final isSelected = selectedFrequency == freq;
+                      return ChoiceChip(
+                        label: Text(freq),
+                        selected: isSelected,
+                        selectedColor: AppColors.primaryBlue,
+                        backgroundColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                        labelStyle: TextStyle(
+                          color: isSelected ? Colors.white : (isDark ? Colors.white70 : AppColors.navy),
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        ),
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedFrequency = freq);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Save Button with Real Firestore Targeting
+                  PrimaryButton(
+                    label: isSaving ? 'Scheduling Reminder...' : 'Save Reminder for ${member.name.split(" ").first}',
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final medicine = titleCtrl.text.trim();
+                            final dose = dosageCtrl.text.trim();
+
+                            if (medicine.isEmpty) {
+                              setModalState(() => formError = 'Please enter medicine name.');
+                              return;
+                            }
+                            if (dose.isEmpty) {
+                              setModalState(() => formError = 'Please enter dosage.');
+                              return;
+                            }
+
+                            final creatorUid = ref.read(currentUidProvider) ?? '';
+                            final targetUid = member.memberUid != null && member.memberUid!.isNotEmpty
+                                ? member.memberUid!
+                                : member.id;
+                            final patientId = targetUid;
+
+                            if (targetUid.isEmpty) {
+                              setModalState(() => formError = 'Family member user ID not found.');
+                              return;
+                            }
+
+                            setModalState(() {
+                              isSaving = true;
+                              formError = null;
+                            });
+
+                            try {
+                              final scheduledDateTime = DateTime(
+                                now.year,
+                                now.month,
+                                now.day,
+                                selectedTime.hour,
+                                selectedTime.minute,
+                              );
+                              final docId = 'rem_${DateTime.now().millisecondsSinceEpoch}';
+
+                              // REQUIRED VERIFICATION LOGS
+                              dev.log('''
+[FAMILY_REMINDER]
+creatorUid = $creatorUid
+targetUid = $targetUid
+patientId = $patientId
+reminderId = $docId
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+
+                              dev.log('[FAMILY_TARGET] targetUid = $targetUid', name: 'FamilyReminder');
+
+                              // 1. Save to reminders collection
+                              final reminder = Reminder(
+                                id: docId,
+                                title: '$medicine ($dose)',
+                                medicineName: medicine,
+                                dosage: dose,
+                                type: ReminderType.medication,
+                                dateTime: scheduledDateTime,
+                                reminderTime: timeDisplay,
+                                frequency: selectedFrequency,
+                                status: 'pending',
+                                isCompleted: false,
+                                patientId: targetUid,
+                                targetUid: targetUid,
+                                createdBy: creatorUid,
+                                creatorUid: creatorUid,
+                                targetPatientName: member.name,
+                                telegramEnabled: true,
+                              );
+                              await ref.read(reminderRepositoryProvider).addReminder(targetUid, reminder);
+
+                              // 2. Save medication to target member's medications collection
+                              // So it directly appears in target's Today's Medication!
+                              final med = Medication(
+                                id: docId,
+                                name: medicine,
+                                dosage: dose,
+                                time: timeDisplay,
+                                isTaken: false,
+                                isSkipped: false,
+                                date: scheduledDateTime,
+                                patientId: targetUid,
+                                frequency: selectedFrequency,
+                                notes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
+                                startDate: scheduledDateTime,
+                                active: true,
+                              );
+                              await ref.read(medicationRepositoryProvider).addMedication(targetUid, med);
+
+                              // 3. Create target-addressed notification record in patientNotifications
+                              final creatorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Family Caregiver';
+                              final notifRef = FirebaseFirestore.instance.collection('patientNotifications').doc();
+                              await notifRef.set({
+                                'notificationId': notifRef.id,
+                                'recipientUid': targetUid,
+                                'recipientRole': 'patient',
+                                'senderUid': creatorUid,
+                                'type': 'family_medication_reminder',
+                                'title': '💊 Family Medication Reminder',
+                                'message': 'Medication reminder from $creatorName: $medicine ($dose) at $timeDisplay.',
+                                'reminderId': docId,
+                                'status': 'sent',
+                                'createdAt': FieldValue.serverTimestamp(),
+                                'isRead': false,
+                              });
+
+                              dev.log('''
+[FAMILY_NOTIFICATION]
+creatorUid = $creatorUid
+targetUid = $targetUid
+patientId = $targetUid
+reminderId = $docId
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+
+                              // Note: Creator's device schedules NOTHING (per Requirement 3).
+                              // Target member's device schedules when receiving the reminder.
+
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Family reminder for ${member.name} ($medicine) scheduled for $timeDisplay.'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              dev.log('[FAMILY_REMINDER ERROR] $e', error: e, name: 'FamilyReminder');
+                              setModalState(() {
+                                isSaving = false;
+                                formError = 'Failed to save reminder: $e';
+                              });
+                            }
+                          },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

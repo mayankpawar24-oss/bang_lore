@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_layout_insets.dart';
+import '../video_call/widgets/incoming_call_overlay.dart';
 
 class PatientShellScreen extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -27,7 +29,22 @@ class PatientShellScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
-      body: navigationShell,
+      body: Builder(
+        builder: (shellContext) {
+          final mediaQuery = MediaQuery.of(shellContext);
+          final barHeight = 84.0 + mediaQuery.padding.bottom;
+          return AppLayoutInsets(
+            bottomBarHeight: barHeight,
+            child: MediaQuery(
+              data: mediaQuery.copyWith(
+                padding: mediaQuery.padding.copyWith(bottom: barHeight),
+                viewPadding: mediaQuery.viewPadding.copyWith(bottom: barHeight),
+              ),
+              child: IncomingCallListener(child: navigationShell),
+            ),
+          );
+        },
+      ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(

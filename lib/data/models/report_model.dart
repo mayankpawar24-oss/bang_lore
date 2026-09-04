@@ -71,6 +71,8 @@ class ReportModel {
     this.ocrCompleted = false,
   });
 
+  String? get fileUrl => downloadUrl ?? storagePath;
+
   ReportModel copyWith({
     String? id,
     String? patientId,

@@ -15,9 +15,11 @@ import '../../features/patient/family/screens/family_tree_screen.dart';
 import '../../features/patient/family/screens/family_member_detail_screen.dart';
 import '../../features/patient/dashboard/screens/doctor_search_screen.dart';
 import '../../features/patient/dashboard/screens/doctor_detail_screen.dart';
+import '../../features/patient/dashboard/screens/doctor_chat_screen.dart';
 import '../../features/patient/schedule/screens/book_appointment_screen.dart';
 import '../../features/patient/ai/screens/ai_chat_screen.dart';
 import '../../features/patient/timeline/screens/patient_timeline_screen.dart';
+import '../../features/patient/followup/screens/followup_center_screen.dart';
 import '../../features/patient/patient_shell.dart';
 import '../../features/doctor/doctor_shell.dart';
 import '../../features/doctor/dashboard/screens/doctor_dashboard_screen.dart';
@@ -125,7 +127,27 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) =>
                         DoctorDetailScreen(doctorId: state.pathParameters['id']!),
                   ),
+                  GoRoute(
+                    path: 'doctor-chat/:doctorId',
+                    builder: (context, state) {
+                      final extra = state.extra as Map<String, dynamic>?;
+                      return DoctorChatScreen(
+                        doctorId: state.pathParameters['doctorId']!,
+                        doctorName: extra?['doctorName'] as String?,
+                        doctorSpecialty: extra?['doctorSpecialty'] as String?,
+                        doctorAvatar: extra?['doctorAvatar'] as String?,
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'followups',
+                    builder: (context, state) => const FollowUpCenterScreen(),
+                  ),
                 ],
+              ),
+              GoRoute(
+                path: '/patient/followups',
+                builder: (context, state) => const FollowUpCenterScreen(),
               ),
             ],
           ),

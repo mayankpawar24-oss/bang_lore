@@ -12,6 +12,7 @@ import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/secondary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/status_chip.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/appointment_model.dart';
 import '../../../../data/models/patient_model.dart';
@@ -56,7 +57,7 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, AppLayoutInsets.bottomSafeInset(context) + 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -621,77 +622,85 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add Doctor Time Slot',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Date: ${_formatDateStr(_selectedDate)}',
-                style: TextStyle(
-                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(LucideIcons.clock, color: AppColors.primaryBlue),
-                title: const Text('Slot Time', style: TextStyle(fontWeight: FontWeight.bold)),
-                trailing: Chip(
-                  label: Text(selectedTime.format(context), style: const TextStyle(fontWeight: FontWeight.bold)),
-                  backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
-                ),
-                onTap: () async {
-                  final picked = await showTimePicker(context: context, initialTime: selectedTime);
-                  if (picked != null) {
-                    setModalState(() => selectedTime = picked);
-                  }
-                },
-              ),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                label: 'Save Time Slot to Firestore',
-                onPressed: () async {
-                  final targetDate = DateTime(
-                    _selectedDate.year,
-                    _selectedDate.month,
-                    _selectedDate.day,
-                    selectedTime.hour,
-                    selectedTime.minute,
-                  );
-                  final slotKey = '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}_${targetDate.hour.toString().padLeft(2, '0')}-${targetDate.minute.toString().padLeft(2, '0')}';
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add Doctor Time Slot',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Date: ${_formatDateStr(_selectedDate)}',
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(LucideIcons.clock, color: AppColors.primaryBlue),
+                      title: const Text('Slot Time', style: TextStyle(fontWeight: FontWeight.bold)),
+                      trailing: Chip(
+                        label: Text(selectedTime.format(context), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                      ),
+                      onTap: () async {
+                        final picked = await showTimePicker(context: context, initialTime: selectedTime);
+                        if (picked != null) {
+                          setModalState(() => selectedTime = picked);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    PrimaryButton(
+                      label: 'Save Time Slot to Firestore',
+                      onPressed: () async {
+                        final targetDate = DateTime(
+                          _selectedDate.year,
+                          _selectedDate.month,
+                          _selectedDate.day,
+                          selectedTime.hour,
+                          selectedTime.minute,
+                        );
+                        final slotKey = '${targetDate.year}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}_${targetDate.hour.toString().padLeft(2, '0')}-${targetDate.minute.toString().padLeft(2, '0')}';
 
-                  dev.log('[DOCTOR AVAILABILITY] Setting slot $slotKey for doctor $doctorUid', name: 'DoctorCalendarScreen');
-                  await ref.read(doctorRepositoryProvider).setAvailabilitySlot(doctorUid, {
-                    'id': slotKey,
-                    'slotId': slotKey,
-                    'dateTime': Timestamp.fromDate(targetDate),
-                    'status': 'open',
-                  });
+                        dev.log('[DOCTOR AVAILABILITY] Setting slot $slotKey for doctor $doctorUid', name: 'DoctorCalendarScreen');
+                        await ref.read(doctorRepositoryProvider).setAvailabilitySlot(doctorUid, {
+                          'id': slotKey,
+                          'slotId': slotKey,
+                          'dateTime': Timestamp.fromDate(targetDate),
+                          'status': 'open',
+                        });
 
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Availability slot added!'), backgroundColor: AppColors.success),
-                    );
-                  }
-                },
+                        if (context.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Availability slot added!'), backgroundColor: AppColors.success),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -717,110 +726,117 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF131C2E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Schedule Consultation ($timeSlot)',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) => Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Date: ${_formatDateStr(_selectedDate)}',
-                style: TextStyle(
-                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                  fontSize: 13,
-                ),
+              padding: EdgeInsets.only(
+                bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+                left: 24,
+                right: 24,
+                top: 24,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Select Patient',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: isDark ? Colors.white : AppColors.navy,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: patientList.map((p) => ChoiceChip(
-                  label: Text(p.name),
-                  selected: selectedPatientId == p.id,
-                  selectedColor: AppColors.primaryBlue,
-                  labelStyle: TextStyle(
-                    color: selectedPatientId == p.id ? Colors.white : (isDark ? Colors.white : AppColors.primaryBlue),
-                    fontWeight: FontWeight.bold,
-                  ),
-                  onSelected: (val) {
-                    if (val) setModalState(() => selectedPatientId = p.id);
-                  },
-                )).toList(),
-              ),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                label: 'Confirm Consultation Slot',
-                onPressed: () async {
-                  int hour = int.parse(timeSlot.substring(0, 2));
-                  int minute = int.parse(timeSlot.substring(3, 5));
-                  if (timeSlot.contains('PM') && hour != 12) hour += 12;
-                  if (timeSlot.contains('AM') && hour == 12) hour = 0;
-                  final targetDate = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour, minute);
-
-                  final selectedPatientObj = patientList.firstWhere((p) => p.id == selectedPatientId);
-                  final doctorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Doctor';
-
-                  final newAppt = AppointmentModel(
-                    id: const Uuid().v4(),
-                    patientId: selectedPatientObj.id,
-                    doctorId: doctorUid,
-                    doctorName: doctorName,
-                    patientName: selectedPatientObj.name,
-                    specialty: 'Clinical Consultation',
-                    dateTime: targetDate,
-                    durationMinutes: 30,
-                    status: AppointmentStatus.approved,
-                  );
-
-                  try {
-                    await ref.read(appointmentRepositoryProvider).bookAppointment(newAppt);
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Consultation booked for ${selectedPatientObj.name} at $timeSlot!'),
-                          backgroundColor: AppColors.success,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Schedule Consultation ($timeSlot)',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Date: ${_formatDateStr(_selectedDate)}',
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Select Patient',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: patientList.map((p) => ChoiceChip(
+                        label: Text(p.name),
+                        selected: selectedPatientId == p.id,
+                        selectedColor: AppColors.primaryBlue,
+                        labelStyle: TextStyle(
+                          color: selectedPatientId == p.id ? Colors.white : (isDark ? Colors.white : AppColors.primaryBlue),
+                          fontWeight: FontWeight.bold,
                         ),
-                      );
-                    }
-                  } catch (e) {
-                    dev.log('[APPOINTMENT] exception: $e', name: 'DoctorCalendarScreen');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
-                      );
-                    }
-                  }
-                },
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedPatientId = p.id);
+                        },
+                      )).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    PrimaryButton(
+                      label: 'Confirm Consultation Slot',
+                      onPressed: () async {
+                        int hour = int.parse(timeSlot.substring(0, 2));
+                        int minute = int.parse(timeSlot.substring(3, 5));
+                        if (timeSlot.contains('PM') && hour != 12) hour += 12;
+                        if (timeSlot.contains('AM') && hour == 12) hour = 0;
+                        final targetDate = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour, minute);
+
+                        final selectedPatientObj = patientList.firstWhere((p) => p.id == selectedPatientId);
+                        final doctorName = ref.read(currentUserProvider).valueOrNull?.name ?? 'Doctor';
+
+                        final newAppt = AppointmentModel(
+                          id: const Uuid().v4(),
+                          patientId: selectedPatientObj.id,
+                          doctorId: doctorUid,
+                          doctorName: doctorName,
+                          patientName: selectedPatientObj.name,
+                          specialty: 'Clinical Consultation',
+                          dateTime: targetDate,
+                          durationMinutes: 30,
+                          status: AppointmentStatus.approved,
+                        );
+
+                        try {
+                          await ref.read(appointmentRepositoryProvider).bookAppointment(newAppt);
+                          if (context.mounted) {
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Consultation booked for ${selectedPatientObj.name} at $timeSlot!'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          dev.log('[APPOINTMENT] exception: $e', name: 'DoctorCalendarScreen');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.danger),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -831,38 +847,46 @@ class _DoctorCalendarScreenState extends ConsumerState<DoctorCalendarScreen> {
     final slotCtrl = TextEditingController(text: '03:30 PM');
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Add Custom Available Slot',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add Custom Available Slot',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(controller: slotCtrl, decoration: const InputDecoration(labelText: 'Time Slot', hintText: 'e.g. 03:30 PM')),
+                  const SizedBox(height: 24),
+                  PrimaryButton(
+                    label: 'Save Time Slot',
+                    onPressed: () {
+                      if (slotCtrl.text.isNotEmpty) {
+                        setState(() => _customSlots.add(slotCtrl.text));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('New time slot added!'), backgroundColor: AppColors.primaryBlue),
+                        );
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(controller: slotCtrl, decoration: const InputDecoration(labelText: 'Time Slot', hintText: 'e.g. 03:30 PM')),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Save Time Slot',
-              onPressed: () {
-                if (slotCtrl.text.isNotEmpty) {
-                  setState(() => _customSlots.add(slotCtrl.text));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('New time slot added!'), backgroundColor: AppColors.primaryBlue),
-                  );
-                }
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );

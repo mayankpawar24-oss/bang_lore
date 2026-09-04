@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/secondary_button.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../../../../data/providers/providers.dart';
 
 class DoctorProfileScreen extends ConsumerWidget {
@@ -28,7 +29,7 @@ class DoctorProfileScreen extends ConsumerWidget {
       backgroundColor: isDark ? const Color(0xFF0A0F1D) : AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+          padding: EdgeInsets.fromLTRB(20, 20, 20, AppLayoutInsets.bottomSafeInset(context) + 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -369,39 +370,47 @@ class DoctorProfileScreen extends ConsumerWidget {
   void _showEditProfileSheet(BuildContext context, bool isDark) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Edit Doctor Profile',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Edit Doctor Profile',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const TextField(decoration: InputDecoration(labelText: 'Full Name', hintText: 'Dr. Aisha Patel, MD')),
+                  const SizedBox(height: 12),
+                  const TextField(decoration: InputDecoration(labelText: 'Specialty', hintText: 'Senior Cardiologist')),
+                  const SizedBox(height: 12),
+                  const TextField(decoration: InputDecoration(labelText: 'Hospital', hintText: 'City Heart Center')),
+                  const SizedBox(height: 24),
+                  PrimaryButton(
+                    label: 'Save Changes',
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Doctor profile updated!'), backgroundColor: AppColors.primaryBlue),
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            const TextField(decoration: InputDecoration(labelText: 'Full Name', hintText: 'Dr. Aisha Patel, MD')),
-            const SizedBox(height: 12),
-            const TextField(decoration: InputDecoration(labelText: 'Specialty', hintText: 'Senior Cardiologist')),
-            const SizedBox(height: 12),
-            const TextField(decoration: InputDecoration(labelText: 'Hospital', hintText: 'City Heart Center')),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Save Changes',
-              onPressed: () {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Doctor profile updated!'), backgroundColor: AppColors.primaryBlue),
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -410,58 +419,66 @@ class DoctorProfileScreen extends ConsumerWidget {
   void _showSettingsSheet(BuildContext context, WidgetRef ref, bool isDark) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SwitchListTile(
-              title: Text(
-                'Dark / Night Mode',
-                style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    title: Text(
+                      'Dark / Night Mode',
+                      style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      ref.watch(themeModeProvider) == ThemeMode.dark ? 'Enabled (Night palette)' : 'Disabled (Light palette)',
+                      style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                    ),
+                    value: ref.watch(themeModeProvider) == ThemeMode.dark,
+                    activeThumbColor: AppColors.primaryBlue,
+                    onChanged: (v) {
+                      ref.read(themeModeProvider.notifier).toggleTheme();
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text(
+                      'Emergency SOS Alerts',
+                      style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Receive push alerts when patients trigger SOS',
+                      style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                    ),
+                    value: true,
+                    activeThumbColor: AppColors.primaryBlue,
+                    onChanged: (v) {},
+                  ),
+                  SwitchListTile(
+                    title: Text(
+                      'Patient Access Notifications',
+                      style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Notify when patient approves record access',
+                      style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                    ),
+                    value: true,
+                    activeThumbColor: AppColors.primaryBlue,
+                    onChanged: (v) {},
+                  ),
+                  const SizedBox(height: 20),
+                  PrimaryButton(label: 'Done', onPressed: () => Navigator.pop(ctx)),
+                ],
               ),
-              subtitle: Text(
-                ref.watch(themeModeProvider) == ThemeMode.dark ? 'Enabled (Night palette)' : 'Disabled (Light palette)',
-                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-              ),
-              value: ref.watch(themeModeProvider) == ThemeMode.dark,
-              activeThumbColor: AppColors.primaryBlue,
-              onChanged: (v) {
-                ref.read(themeModeProvider.notifier).toggleTheme();
-              },
             ),
-            SwitchListTile(
-              title: Text(
-                'Emergency SOS Alerts',
-                style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                'Receive push alerts when patients trigger SOS',
-                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-              ),
-              value: true,
-              activeThumbColor: AppColors.primaryBlue,
-              onChanged: (v) {},
-            ),
-            SwitchListTile(
-              title: Text(
-                'Patient Access Notifications',
-                style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                'Notify when patient approves record access',
-                style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-              ),
-              value: true,
-              activeThumbColor: AppColors.primaryBlue,
-              onChanged: (v) {},
-            ),
-            const SizedBox(height: 20),
-            PrimaryButton(label: 'Done', onPressed: () => Navigator.pop(context)),
-          ],
+          ),
         ),
       ),
     );
@@ -605,16 +622,20 @@ class DoctorProfileScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: 24,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
@@ -862,9 +883,12 @@ class DoctorProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
+  },
+),
+);
   }
 }

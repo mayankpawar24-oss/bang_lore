@@ -9,6 +9,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/notification_sheet.dart';
+import '../../../../core/widgets/document_viewer_dialog.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/appointment_model.dart';
 import '../../../../data/models/report_model.dart';
@@ -96,7 +98,12 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
               child: filteredEvents.isEmpty
                   ? _buildEmptyState(isDark)
                   : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        12,
+                        20,
+                        AppLayoutInsets.bottomSafeInset(context) + 16,
+                      ),
                       itemCount: filteredEvents.length,
                       itemBuilder: (context, index) {
                         final event = filteredEvents[index];
@@ -131,21 +138,28 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(LucideIcons.calendar, size: 16, color: AppColors.primaryBlue),
-                    const SizedBox(width: 8),
-                    Text(
-                      DateFormat('MMMM yyyy').format(_focusedMonth),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : AppColors.navy,
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.calendar, size: 16, color: AppColors.primaryBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          DateFormat('MMMM yyyy').format(_focusedMonth),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : AppColors.navy,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       visualDensity: VisualDensity.compact,
@@ -450,8 +464,9 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
           category: TimelineFilter.reports,
           icon: icon,
           color: color,
-          statusLabel: 'VERIFIED',
-          statusColor: AppColors.success,
+          statusLabel: r.ocrCompleted ? 'EXTRACTED' : 'PENDING',
+          statusColor: r.ocrCompleted ? AppColors.success : AppColors.warning,
+          metadata: {'report': r, 'docId': r.id},
         ),
       );
     }
@@ -586,6 +601,19 @@ class _PatientTimelineScreenState extends ConsumerState<PatientTimelineScreen> {
                 padding: const EdgeInsets.all(14),
                 borderRadius: 16,
                 elevation: 1,
+                onTap: event.category == TimelineFilter.reports
+                    ? () {
+                        final report = event.metadata?['report'] as ReportModel?;
+                        final docId = event.metadata?['docId'] as String? ?? event.id.replaceFirst('report_', '');
+                        DocumentViewerDialog.show(
+                          context,
+                          title: event.title,
+                          docId: docId,
+                          report: report,
+                          isDark: isDark,
+                        );
+                      }
+                    : null,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

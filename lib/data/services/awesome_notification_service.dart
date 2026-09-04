@@ -1,4 +1,5 @@
 import 'dart:developer' as dev;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +14,7 @@ class AwesomeNotificationService {
 
   /// Initialize notification channels and listener
   static Future<void> initialize() async {
+    if (kIsWeb) return;
     try {
       dev.log('[NOTIFICATION] Initializing AwesomeNotifications channels', name: 'AwesomeNotificationService');
       await _notifications.initialize(
@@ -81,6 +83,7 @@ class AwesomeNotificationService {
   }
 
   static Future<bool> requestPermission() async {
+    if (kIsWeb) return true;
     try {
       final isAllowed = await _notifications.isNotificationAllowed();
       if (!isAllowed) {
@@ -169,6 +172,7 @@ class AwesomeNotificationService {
     required String doctorId,
     required String patientId,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -197,6 +201,7 @@ class AwesomeNotificationService {
     required String doctorName,
     required bool isApproved,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -219,6 +224,7 @@ class AwesomeNotificationService {
     required String doctorId,
     required String patientId,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -247,6 +253,7 @@ class AwesomeNotificationService {
     required bool isApproved,
     required String patientId,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -268,6 +275,7 @@ class AwesomeNotificationService {
     required String body,
     required String reminderId,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -289,6 +297,7 @@ class AwesomeNotificationService {
     required DateTime scheduledTime,
     required String medicationId,
   }) async {
+    if (kIsWeb) return;
     try {
       await requestPermission();
       final notifId = id.abs().remainder(100000);
@@ -336,6 +345,7 @@ class AwesomeNotificationService {
 
   /// Cancel a scheduled medication notification
   static Future<void> cancelMedicationReminder(int id) async {
+    if (kIsWeb) return;
     try {
       final notifId = id.abs().remainder(100000);
       await _notifications.cancel(notifId);
@@ -351,6 +361,7 @@ class AwesomeNotificationService {
     required String body,
     String? sourceDocument,
   }) async {
+    if (kIsWeb) return;
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(
@@ -370,6 +381,7 @@ class AwesomeNotificationService {
     required String body,
     String channelKey = channelAppointments,
   }) async {
+    if (kIsWeb) return;
     final notifId = id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000);
     await _notifications.createNotification(
       content: NotificationContent(

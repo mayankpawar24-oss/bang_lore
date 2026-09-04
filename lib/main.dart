@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,12 +13,22 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase before runApp
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization warning: $e');
+  }
 
-  // Initialize Awesome Notifications device channels and handlers
-  await AwesomeNotificationService.initialize();
+  // Initialize Awesome Notifications device channels and handlers on non-web platforms
+  if (!kIsWeb) {
+    try {
+      await AwesomeNotificationService.initialize();
+    } catch (e) {
+      debugPrint('Awesome Notifications initialization warning: $e');
+    }
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

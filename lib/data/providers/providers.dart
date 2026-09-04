@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/user_model.dart';
 import '../models/doctor_model.dart';
+import '../models/doctor_chat_model.dart';
 import '../models/patient_model.dart';
 import '../models/appointment_model.dart';
 import '../models/medication_model.dart';
@@ -19,6 +20,7 @@ import '../models/report_model.dart';
 
 import '../repositories/auth_repository.dart';
 import '../repositories/doctor_repository.dart';
+import '../repositories/doctor_chat_repository.dart';
 import '../repositories/patient_repository.dart';
 import '../repositories/appointment_repository.dart';
 import '../repositories/medication_repository.dart';
@@ -38,6 +40,14 @@ import '../services/ocr_service.dart';
 import '../services/awesome_notification_service.dart';
 import '../services/multi_agent_service.dart';
 import '../services/backend_service.dart';
+import '../models/family_message_model.dart';
+import '../repositories/family_chat_repository.dart';
+import '../services/emergency_service.dart';
+import '../services/missed_events_service.dart';
+import '../models/family_relationship_model.dart';
+import '../services/patient_resolution_service.dart';
+import '../models/call_model.dart';
+import '../repositories/call_repository.dart';
 
 // ════════════════════════════════════════════
 // FIREBASE SINGLETON PROVIDERS
@@ -108,16 +118,22 @@ final notificationRepositoryProvider = Provider<FirebaseNotificationRepository>(
   return FirebaseNotificationRepository();
 });
 
+final backendServiceProvider = Provider<BackendService>((ref) {
+  return BackendService();
+});
+
+final ocrServiceProvider = Provider<OcrService>((ref) {
+  return OcrService(backendService: ref.watch(backendServiceProvider));
+});
+
 final reportRepositoryProvider = Provider<ReportRepository>((ref) {
-  return FirebaseReportRepository();
+  return FirebaseReportRepository(
+    ocrService: ref.watch(ocrServiceProvider),
+  );
 });
 
 final telegramRepositoryProvider = Provider<TelegramRepository>((ref) {
   return FirebaseTelegramRepository();
-});
-
-final backendServiceProvider = Provider<BackendService>((ref) {
-  return BackendService();
 });
 
 final activityLogServiceProvider = Provider<ActivityLogService>((ref) {
@@ -126,10 +142,6 @@ final activityLogServiceProvider = Provider<ActivityLogService>((ref) {
 
 final protonDriveServiceProvider = Provider<ProtonDriveService>((ref) {
   return ProtonDriveService();
-});
-
-final ocrServiceProvider = Provider<OcrService>((ref) {
-  return OcrService();
 });
 
 final awesomeNotificationServiceProvider = Provider<AwesomeNotificationService>((ref) {
@@ -143,6 +155,10 @@ final activityLogsStreamProvider = StreamProvider.family<List<ActivityLogModel>,
 // Keep AI mock for local development
 final aiRepositoryProvider = Provider<MockAIRepository>((ref) => MockAIRepository());
 final multiAgentServiceProvider = Provider<MultiAgentService>((ref) => MultiAgentService());
+
+final patientInsightsProvider = FutureProvider.family<MultiAgentInsightsResponse, String>((ref, patientId) async {
+  return ref.watch(backendServiceProvider).getPatientInsights(patientId);
+});
 
 // ════════════════════════════════════════════
 // AUTHENTICATION — FIREBASE STREAM
@@ -615,6 +631,154 @@ final telegramStatusStreamProvider = StreamProvider<Map<String, dynamic>>((ref) 
   return ref.read(telegramRepositoryProvider).telegramStatusStream(uid);
 });
 
+/// Stream of patient appointments
+final patientAppointmentsStreamProvider = StreamProvider.family<List<Appointment>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(appointmentRepositoryProvider).appointmentsStream(patientId);
+});
+
+/// Family Chat Repository Provider
+final familyChatRepositoryProvider = Provider<FamilyChatRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return FirebaseFamilyChatRepository(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of family chat messages (by patientId or legacy)
+final familyMessagesStreamProvider = StreamProvider.family<List<FamilyMessageModel>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(familyChatRepositoryProvider).streamMessages(patientId);
+});
+
+/// Stream of shared group chat messages for a family (by familyId)
+final familyGroupMessagesStreamProvider = StreamProvider.family<List<FamilyMessageModel>, String>((ref, familyId) {
+  if (familyId.isEmpty) return Stream.value([]);
+  return ref.read(familyChatRepositoryProvider).streamFamilyMessages(familyId);
+});
+
+/// Doctor Chat Repository Provider
+final doctorChatRepositoryProvider = Provider<DoctorChatRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  FirebaseNotificationRepository? notifRepo;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+    notifRepo = ref.read(notificationRepositoryProvider);
+  } catch (_) {}
+  return FirebaseDoctorChatRepository(
+    db: db,
+    activityLogService: actService,
+    notificationRepository: notifRepo,
+  );
+});
+
+/// Stream of messages in a private Doctor ↔ Patient chat
+final doctorChatMessagesStreamProvider = StreamProvider.family<List<DoctorChatMessage>, String>((ref, chatId) {
+  if (chatId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamMessages(chatId);
+});
+
+/// Stream of patient's conversations with doctors
+final patientDoctorConversationsStreamProvider = StreamProvider.family<List<DoctorConversation>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamPatientConversations(patientId);
+});
+
+/// Stream of doctor's conversations with patients
+final doctorConversationsStreamProvider = StreamProvider.family<List<DoctorConversation>, String>((ref, doctorId) {
+  if (doctorId.isEmpty) return Stream.value([]);
+  return ref.read(doctorChatRepositoryProvider).streamDoctorConversations(doctorId);
+});
+
+/// Video Call Repository Provider
+final callRepositoryProvider = Provider<CallRepository>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return FirebaseCallRepository(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of active incoming video calls for current authenticated user
+final incomingCallStreamProvider = StreamProvider<CallModel?>((ref) {
+  final currentUid = ref.watch(currentUidProvider) ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+  if (currentUid.isEmpty) return Stream.value(null);
+  return ref.watch(callRepositoryProvider).streamIncomingCalls(currentUid);
+});
+
+/// Stream of a specific call's state
+final callStreamProvider = StreamProvider.family<CallModel?, String>((ref, callId) {
+  if (callId.isEmpty) return Stream.value(null);
+  return ref.watch(callRepositoryProvider).streamCall(callId);
+});
+
+/// Emergency Service Provider
+final emergencyServiceProvider = Provider<EmergencyService>((ref) {
+  FirebaseFirestore? db;
+  TelegramRepository? tgRepo;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    tgRepo = ref.read(telegramRepositoryProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return EmergencyService(
+    db: db,
+    telegramRepository: tgRepo,
+    activityLogService: actService,
+  );
+});
+
+/// Missed Events Automation Service Provider
+final missedEventsServiceProvider = Provider<MissedEventsService>((ref) {
+  FirebaseFirestore? db;
+  TelegramRepository? tgRepo;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    tgRepo = ref.read(telegramRepositoryProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return MissedEventsService(
+    db: db,
+    telegramRepository: tgRepo,
+    activityLogService: actService,
+  );
+});
+
+/// Patient Resolution Service Provider
+final patientResolutionServiceProvider = Provider<PatientResolutionService>((ref) {
+  FirebaseFirestore? db;
+  ActivityLogService? actService;
+  try {
+    db = ref.read(firestoreProvider);
+    actService = ref.read(activityLogServiceProvider);
+  } catch (_) {}
+  return PatientResolutionService(
+    db: db,
+    activityLogService: actService,
+  );
+});
+
+/// Stream of real family relationships for a patient
+final familyRelationshipsStreamProvider = StreamProvider.family<List<FamilyRelationshipModel>, String>((ref, patientId) {
+  if (patientId.isEmpty) return Stream.value([]);
+  return ref.read(patientResolutionServiceProvider).streamFamilyRelationships(patientId);
+});
+
 // ════════════════════════════════════════════
 // LEGACY STATENOTIFIER PROVIDERS
 // (kept for screens that haven't been updated yet)
@@ -989,6 +1153,16 @@ class ChatMessagesNotifier extends StateNotifier<List<AIChatMessage>> {
           'confidence': response.confidence,
           'recommendedAction': response.recommendedAction,
           'safetyNote': response.safetyNote,
+          'riskTier': response.riskTier,
+          'isEmergency': response.isEmergency,
+          'evidenceSources': response.evidenceSources,
+          'retrievedDocuments': response.retrievedDocuments,
+          'patientFactsUsed': response.patientFactsUsed,
+          'graphEvidence': response.graphEvidence,
+          'recordFacts': response.recordFacts,
+          'possibleConnections': response.possibleConnections,
+          'uncertainties': response.uncertainties,
+          'nextStep': response.nextStep,
         },
       );
       state = [...state, aiMsg];
@@ -1002,6 +1176,77 @@ class ChatMessagesNotifier extends StateNotifier<List<AIChatMessage>> {
         timestamp: DateTime.now(),
       );
       state = [...state, fallbackMsg];
+    }
+  }
+
+  Future<VoiceChatResponse?> sendVoiceMessage({
+    String? audioBase64,
+    String? transcriptHint,
+    String? language,
+    String? chatId,
+  }) async {
+    final uid = _ref.read(currentUidProvider);
+    if (uid == null) return null;
+
+    try {
+      final backend = _ref.read(backendServiceProvider);
+      final response = await backend.sendVoiceAudio(
+        audioBase64: audioBase64,
+        transcriptHint: transcriptHint,
+        contentType: 'audio/wav',
+        targetPatientId: uid,
+        chatId: chatId ?? _currentChatId,
+      );
+
+      if (_currentChatId == null && response.chatId != null) {
+        _currentChatId = response.chatId;
+      }
+
+      final userMsg = AIChatMessage(
+        id: 'user_voice_${DateTime.now().millisecondsSinceEpoch}',
+        chatId: _currentChatId ?? '',
+        sender: AIChatSender.user,
+        content: response.transcript.isNotEmpty ? response.transcript : (transcriptHint ?? 'Voice input'),
+        timestamp: DateTime.now(),
+      );
+
+      final aiMsg = AIChatMessage(
+        id: 'ai_voice_${DateTime.now().millisecondsSinceEpoch}',
+        chatId: _currentChatId ?? '',
+        sender: AIChatSender.assistant,
+        content: response.answer,
+        timestamp: DateTime.now(),
+        metadata: {
+          'confidence': response.confidence,
+          'recommendedAction': response.recommendedAction,
+          'safetyNote': response.safetyNote,
+          'riskTier': response.riskTier,
+          'isEmergency': response.isEmergency,
+          'evidenceSources': response.evidenceSources,
+          'retrievedDocuments': response.retrievedDocuments,
+          'patientFactsUsed': response.patientFactsUsed,
+          'graphEvidence': response.graphEvidence,
+          'recordFacts': response.recordFacts,
+          'possibleConnections': response.possibleConnections,
+          'uncertainties': response.uncertainties,
+          'nextStep': response.nextStep,
+          'audioBase64': response.audioBase64,
+          'detectedLanguage': response.detectedLanguage,
+        },
+      );
+
+      state = [...state, userMsg, aiMsg];
+      return response;
+    } catch (e) {
+      final fallbackMsg = AIChatMessage(
+        id: 'fallback_voice_${DateTime.now().millisecondsSinceEpoch}',
+        chatId: _currentChatId ?? '',
+        sender: AIChatSender.assistant,
+        content: _fallbackResponse(transcriptHint ?? 'Voice query'),
+        timestamp: DateTime.now(),
+      );
+      state = [...state, fallbackMsg];
+      return null;
     }
   }
 

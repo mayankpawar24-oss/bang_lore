@@ -7,6 +7,7 @@ class Medication {
   final String time;
   final bool isTaken;
   final bool isSkipped;
+  final bool isMissed;
   final DateTime date;
   // Extended
   final String? patientId;
@@ -18,6 +19,7 @@ class Medication {
   final bool active;
   final DateTime? takenAt;
   final DateTime? skippedAt;
+  final DateTime? missedAt;
   final String? notes;
 
   const Medication({
@@ -27,6 +29,7 @@ class Medication {
     required this.time,
     required this.isTaken,
     this.isSkipped = false,
+    this.isMissed = false,
     required this.date,
     this.patientId,
     this.frequency,
@@ -37,6 +40,7 @@ class Medication {
     this.active = true,
     this.takenAt,
     this.skippedAt,
+    this.missedAt,
     this.notes,
   });
 
@@ -47,6 +51,7 @@ class Medication {
     String? time,
     bool? isTaken,
     bool? isSkipped,
+    bool? isMissed,
     DateTime? date,
     String? patientId,
     String? frequency,
@@ -57,6 +62,7 @@ class Medication {
     bool? active,
     DateTime? takenAt,
     DateTime? skippedAt,
+    DateTime? missedAt,
     String? notes,
   }) {
     return Medication(
@@ -66,6 +72,7 @@ class Medication {
       time: time ?? this.time,
       isTaken: isTaken ?? this.isTaken,
       isSkipped: isSkipped ?? this.isSkipped,
+      isMissed: isMissed ?? this.isMissed,
       date: date ?? this.date,
       patientId: patientId ?? this.patientId,
       frequency: frequency ?? this.frequency,
@@ -76,6 +83,7 @@ class Medication {
       active: active ?? this.active,
       takenAt: takenAt ?? this.takenAt,
       skippedAt: skippedAt ?? this.skippedAt,
+      missedAt: missedAt ?? this.missedAt,
       notes: notes ?? this.notes,
     );
   }
@@ -88,6 +96,7 @@ class Medication {
       'time': time,
       'isTaken': isTaken,
       'isSkipped': isSkipped,
+      'isMissed': isMissed,
       'date': date.toIso8601String(),
       'patientId': patientId,
       'frequency': frequency,
@@ -98,6 +107,7 @@ class Medication {
       'active': active,
       'takenAt': takenAt?.toIso8601String(),
       'skippedAt': skippedAt?.toIso8601String(),
+      'missedAt': missedAt?.toIso8601String(),
       'notes': notes,
     };
   }
@@ -110,6 +120,7 @@ class Medication {
       time: json['time'] as String,
       isTaken: json['isTaken'] as bool? ?? false,
       isSkipped: json['isSkipped'] as bool? ?? false,
+      isMissed: json['isMissed'] as bool? ?? false,
       date: DateTime.parse(json['date'] as String),
       patientId: json['patientId'] as String?,
       frequency: json['frequency'] as String?,
@@ -120,6 +131,7 @@ class Medication {
       active: json['active'] as bool? ?? true,
       takenAt: json['takenAt'] != null ? DateTime.tryParse(json['takenAt'] as String) : null,
       skippedAt: json['skippedAt'] != null ? DateTime.tryParse(json['skippedAt'] as String) : null,
+      missedAt: json['missedAt'] != null ? DateTime.tryParse(json['missedAt'] as String) : null,
       notes: json['notes'] as String?,
     );
   }
@@ -133,6 +145,7 @@ class Medication {
       time: data['time'] as String? ?? '',
       isTaken: data['isTaken'] as bool? ?? false,
       isSkipped: data['isSkipped'] as bool? ?? false,
+      isMissed: data['isMissed'] as bool? ?? false,
       date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
       patientId: data['patientId'] as String?,
       frequency: data['frequency'] as String?,
@@ -143,6 +156,7 @@ class Medication {
       active: data['active'] as bool? ?? true,
       takenAt: (data['takenAt'] as Timestamp?)?.toDate(),
       skippedAt: (data['skippedAt'] as Timestamp?)?.toDate(),
+      missedAt: (data['missedAt'] as Timestamp?)?.toDate(),
       notes: data['notes'] as String?,
     );
   }
@@ -154,6 +168,7 @@ class Medication {
       'time': time,
       'isTaken': isTaken,
       'isSkipped': isSkipped,
+      'isMissed': isMissed,
       'date': Timestamp.fromDate(date),
       'patientId': patientId,
       'frequency': frequency,
@@ -164,6 +179,7 @@ class Medication {
       'active': active,
       'takenAt': takenAt != null ? Timestamp.fromDate(takenAt!) : null,
       'skippedAt': skippedAt != null ? Timestamp.fromDate(skippedAt!) : null,
+      'missedAt': missedAt != null ? Timestamp.fromDate(missedAt!) : null,
       'notes': notes,
       'updatedAt': FieldValue.serverTimestamp(),
     };

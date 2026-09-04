@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMotionUsageDescription</key>
+	<string>Continuum Health uses motion activity to track movement, sedentary periods, and step recovery milestones.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Continuum Health accesses steps, heart rate, and sleep from HealthKit to personalize wellness and recovery recommendations.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Continuum Health records verified clinical activities and wellness tasks.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Continuum Health connects to BLE heart-rate monitors and ESP32 environmental sensors to capture live vitals.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Continuum Health discovers and communicates with nearby BLE health monitors and environmental sensors.</string>
 </dict>
 </plist>

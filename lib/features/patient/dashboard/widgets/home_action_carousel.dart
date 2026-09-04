@@ -31,7 +31,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (_pageController.hasClients) {
-        final nextPage = (_currentPage + 1) % 4;
+        final nextPage = (_currentPage + 1) % 5;
         _pageController.animateToPage(
           nextPage,
           duration: const Duration(milliseconds: 450),
@@ -68,6 +68,14 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
         onTap: () => context.go('/patient/ai-care'),
       ),
       _CarouselSlideData(
+        badge: 'AUTONOMOUS CARE',
+        title: 'Follow-Up Center',
+        subtitle: 'Review autonomous follow-ups, medication check-ins & care loops',
+        buttonText: 'Follow-Ups',
+        icon: LucideIcons.checkCircle2,
+        onTap: () => context.push('/patient/followups'),
+      ),
+      _CarouselSlideData(
         badge: 'CLINICAL INGESTION',
         title: 'Upload Health Records',
         subtitle: 'Ingest discharge summaries, lab reports & prescriptions',
@@ -88,7 +96,7 @@ class _HomeActionCarouselState extends State<HomeActionCarousel> {
     return Column(
       children: [
         SizedBox(
-          height: 176,
+          height: 184,
           child: PageView.builder(
             controller: _pageController,
             onPageChanged: (index) {

@@ -7,17 +7,20 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/medication_model.dart';
 import '../../../../data/models/vital_model.dart';
 import '../../../../data/models/report_model.dart';
+import '../../../../data/services/backend_service.dart';
 
 class HealthInsightsSummaryCard extends StatelessWidget {
   final List<VitalModel> vitals;
   final List<MedicationModel> medications;
   final List<ReportModel> reports;
+  final MultiAgentInsightsResponse? insights;
 
   const HealthInsightsSummaryCard({
     super.key,
     required this.vitals,
     required this.medications,
     required this.reports,
+    this.insights,
   });
 
   @override
@@ -34,8 +37,10 @@ class HealthInsightsSummaryCard extends StatelessWidget {
         (v.systolic != null && v.systolic! > 140) ||
         (v.spo2 != null && v.spo2! < 92));
     final isStable = !hasCriticalVitals;
-    final statusText = isStable ? 'STABLE' : 'ATTENTION';
-    final statusColor = isStable ? AppColors.success : AppColors.warning;
+    final trajectory = insights?.trajectoryStatus.toUpperCase();
+    final statusText = trajectory ?? (isStable ? 'STABLE' : 'ATTENTION');
+    final isEscalating = statusText == 'ESCALATING' || statusText == 'CRITICAL' || statusText == 'ATTENTION';
+    final statusColor = isEscalating ? AppColors.warning : AppColors.success;
 
     return Container(
       decoration: BoxDecoration(
@@ -63,35 +68,41 @@ class HealthInsightsSummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryBlue.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        LucideIcons.activity,
-                        color: AppColors.primaryBlue,
-                        size: 18,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          LucideIcons.activity,
+                          color: AppColors.primaryBlue,
+                          size: 18,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Personalized Health',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : AppColors.navy,
-                      letterSpacing: -0.2,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Personalized Health',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : AppColors.navy,
+                          letterSpacing: -0.2,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -255,6 +266,109 @@ class HealthInsightsSummaryCard extends StatelessWidget {
             ],
           ),
 
+          if (insights != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0A0F1D) : AppColors.surfaceBlue,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.primaryBlue.withValues(alpha: isDark ? 0.3 : 0.2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(LucideIcons.cpu, size: 14, color: AppColors.primaryBlue),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Multi-Agent Clinical Intelligence',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'ORACLE • ADHERENCE • TWIN • NAVIGATOR • ESCALATE',
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (insights!.oracle != null)
+                    _buildAgentRow(
+                      agentName: 'ORACLE',
+                      summary: insights!.oracle!.summary,
+                      confidence: insights!.oracle!.confidence,
+                      icon: LucideIcons.trendingUp,
+                      isDark: isDark,
+                    ),
+                  if (insights!.adherence != null)
+                    _buildAgentRow(
+                      agentName: 'ADHERENCE',
+                      summary: insights!.adherence!.summary,
+                      confidence: insights!.adherence!.confidence,
+                      icon: LucideIcons.checkCircle2,
+                      isDark: isDark,
+                    ),
+                  if (insights!.twin != null)
+                    _buildAgentRow(
+                      agentName: 'TWIN',
+                      summary: insights!.twin!.summary,
+                      confidence: insights!.twin!.confidence,
+                      icon: LucideIcons.copy,
+                      isDark: isDark,
+                    ),
+                  if (insights!.navigator != null)
+                    _buildAgentRow(
+                      agentName: 'NAVIGATOR',
+                      summary: insights!.navigator!.summary,
+                      confidence: insights!.navigator!.confidence,
+                      icon: LucideIcons.compass,
+                      isDark: isDark,
+                    ),
+                  if (insights!.escalate != null)
+                    _buildAgentRow(
+                      agentName: 'ESCALATE',
+                      summary: insights!.escalate!.summary,
+                      confidence: insights!.escalate!.confidence,
+                      icon: LucideIcons.alertTriangle,
+                      isDark: isDark,
+                    ),
+                  if (insights!.synthesizedActions.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Synthesized Actions: ${insights!.synthesizedActions.join("; ")}',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 14),
 
           // View Details Action
@@ -332,6 +446,42 @@ class HealthInsightsSummaryCard extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: isDark ? Colors.white : AppColors.navy,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgentRow({
+    required String agentName,
+    required String summary,
+    required double confidence,
+    required IconData icon,
+    required bool isDark,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 12, color: AppColors.primaryBlue),
+          const SizedBox(width: 6),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white70 : AppColors.navy,
+                ),
+                children: [
+                  TextSpan(
+                    text: '[$agentName ${(confidence * 100).toInt()}%]: ',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                  ),
+                  TextSpan(text: summary),
+                ],
               ),
             ),
           ),

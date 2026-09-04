@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as dev;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../data/models/reminder_model.dart';
 import '../../../../data/models/report_model.dart';
 import '../../../../data/services/awesome_notification_service.dart';
+import '../../../../data/services/backend_service.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_search_bar.dart';
 import '../../../../core/widgets/doctor_card.dart';
@@ -25,9 +27,12 @@ import '../../../../core/widgets/appointment_card.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/notification_sheet.dart';
 import '../../../../core/widgets/primary_button.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../widgets/home_action_carousel.dart';
 import '../widgets/health_insights_summary_card.dart';
 import '../widgets/supporting_insight_cards.dart';
+import '../widgets/twin_activity_card.dart';
+import '../../../../data/models/twin_state_model.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
   const PatientDashboardScreen({super.key});
@@ -37,6 +42,78 @@ class PatientDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen> {
+  StreamSubscription? _familyRemindersSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        final uid = ref.read(currentUidProvider);
+        if (uid != null && uid.isNotEmpty) {
+          ref.read(missedEventsServiceProvider).checkAndProcessMissedEvents(uid);
+          _setupTargetRemindersListener(uid);
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _familyRemindersSub?.cancel();
+    super.dispose();
+  }
+
+  /// Listens for family reminders where targetUid == this user, and schedules awesome_notifications on this target device
+  void _setupTargetRemindersListener(String uid) {
+    _familyRemindersSub?.cancel();
+    try {
+      _familyRemindersSub = FirebaseFirestore.instance
+          .collection('reminders')
+          .where('targetUid', isEqualTo: uid)
+          .snapshots()
+          .listen((snap) {
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final status = data['status'] as String? ?? 'pending';
+          final isCompleted = data['isCompleted'] == true || status == 'completed';
+          final creatorUid = data['creatorUid'] as String? ?? data['createdBy'] as String?;
+
+          // Only schedule if this reminder was created by another user (family caregiver) for THIS user, and is still pending
+          if (!isCompleted && creatorUid != null && creatorUid != uid) {
+            final medName = data['medicineName'] as String? ?? data['title'] as String? ?? 'Medication';
+            final dosage = data['dosage'] as String? ?? '1 dose';
+            final dateTimeTs = data['dateTime'] as Timestamp?;
+            final scheduledTime = dateTimeTs?.toDate() ?? DateTime.now();
+            final reminderId = doc.id;
+            final timeDisplay = data['reminderTime'] as String? ?? '';
+
+            dev.log('''
+[FAMILY_NOTIFICATION]
+creatorUid = $creatorUid
+targetUid = $uid
+patientId = $uid
+reminderId = $reminderId
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+
+            AwesomeNotificationService.scheduleMedicationReminder(
+              id: reminderId.hashCode,
+              medicineName: medName,
+              dosage: dosage,
+              scheduledTime: scheduledTime,
+              medicationId: reminderId,
+            );
+          }
+        }
+      }, onError: (e) {
+        dev.log('[FAMILY_NOTIFICATION ERROR] $e', name: 'FamilyReminder');
+      });
+    } catch (e) {
+      dev.log('[FAMILY_NOTIFICATION SETUP ERROR] $e', name: 'FamilyReminder');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -50,6 +127,9 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     final List<DoctorModel> doctors = ref.watch(doctorsStreamProvider).valueOrNull ?? [];
     final notifications = ref.watch(notificationsStreamProvider).valueOrNull ?? [];
     final unreadCount = notifications.where((n) => !n.isRead).length;
+
+    final insightsAsync = ref.watch(patientInsightsProvider(uid ?? 'dev-token-patient-alex'));
+    final multiAgentInsights = insightsAsync.valueOrNull;
 
     AppointmentModel? nextAppointment;
     if (streamAppts.isNotEmpty) {
@@ -125,6 +205,21 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     vitals: streamVitals,
                     medications: streamMeds,
                     reports: streamReports,
+                    insights: multiAgentInsights,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 2.5 Personal Activity & Behavior Twin
+                  FutureBuilder<TwinStateModel?>(
+                    future: ref.read(backendServiceProvider).getTwinState(uid ?? ''),
+                    builder: (context, snapshot) {
+                      return TwinActivityCard(
+                        twinState: snapshot.data,
+                        patientId: uid ?? '',
+                        backendService: ref.read(backendServiceProvider),
+                        onRefresh: () => setState(() {}),
+                      );
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -143,7 +238,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   const SizedBox(height: 24),
 
                   // 5. Clinical AI Guidance & Traditional Care Tip
-                  _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports, streamAppts),
+                  _buildTodayInsightsCard(context, isDark, streamVitals, streamMeds, streamReports, streamAppts, multiAgentInsights),
                   const SizedBox(height: 24),
 
                   // 6. Quick Action Row
@@ -388,32 +483,41 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     List<Vital> vitals,
     List<MedicationModel> meds,
     List<ReportModel> reports,
-    List<AppointmentModel> appointments,
-  ) {
+    List<AppointmentModel> appointments, [
+    MultiAgentInsightsResponse? insights,
+  ]) {
     String insightText = 'Your baseline health parameters are steady. Maintain daily hydration and active movement.';
     String traditionalNuskha = 'Warm ginger & honey water is traditionally suggested to soothe throat and support digestion.';
 
-    // 1. Check if an approved appointment is scheduled for today
-    final now = DateTime.now();
-    final todayApprovedAppts = appointments.where((a) {
-      final isToday = a.dateTime.year == now.year && a.dateTime.month == now.month && a.dateTime.day == now.day;
-      final isApproved = a.status == AppointmentStatus.approved || a.status == AppointmentStatus.confirmed;
-      return isToday && isApproved;
-    }).toList();
+    if (insights != null && (insights.oracle != null || insights.synthesizedActions.isNotEmpty)) {
+      if (insights.oracle != null) {
+        insightText = '[ORACLE ${(insights.oracle!.confidence * 100).toInt()}%]: ${insights.oracle!.summary}';
+      } else if (insights.synthesizedActions.isNotEmpty) {
+        insightText = 'Recommended protocol: ${insights.synthesizedActions.first}';
+      }
+    } else {
+      // 1. Check if an approved appointment is scheduled for today
+      final now = DateTime.now();
+      final todayApprovedAppts = appointments.where((a) {
+        final isToday = a.dateTime.year == now.year && a.dateTime.month == now.month && a.dateTime.day == now.day;
+        final isApproved = a.status == AppointmentStatus.approved || a.status == AppointmentStatus.confirmed;
+        return isToday && isApproved;
+      }).toList();
 
-    if (todayApprovedAppts.isNotEmpty) {
-      final appt = todayApprovedAppts.first;
-      final timeFormatted = DateFormat('hh:mm a').format(appt.dateTime);
-      insightText = 'You have a confirmed consultation today with ${appt.doctorName} at $timeFormatted. Have your recent vitals and questions ready.';
-      traditionalNuskha = 'Keep a brief list of active symptoms and medications handy for your consultation.';
-    } else if (vitals.isNotEmpty) {
-      final latest = vitals.first;
-      if (latest.heartRate != null && latest.heartRate! > 95) {
-        insightText = 'Your heart rate was slightly elevated (${latest.heartRate} bpm). Ensure adequate rest and avoid heavy caffeine today.';
-        traditionalNuskha = 'Chamomile infusion or breathing exercises are traditionally helpful to promote relaxation.';
-      } else if (latest.systolic != null && latest.systolic! > 135) {
-        insightText = 'Blood pressure is tracking at ${latest.systolic}/${latest.diastolic}. Maintain low sodium intake and regular medication.';
-        traditionalNuskha = 'Hibiscus tea and garlic infusion have traditional usage for vascular support.';
+      if (todayApprovedAppts.isNotEmpty) {
+        final appt = todayApprovedAppts.first;
+        final timeFormatted = DateFormat('hh:mm a').format(appt.dateTime);
+        insightText = 'You have a confirmed consultation today with ${appt.doctorName} at $timeFormatted. Have your recent vitals and questions ready.';
+        traditionalNuskha = 'Keep a brief list of active symptoms and medications handy for your consultation.';
+      } else if (vitals.isNotEmpty) {
+        final latest = vitals.first;
+        if (latest.heartRate != null && latest.heartRate! > 95) {
+          insightText = 'Your heart rate was slightly elevated (${latest.heartRate} bpm). Ensure adequate rest and avoid heavy caffeine today.';
+          traditionalNuskha = 'Chamomile infusion or breathing exercises are traditionally helpful to promote relaxation.';
+        } else if (latest.systolic != null && latest.systolic! > 135) {
+          insightText = 'Blood pressure is tracking at ${latest.systolic}/${latest.diastolic}. Maintain low sodium intake and regular medication.';
+          traditionalNuskha = 'Hibiscus tea and garlic infusion have traditional usage for vascular support.';
+        }
       }
     }
 
@@ -504,42 +608,62 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
   }
 
   Widget _buildQuickActionsRow(BuildContext context, bool isDark, String? uid) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildActionTile(
-            context,
-            title: 'Find Doctors',
-            subtitle: 'Book Consult',
-            icon: LucideIcons.stethoscope,
-            color: AppColors.primaryBlue,
-            isDark: isDark,
-            onTap: () => context.push('/patient/dashboard/doctor-search'),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionTile(
+                context,
+                title: 'Find Doctors',
+                subtitle: 'Book Consult',
+                icon: LucideIcons.stethoscope,
+                color: AppColors.primaryBlue,
+                isDark: isDark,
+                onTap: () => context.push('/patient/dashboard/doctor-search'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildActionTile(
+                context,
+                title: 'Follow-Ups',
+                subtitle: 'Care Loops',
+                icon: LucideIcons.checkCircle2,
+                color: const Color(0xFF6366F1),
+                isDark: isDark,
+                onTap: () => context.push('/patient/followups'),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildActionTile(
-            context,
-            title: 'Log Vitals',
-            subtitle: 'Heart, BP, SpO₂',
-            icon: LucideIcons.activity,
-            color: AppColors.danger,
-            isDark: isDark,
-            onTap: () => _showLogVitalsSheet(context, isDark, uid),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildActionTile(
-            context,
-            title: 'Add Reminder',
-            subtitle: 'Pills, Follow-up',
-            icon: LucideIcons.bellPlus,
-            color: AppColors.warning,
-            isDark: isDark,
-            onTap: () => _showAddReminderSheet(context, isDark, uid),
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionTile(
+                context,
+                title: 'Log Vitals',
+                subtitle: 'Heart, BP, SpO₂',
+                icon: LucideIcons.activity,
+                color: AppColors.danger,
+                isDark: isDark,
+                onTap: () => _showLogVitalsSheet(context, isDark, uid),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildActionTile(
+                context,
+                title: 'Add Reminder',
+                subtitle: 'Pills, Follow-up',
+                icon: LucideIcons.bellPlus,
+                color: AppColors.warning,
+                isDark: isDark,
+                onTap: () => _showAddReminderSheet(context, isDark, uid),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -595,16 +719,77 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
   }
 
   Widget _buildVitalsSection(BuildContext context, bool isDark, String? uid, List<Vital> vitals) {
-    final hr = vitals.isNotEmpty ? vitals.first.heartRate : 74;
-    final bp = vitals.isNotEmpty ? '${vitals.first.systolic}/${vitals.first.diastolic}' : '120/80';
-    final spo2 = vitals.isNotEmpty ? vitals.first.spo2 : 98;
-    final weight = vitals.isNotEmpty && vitals.first.weight != null ? vitals.first.weight! : 68.0;
+    if (vitals.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: 'Health Vitals',
+            trailing: TextButton.icon(
+              onPressed: () => _showLogVitalsSheet(context, isDark, uid),
+              icon: const Icon(LucideIcons.plus, size: 14),
+              label: const Text('Add Reading', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            borderRadius: 16,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(LucideIcons.activity, color: AppColors.primaryBlue, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'No vital readings recorded yet',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Log your blood pressure, heart rate, or SpO₂ manually.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _showLogVitalsSheet(context, isDark, uid),
+                  child: const Text('Log Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final hr = vitals.first.heartRate != null ? '${vitals.first.heartRate} bpm' : '--';
+    final bp = (vitals.first.systolic != null && vitals.first.diastolic != null) ? '${vitals.first.systolic}/${vitals.first.diastolic}' : '--';
+    final spo2 = vitals.first.spo2 != null ? '${vitals.first.spo2}%' : '--';
+    final weight = vitals.first.weight != null ? '${vitals.first.weight} kg' : '--';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
-          title: 'Continuous Vitals',
+          title: 'Recorded Vitals',
           trailing: TextButton.icon(
             onPressed: () => _showLogVitalsSheet(context, isDark, uid),
             icon: const Icon(LucideIcons.plus, size: 14),
@@ -614,13 +799,13 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: _buildVitalItem('Heart Rate', '$hr bpm', LucideIcons.heart, AppColors.danger, isDark)),
+            Expanded(child: _buildVitalItem('Heart Rate', hr, LucideIcons.heart, AppColors.danger, isDark)),
             const SizedBox(width: 8),
             Expanded(child: _buildVitalItem('Blood Pressure', bp, LucideIcons.gauge, AppColors.primaryBlue, isDark)),
             const SizedBox(width: 8),
-            Expanded(child: _buildVitalItem('SpO₂', '$spo2%', LucideIcons.wind, AppColors.accentCyan, isDark)),
+            Expanded(child: _buildVitalItem('SpO₂', spo2, LucideIcons.wind, AppColors.accentCyan, isDark)),
             const SizedBox(width: 8),
-            Expanded(child: _buildVitalItem('Weight', '$weight kg', LucideIcons.scale, AppColors.success, isDark)),
+            Expanded(child: _buildVitalItem('Weight', weight, LucideIcons.scale, AppColors.success, isDark)),
           ],
         ),
       ],
@@ -794,6 +979,10 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
     String? formError;
     bool isSaving = false;
 
+    String reminderFor = 'Me'; // 'Me' or 'Family Member'
+    String? selectedMemberId;
+    String? selectedMemberName;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -803,14 +992,22 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           final now = DateTime.now();
           final dtFormat = DateFormat('h:mm a');
           final timeDisplay = dtFormat.format(DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute));
+          final familyAsync = ref.read(familyRelationshipsStreamProvider(effectiveUid));
+          final familyList = familyAsync.valueOrNull ?? [];
 
-          return Container(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              top: 24,
-              left: 20,
-              right: 20,
-            ),
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 640,
+                maxHeight: MediaQuery.of(context).size.height * 0.88,
+              ),
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: AppLayoutInsets.bottomSafeInset(context) + 20,
+                  top: 24,
+                  left: 20,
+                  right: 20,
+                ),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF131C2E) : Colors.white,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -882,6 +1079,98 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     ),
                     const SizedBox(height: 14),
                   ],
+
+                  // Who is this reminder for?
+                  Text(
+                    'Who is this reminder for? *',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppColors.secondaryText,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('For Me'),
+                        selected: reminderFor == 'Me',
+                        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.18),
+                        onSelected: (val) {
+                          if (val) {
+                            setModalState(() {
+                              reminderFor = 'Me';
+                              selectedMemberId = null;
+                              selectedMemberName = null;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Family Member'),
+                        selected: reminderFor == 'Family Member',
+                        selectedColor: AppColors.primaryBlue.withValues(alpha: 0.18),
+                        onSelected: (val) {
+                          if (val) {
+                            setModalState(() {
+                              reminderFor = 'Family Member';
+                              if (familyList.isNotEmpty && selectedMemberId == null) {
+                                selectedMemberId = familyList.first.familyMemberId;
+                                selectedMemberName = familyList.first.memberName ?? 'Family Member';
+                              }
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (reminderFor == 'Family Member') ...[
+                    const SizedBox(height: 8),
+                    if (familyList.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                        ),
+                        child: const Text(
+                          'No linked family members found. Link a member in the Family tab first to create reminders for them.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber),
+                        ),
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedMemberId ?? familyList.first.familyMemberId,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: isDark ? const Color(0xFF1E293B) : AppColors.background,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        items: familyList.map((m) {
+                          return DropdownMenuItem(
+                            value: m.familyMemberId,
+                            child: Text(
+                              '${m.memberName ?? "Member"} (${m.relationship})',
+                              style: TextStyle(color: isDark ? Colors.white : AppColors.navy, fontSize: 13),
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            final match = familyList.firstWhere((m) => m.familyMemberId == val);
+                            setModalState(() {
+                              selectedMemberId = val;
+                              selectedMemberName = match.memberName ?? 'Family Member';
+                            });
+                          }
+                        },
+                      ),
+                  ],
+                  const SizedBox(height: 14),
 
                   // Medicine Name
                   Text(
@@ -1079,9 +1368,14 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                   selectedTime.minute,
                                 );
 
+                                final targetUid = (reminderFor == 'Family Member' && selectedMemberId != null)
+                                    ? selectedMemberId!
+                                    : effectiveUid;
+                                final isForFamily = targetUid != effectiveUid;
+
                                 final docRef = FirebaseFirestore.instance
                                     .collection('patients')
-                                    .doc(effectiveUid)
+                                    .doc(targetUid)
                                     .collection('medications')
                                     .doc();
 
@@ -1093,45 +1387,71 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                   isTaken: false,
                                   isSkipped: false,
                                   date: scheduledDateTime,
-                                  patientId: effectiveUid,
+                                  patientId: targetUid,
                                   frequency: selectedFrequency,
                                   notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
                                   startDate: scheduledDateTime,
                                   active: true,
                                 );
 
-                                dev.log('[FIRESTORE] Writing medication ${docRef.id} under patient $effectiveUid', name: 'PatientDashboard');
-                                await ref.read(medicationRepositoryProvider).addMedication(effectiveUid, med);
+                                dev.log('[FIRESTORE] Writing medication ${docRef.id} under target patient $targetUid (creator: $effectiveUid)', name: 'PatientDashboard');
+                                await ref.read(medicationRepositoryProvider).addMedication(targetUid, med);
 
-                                // Also persist to Reminder collection for unified schedule
+                                // Also persist to Reminder collection for unified schedule with target patientId & createdBy
                                 final reminder = Reminder(
                                   id: 'rem_${docRef.id}',
                                   title: '$name ($dosage)',
                                   description: notesController.text.trim().isNotEmpty
                                       ? notesController.text.trim()
                                       : 'Scheduled medication reminder • $selectedFrequency',
-                                  type: ReminderType.medicine,
+                                  type: ReminderType.medication,
                                   dateTime: scheduledDateTime,
                                   isCompleted: false,
-                                  patientId: effectiveUid,
-                                );
-                                await ref.read(reminderRepositoryProvider).addReminder(effectiveUid, reminder);
-
-                                // Trigger actual local notification via awesome_notifications
-                                await AwesomeNotificationService.scheduleMedicationReminder(
-                                  id: docRef.id.hashCode,
+                                  patientId: targetUid,
+                                  targetUid: targetUid,
+                                  createdBy: effectiveUid,
+                                  creatorUid: effectiveUid,
                                   medicineName: name,
                                   dosage: dosage,
-                                  scheduledTime: scheduledDateTime,
-                                  medicationId: docRef.id,
+                                  reminderTime: timeDisplay,
+                                  frequency: selectedFrequency,
+                                  targetPatientName: selectedMemberName,
                                 );
-                                dev.log('[MEDICATION] Successfully added medication $name and scheduled reminder', name: 'PatientDashboard');
+                                await ref.read(reminderRepositoryProvider).addReminder(targetUid, reminder);
+
+                                if (isForFamily) {
+                                  dev.log('''
+[FAMILY_REMINDER]
+creatorUid = $effectiveUid
+targetUid = $targetUid
+patientId = $targetUid
+reminderId = rem_${docRef.id}
+reminderTime = $timeDisplay
+'''.trim(), name: 'FamilyReminder');
+                                  dev.log('[FAMILY_TARGET] targetUid = $targetUid', name: 'FamilyReminder');
+                                }
+
+                                // Trigger actual local notification via awesome_notifications ONLY for personal reminders
+                                if (!isForFamily) {
+                                  await AwesomeNotificationService.scheduleMedicationReminder(
+                                    id: docRef.id.hashCode,
+                                    medicineName: name,
+                                    dosage: dosage,
+                                    scheduledTime: scheduledDateTime,
+                                    medicationId: docRef.id,
+                                  );
+                                } else {
+                                  dev.log('[FAMILY_REMINDER] Creator device skipping local notification. Target ($targetUid) will schedule on device receipt.', name: 'PatientDashboard');
+                                }
+                                dev.log('[MEDICATION] Successfully added medication $name for $targetUid', name: 'PatientDashboard');
 
                                 if (context.mounted) {
                                   Navigator.pop(context);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Medication reminder for $name scheduled for $timeDisplay.'),
+                                      content: Text(isForFamily
+                                          ? 'Medication reminder for $selectedMemberName ($name) scheduled for $timeDisplay.'
+                                          : 'Medication reminder for $name scheduled for $timeDisplay.'),
                                       backgroundColor: AppColors.success,
                                     ),
                                   );
@@ -1163,10 +1483,12 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                 ],
               ),
             ),
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    },
+  ),
+);
   }
 
   void _showEditMedicationSheet(BuildContext context, bool isDark, String? uid, MedicationModel med) {
@@ -1204,13 +1526,19 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           final dtFormat = DateFormat('h:mm a');
           final timeDisplay = dtFormat.format(DateTime(now.year, now.month, now.day, selectedTime.hour, selectedTime.minute));
 
-          return Container(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              top: 24,
-              left: 20,
-              right: 20,
-            ),
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 640,
+                maxHeight: MediaQuery.of(context).size.height * 0.88,
+              ),
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: AppLayoutInsets.bottomSafeInset(context) + 20,
+                  top: 24,
+                  left: 20,
+                  right: 20,
+                ),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF131C2E) : Colors.white,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1550,10 +1878,12 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                 ],
               ),
             ),
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    },
+  ),
+);
   }
 
   void _confirmDeleteMedication(BuildContext context, String? uid, MedicationModel med) {
@@ -1673,13 +2003,19 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 640,
+                maxHeight: MediaQuery.of(ctx).size.height * 0.88,
+              ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+                ),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1694,7 +2030,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppColors.navy),
                   ),
                   const SizedBox(height: 4),
-                  Text('Encrypted upload to Firebase Storage & automated Care Timeline ingestion.', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12)),
+                  Text('Direct in-memory AI clinical extraction (Zero file storage) & Care Timeline ingestion.', style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText, fontSize: 12)),
                   const SizedBox(height: 16),
 
                   // File Picker Attachment Button
@@ -1720,7 +2056,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                 });
                               }
                             } catch (e) {
-                              dev.log('[STORAGE] FilePicker error: $e', error: e, name: 'PatientDashboard');
+                              dev.log('[TRANSIENT] FilePicker error: $e', error: e, name: 'PatientDashboard');
                             }
                           },
                     child: Container(
@@ -1768,7 +2104,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                                 const SizedBox(height: 2),
                                 Text(
                                   attachedFileBytes != null
-                                      ? '${(attachedFileBytes!.length / 1024).toStringAsFixed(1)} KB • Ready for Firebase Storage'
+                                      ? '${(attachedFileBytes!.length / 1024).toStringAsFixed(1)} KB • Ready for in-memory AI extraction'
                                       : 'Tap to select document from device',
                                   style: TextStyle(
                                     color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
@@ -1879,7 +2215,7 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                   const SizedBox(height: 16),
 
                   PrimaryButton(
-                    label: isUploading ? 'Uploading to Firebase Storage...' : 'Save & Ingest Record',
+                    label: isUploading ? 'Extracting Clinical Insights...' : 'Extract & Save Insights',
                     icon: isUploading ? null : LucideIcons.check,
                     onPressed: isUploading
                         ? null
@@ -1918,18 +2254,18 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Record uploaded to Firebase Storage and added to Care Timeline!'),
+                                    content: Text('Clinical insights extracted and added to Care Timeline (Zero file storage)!'),
                                     backgroundColor: AppColors.success,
                                   ),
                                 );
                               }
                             } catch (e) {
-                              dev.log('[STORAGE] [FIRESTORE] Document upload failed: $e', error: e, name: 'PatientDashboard');
+                              dev.log('[TRANSIENT] [FIRESTORE] Document processing failed: $e', error: e, name: 'PatientDashboard');
                               setModalState(() => isUploading = false);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Upload failed: $e'),
+                                    content: Text('Extraction failed: $e'),
                                     backgroundColor: AppColors.danger,
                                   ),
                                 );
@@ -1940,10 +2276,12 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                 ],
               ),
             ),
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    },
+  ),
+);
   }
 
   void _showLogVitalsSheet(BuildContext context, bool isDark, String? uid) {
@@ -1958,13 +2296,19 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SingleChildScrollView(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-        ),
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 640,
+            maxHeight: MediaQuery.of(ctx).size.height * 0.88,
+          ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+            ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2041,7 +2385,9 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   void _showAddReminderSheet(BuildContext context, bool isDark, String? uid) {
@@ -2057,13 +2403,19 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          return SingleChildScrollView(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 640,
+                maxHeight: MediaQuery.of(ctx).size.height * 0.88,
+              ),
+              child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+                ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2136,7 +2488,9 @@ class _PatientDashboardScreenState extends ConsumerState<PatientDashboardScreen>
                 ),
               ],
             ),
-          );
+          ),
+        ),
+      );
         },
       ),
     );

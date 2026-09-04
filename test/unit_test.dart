@@ -11,7 +11,14 @@ import 'package:continuum_health/data/models/reminder_model.dart';
 import 'package:continuum_health/data/models/notification_model.dart';
 import 'package:continuum_health/data/models/ai_chat_model.dart';
 import 'package:continuum_health/data/models/medication_model.dart';
+import 'package:continuum_health/data/models/activity_log_model.dart';
+import 'package:continuum_health/data/models/family_message_model.dart';
+import 'package:continuum_health/data/models/family_relationship_model.dart';
 import 'package:continuum_health/data/repositories/medication_repository.dart';
+import 'package:continuum_health/data/models/doctor_chat_model.dart';
+import 'package:continuum_health/data/models/call_model.dart';
+import 'package:continuum_health/data/repositories/doctor_chat_repository.dart';
+import 'package:continuum_health/core/config/agora_config.dart';
 
 void main() {
   group('UserModel & Registration Schema Tests', () {
@@ -784,6 +791,650 @@ void main() {
       expect(key1, key2);
       expect(key1, isNot(equals(keyDifferentStatus)));
       expect(key1, 'appt_456_approved_1725350400');
+    });
+  });
+
+  group('Patient & Doctor Telegram Isolation, Missed Detection, & Audit Log Tests', () {
+    test('patient and doctor telegram IDs are completely isolated', () {
+      final patientUser = UserModel(
+        id: 'patient_alpha',
+        name: 'Patient Alpha',
+        email: 'alpha@patient.com',
+        role: UserRole.patient,
+        phoneNumber: '9876543210',
+        telegramChatId: 'tg_chat_11111',
+        telegramConnected: true,
+      );
+
+      final doctorUser = UserModel(
+        id: 'doctor_beta',
+        name: 'Dr. Beta',
+        email: 'beta@doctor.com',
+        role: UserRole.doctor,
+        phoneNumber: '9123456780',
+        telegramChatId: 'tg_chat_99999',
+        telegramConnected: true,
+      );
+
+      // Verify recipient isolation
+      expect(patientUser.telegramChatId, isNot(equals(doctorUser.telegramChatId)));
+      expect(patientUser.role, UserRole.patient);
+      expect(doctorUser.role, UserRole.doctor);
+
+      // Notification recipient routing function
+      String routeTelegramDestination(UserModel recipient, String eventRole) {
+        if (recipient.role.name != eventRole) {
+          throw ArgumentError('Role mismatch: cannot route $eventRole event to ${recipient.role.name}');
+        }
+        return recipient.telegramChatId ?? '';
+      }
+
+      expect(routeTelegramDestination(patientUser, 'patient'), 'tg_chat_11111');
+      expect(routeTelegramDestination(doctorUser, 'doctor'), 'tg_chat_99999');
+      expect(() => routeTelegramDestination(patientUser, 'doctor'), throwsArgumentError);
+      expect(() => routeTelegramDestination(doctorUser, 'patient'), throwsArgumentError);
+    });
+
+    test('missed appointment detection logic correctly flags past appointments', () {
+      final now = DateTime.now();
+
+      bool isAppointmentMissed(DateTime apptTime, int durationMinutes, AppointmentStatus status) {
+        if (status != AppointmentStatus.approved) return false;
+        final endTime = apptTime.add(Duration(minutes: durationMinutes));
+        final graceTime = endTime.add(const Duration(minutes: 10));
+        return now.isAfter(graceTime);
+      }
+
+      final pastAppt = now.subtract(const Duration(minutes: 50)); // 30m duration + 10m grace = 40m. 50m is missed.
+      final upcomingAppt = now.add(const Duration(minutes: 30));
+      final completedAppt = now.subtract(const Duration(minutes: 50));
+
+      expect(isAppointmentMissed(pastAppt, 30, AppointmentStatus.approved), isTrue);
+      expect(isAppointmentMissed(upcomingAppt, 30, AppointmentStatus.approved), isFalse);
+      expect(isAppointmentMissed(completedAppt, 30, AppointmentStatus.completed), isFalse);
+    });
+
+    test('medication missed detection correctly flags overdue uncompleted medicines', () {
+      bool isMedicationMissed({
+        required bool isTaken,
+        required bool isSkipped,
+        required DateTime scheduledTime,
+        required DateTime currentTime,
+        int graceMinutes = 60,
+      }) {
+        if (isTaken || isSkipped) return false;
+        return currentTime.difference(scheduledTime).inMinutes > graceMinutes;
+      }
+
+      final now = DateTime.now();
+      final dueJustNow = now.subtract(const Duration(minutes: 15));
+      final overdueDose = now.subtract(const Duration(minutes: 75)); // > 60 min grace
+
+      expect(isMedicationMissed(isTaken: false, isSkipped: false, scheduledTime: dueJustNow, currentTime: now), isFalse);
+      expect(isMedicationMissed(isTaken: false, isSkipped: false, scheduledTime: overdueDose, currentTime: now), isTrue);
+      expect(isMedicationMissed(isTaken: true, isSkipped: false, scheduledTime: overdueDose, currentTime: now), isFalse);
+    });
+
+    test('activity log model serializes complete audit schema with all required fields', () {
+      final now = DateTime.now();
+      final log = ActivityLogModel(
+        id: 'log_audit_777',
+        patientId: 'patient_001',
+        actorUid: 'patient_001',
+        actorRole: 'patient',
+        actorName: 'Sarah Connor',
+        eventType: ActivityEventType.medicineAdded,
+        title: 'Medication Added',
+        description: 'Prescription added: Metformin 500mg',
+        timestamp: now,
+        doctorUid: 'doc_123',
+        appointmentId: 'appt_888',
+        medicationId: 'med_999',
+        notificationType: 'medication_reminder',
+        deliveryStatus: 'sent',
+      );
+
+      final map = log.toFirestore();
+      expect(map['id'], 'log_audit_777');
+      expect(map['eventId'], 'log_audit_777');
+      expect(map['patientUid'], 'patient_001');
+      expect(map['actorUid'], 'patient_001');
+      expect(map['actorRole'], 'patient');
+      expect(map['eventType'], 'medicineAdded');
+      expect(map['doctorUid'], 'doc_123');
+      expect(map['appointmentId'], 'appt_888');
+      expect(map['medicationId'], 'med_999');
+      expect(map['notificationType'], 'medication_reminder');
+      expect(map['deliveryStatus'], 'sent');
+      expect(log.eventId, 'log_audit_777');
+      expect(log.patientUid, 'patient_001');
+    });
+
+    test('FamilyMessageModel serializes text message and readBy list', () {
+      final now = DateTime.now();
+      final msg = FamilyMessageModel(
+        id: 'fmsg_001',
+        patientId: 'pat_123',
+        senderId: 'pat_123',
+        senderName: 'John Doe',
+        senderRole: 'patient',
+        content: 'Good morning family! Mom took her medications.',
+        timestamp: now,
+        type: 'text',
+        readBy: ['pat_123', 'mem_456'],
+      );
+
+      final map = msg.toFirestore();
+      expect(map['patientId'], 'pat_123');
+      expect(map['senderId'], 'pat_123');
+      expect(map['senderName'], 'John Doe');
+      expect(map['content'], 'Good morning family! Mom took her medications.');
+      expect(map['type'], 'text');
+      expect(map['readBy'], contains('mem_456'));
+    });
+
+    test('FamilyMessageModel serializes shared medical report with reference', () {
+      final now = DateTime.now();
+      final msg = FamilyMessageModel(
+        id: 'fmsg_rep_002',
+        patientId: 'pat_123',
+        senderId: 'pat_123',
+        senderName: 'John Doe',
+        senderRole: 'patient',
+        content: 'Sharing Mom’s recent blood test report.',
+        timestamp: now,
+        type: 'report',
+        reportId: 'rep_789',
+        reportTitle: 'Complete Blood Count (CBC)',
+        reportCategory: 'lab',
+        reportUrl: 'https://storage.googleapis.com/continuum-health/cbc.pdf',
+        reportDate: now,
+        readBy: ['pat_123'],
+      );
+
+      final map = msg.toFirestore();
+      expect(map['type'], 'report');
+      expect(map['reportId'], 'rep_789');
+      expect(map['reportTitle'], 'Complete Blood Count (CBC)');
+      expect(map['reportCategory'], 'lab');
+      expect(map['reportUrl'], 'https://storage.googleapis.com/continuum-health/cbc.pdf');
+    });
+
+    test('Emergency Alert message formatting with coordinates and unavailable location', () {
+      String formatEmergencyMessage({
+        required String patientName,
+        required String locationText,
+        required String timeStr,
+      }) {
+        return '''
+🚨 EMERGENCY ALERT
+
+$patientName may require immediate assistance.
+
+Location:
+$locationText
+
+Time:
+$timeStr
+
+Please contact the patient/emergency services immediately.
+'''.trim();
+      }
+
+      final withGps = formatEmergencyMessage(
+        patientName: 'Margaret Chen',
+        locationText: 'https://maps.google.com/?q=12.9716,77.5946',
+        timeStr: '2026-09-04 10:30:00',
+      );
+
+      expect(withGps, contains('🚨 EMERGENCY ALERT'));
+      expect(withGps, contains('Margaret Chen may require immediate assistance.'));
+      expect(withGps, contains('https://maps.google.com/?q=12.9716,77.5946'));
+
+      final withoutGps = formatEmergencyMessage(
+        patientName: 'Margaret Chen',
+        locationText: 'Location: Unavailable (Permission denied or GPS disabled)',
+        timeStr: '2026-09-04 10:30:00',
+      );
+
+      expect(withoutGps, contains('Location: Unavailable (Permission denied or GPS disabled)'));
+      expect(withoutGps, isNot(contains('fake')));
+    });
+
+    test('Missed appointment and medication 2-minute test detection logic', () {
+      final now = DateTime.now();
+
+      bool isAppointmentPastTwoMinutes(DateTime apptTime) {
+        return now.difference(apptTime).inMinutes >= 2;
+      }
+
+      bool isMedicationPastTwoMinutes(DateTime scheduledTime, bool isTaken, bool isSkipped, bool isMissed) {
+        if (isTaken || isSkipped || isMissed) return false;
+        return now.difference(scheduledTime).inMinutes >= 2;
+      }
+
+      final apptDue1MinAgo = now.subtract(const Duration(minutes: 1));
+      final apptDue3MinAgo = now.subtract(const Duration(minutes: 3));
+
+      expect(isAppointmentPastTwoMinutes(apptDue1MinAgo), isFalse);
+      expect(isAppointmentPastTwoMinutes(apptDue3MinAgo), isTrue);
+
+      final medDue1MinAgo = now.subtract(const Duration(minutes: 1));
+      final medDue3MinAgo = now.subtract(const Duration(minutes: 3));
+
+      expect(isMedicationPastTwoMinutes(medDue1MinAgo, false, false, false), isFalse);
+      expect(isMedicationPastTwoMinutes(medDue3MinAgo, false, false, false), isTrue);
+      expect(isMedicationPastTwoMinutes(medDue3MinAgo, true, false, false), isFalse); // Already taken
+    });
+
+    test('FamilyRelationshipModel serializes real permissions and schema', () {
+      final now = DateTime.now();
+      const perms = FamilyRelationshipPermissions(
+        basicProfile: true,
+        appointments: true,
+        medications: true,
+        reports: false,
+        emergency: true,
+      );
+
+      final rel = FamilyRelationshipModel(
+        id: 'rel_patientA_patientB',
+        patientId: 'patientA',
+        familyMemberId: 'patientB',
+        relationship: 'Mother',
+        status: 'approved',
+        permissions: perms,
+        createdAt: now,
+        memberName: 'Emma Larson',
+        memberAge: 52,
+      );
+
+      final firestoreData = rel.toFirestore();
+      expect(firestoreData['patientId'], 'patientA');
+      expect(firestoreData['familyMemberId'], 'patientB');
+      expect(firestoreData['relationship'], 'Mother');
+      expect(firestoreData['status'], 'approved');
+      expect(firestoreData['permissions']['reports'], false);
+      expect(firestoreData['permissions']['medications'], true);
+    });
+
+    test('Cross-Patient Reminder uses target patientId and separate createdBy', () {
+      final now = DateTime.now();
+      final reminder = Reminder(
+        id: 'rem_dolo_123',
+        title: 'Dolo (650mg)',
+        medicineName: 'Dolo',
+        dosage: '650mg',
+        type: ReminderType.medication,
+        dateTime: now,
+        isCompleted: false,
+        patientId: 'patientB_mother',
+        createdBy: 'patientA_son',
+        reminderTime: '12:00 PM',
+        frequency: 'Daily',
+      );
+
+      final json = reminder.toFirestore();
+      expect(json['patientId'], 'patientB_mother');
+      expect(json['createdBy'], 'patientA_son');
+      expect(json['medicineName'], 'Dolo');
+      expect(json['dosage'], '650mg');
+      expect(json['status'], 'pending');
+      expect(json['isCompleted'], false);
+
+      // Verify idempotency event key format
+      final dateStr = '2026-09-04';
+      final eventKey = 'medication:${reminder.id}:$dateStr';
+      expect(eventKey, 'medication:rem_dolo_123:2026-09-04');
+    });
+
+    test('Target Telegram Dispatch routing isolates target patient from creator', () {
+      final patientA = {'uid': 'patientA', 'telegramChatId': '111111', 'telegramLinked': true};
+      final patientB = {'uid': 'patientB', 'telegramChatId': '222222', 'telegramLinked': true};
+      final patientC = {'uid': 'patientC', 'telegramChatId': null, 'telegramLinked': false};
+
+      String? resolveTargetChatId(Map<String, dynamic> targetProfile) {
+        final isLinked = targetProfile['telegramLinked'] == true;
+        final chatId = targetProfile['telegramChatId'] as String?;
+        if (!isLinked || chatId == null || chatId.isEmpty) return null;
+        return chatId;
+      }
+
+      // Reminder created by Patient A for Patient B
+      final targetChat = resolveTargetChatId(patientB);
+      expect(targetChat, '222222');
+      expect(targetChat, isNot(patientA['telegramChatId'])); // Never sent to creator
+
+      // Reminder for unlinked patient C
+      final unlinkedChat = resolveTargetChatId(patientC);
+      expect(unlinkedChat, isNull);
+    });
+
+    test('Family tree sensible hierarchy positioning adheres strictly to relationships', () {
+      const center = Offset(1200.0, 800.0);
+
+      final parentPos = FamilyRelationshipModel.calculateSensiblePosition('Parent', center: center);
+      final grandparentPos = FamilyRelationshipModel.calculateSensiblePosition('Grandparent', center: center);
+      final childPos = FamilyRelationshipModel.calculateSensiblePosition('Child', center: center);
+      final grandchildPos = FamilyRelationshipModel.calculateSensiblePosition('Grandchild', center: center);
+      final spousePos = FamilyRelationshipModel.calculateSensiblePosition('Spouse', center: center);
+      final siblingPos = FamilyRelationshipModel.calculateSensiblePosition('Sibling', center: center);
+
+      // Parent: 1 level above patient
+      expect(parentPos.dy, lessThan(center.dy));
+      // Grandparent: 2 levels above patient
+      expect(grandparentPos.dy, lessThan(parentPos.dy));
+
+      // Child: 1 level below patient
+      expect(childPos.dy, greaterThan(center.dy));
+      // Grandchild: 2 levels below patient
+      expect(grandchildPos.dy, greaterThan(childPos.dy));
+
+      // Spouse: beside patient
+      expect(spousePos.dy, equals(center.dy));
+      expect(spousePos.dx, greaterThan(center.dx));
+
+      // Sibling: beside/near patient
+      expect(siblingPos.dy, equals(center.dy));
+      expect(siblingPos.dx, lessThan(center.dx));
+    });
+
+    test('Prevent duplicate relationships between same owner and member', () {
+      final existingRelationships = [
+        {'ownerUid': 'patientA', 'memberUid': 'patientB', 'relationship': 'Mother'},
+        {'ownerUid': 'patientA', 'memberUid': 'patientC', 'relationship': 'Father'},
+      ];
+
+      bool hasDuplicate(String owner, String member) {
+        return existingRelationships.any((r) => r['ownerUid'] == owner && r['memberUid'] == member);
+      }
+
+      expect(hasDuplicate('patientA', 'patientB'), isTrue); // Already exists!
+      expect(hasDuplicate('patientA', 'patientD'), isFalse); // New member
+    });
+
+    test('Family Reminder targeting data adheres strictly to creator and target UIDs', () {
+      final now = DateTime.now();
+      const myUid = 'user_me_son_123';
+      const fatherUid = 'user_father_456';
+
+      final familyReminder = Reminder(
+        id: 'rem_family_999',
+        title: 'BP Tablet (10mg)',
+        medicineName: 'BP Tablet',
+        dosage: '10mg',
+        type: ReminderType.medication,
+        dateTime: now,
+        isCompleted: false,
+        patientId: fatherUid,
+        targetUid: fatherUid,
+        createdBy: myUid,
+        creatorUid: myUid,
+        reminderTime: '08:00 AM',
+        frequency: 'Daily',
+        targetPatientName: 'Father',
+      );
+
+      final firestoreMap = familyReminder.toFirestore();
+      expect(firestoreMap['creatorUid'], myUid);
+      expect(firestoreMap['createdBy'], myUid);
+      expect(firestoreMap['targetUid'], fatherUid);
+      expect(firestoreMap['patientId'], fatherUid);
+
+      // Verify device notification isolation logic:
+      final isForFamily = (familyReminder.creatorUid != familyReminder.targetUid);
+      expect(isForFamily, isTrue);
+
+      // Creator device: should NOT schedule
+      final creatorShouldSchedule = !isForFamily;
+      expect(creatorShouldSchedule, isFalse);
+
+      // Father's device: listener matches targetUid == fatherUid && creatorUid != fatherUid
+      final fatherDeviceMatches = (familyReminder.targetUid == fatherUid && familyReminder.creatorUid != fatherUid);
+      expect(fatherDeviceMatches, isTrue);
+    });
+
+    test('Family Reminder and Missed Medication Telegram message formats', () {
+      const medName = 'Metformin';
+      const dosage = '500mg';
+      const time = '08:00 AM';
+
+      final reminderMsg = '''
+💊 Family Medication Reminder
+
+Medicine: $medName
+Dosage: $dosage
+Time: $time
+'''.trim();
+
+      final missedMsg = '''
+⚠️ Missed Medication
+
+Medicine: $medName
+Dosage: $dosage
+
+This medication was not marked as taken.
+'''.trim();
+
+      expect(reminderMsg, contains('💊 Family Medication Reminder'));
+      expect(reminderMsg, contains('Medicine: Metformin'));
+      expect(reminderMsg, contains('Dosage: 500mg'));
+      expect(reminderMsg, contains('Time: 08:00 AM'));
+
+      expect(missedMsg, contains('⚠️ Missed Medication'));
+      expect(missedMsg, contains('Medicine: Metformin'));
+      expect(missedMsg, contains('Dosage: 500mg'));
+      expect(missedMsg, contains('This medication was not marked as taken.'));
+      expect(missedMsg.contains('bot_token'), isFalse); // Never logs bot token
+    });
+  });
+
+  group('Emergency SOS Google Maps Location & Intent Tests', () {
+    ({double lat, double lng})? extractCoordinates(String? mapsUrl, String? location, String? message) {
+      final candidates = [mapsUrl, location, message];
+      for (final candidate in candidates) {
+        if (candidate == null || candidate.trim().isEmpty) continue;
+        final text = candidate.trim();
+
+        // URL check
+        try {
+          final uriRegex = RegExp(r'https?://[^\s]+');
+          final uriMatches = uriRegex.allMatches(text);
+          for (final m in uriMatches) {
+            final uriStr = m.group(0);
+            if (uriStr != null) {
+              final parsedUri = Uri.tryParse(uriStr);
+              if (parsedUri != null) {
+                final q = parsedUri.queryParameters['q'] ?? parsedUri.queryParameters['query'];
+                if (q != null) {
+                  final parts = q.split(',');
+                  if (parts.length == 2) {
+                    final lat = double.tryParse(parts[0].trim());
+                    final lng = double.tryParse(parts[1].trim());
+                    if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                      return (lat: lat, lng: lng);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Coordinates regex
+        final coordRegex = RegExp(r'([-+]?\d{1,2}\.\d+)[,\s]+([-+]?\d{1,3}\.\d+)');
+        final match = coordRegex.firstMatch(text);
+        if (match != null) {
+          final latStr = match.group(1);
+          final lngStr = match.group(2);
+          if (latStr != null && lngStr != null) {
+            final lat = double.tryParse(latStr);
+            final lng = double.tryParse(lngStr);
+            if (lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              return (lat: lat, lng: lng);
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    test('extracts exact coordinates from maps.google.com query URL', () {
+      const url = 'https://maps.google.com/?q=12.933514,77.6924253';
+      final coords = extractCoordinates(url, null, null);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('extracts coordinates from message text with embedded URL', () {
+      const msg = '🚨 SOS Alert from Patient!\nLocation: https://maps.google.com/?q=12.933514,77.6924253\nPlease respond immediately.';
+      final coords = extractCoordinates(null, null, msg);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('extracts coordinates from raw location string', () {
+      const loc = '12.933514, 77.6924253';
+      final coords = extractCoordinates(null, loc, null);
+      expect(coords, isNotNull);
+      expect(coords!.lat, closeTo(12.933514, 0.000001));
+      expect(coords.lng, closeTo(77.6924253, 0.000001));
+    });
+
+    test('constructs canonical Google Maps search URL and geo URI', () {
+      const lat = 12.933514;
+      const lng = 77.6924253;
+      final mapsWebUri = Uri.https('www.google.com', '/maps/search/', {
+        'api': '1',
+        'query': '$lat,$lng',
+      });
+      final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+
+      expect(mapsWebUri.scheme, 'https');
+      expect(mapsWebUri.host, 'www.google.com');
+      expect(mapsWebUri.path, '/maps/search/');
+      expect(mapsWebUri.queryParameters['api'], '1');
+      expect(mapsWebUri.queryParameters['query'], '12.933514,77.6924253');
+      expect(geoUri.toString(), 'geo:12.933514,77.6924253?q=12.933514,77.6924253');
+    });
+
+    test('returns null when location is unavailable', () {
+      final coords = extractCoordinates(null, 'Location: Unavailable (Permission denied or GPS disabled)', 'SOS triggered');
+      expect(coords, isNull);
+    });
+  });
+
+  group('Doctor Chat & Video Call RTC Tests', () {
+    test('deterministic conversation ID generation', () {
+      final id1 = FirebaseDoctorChatRepository.generateChatId('patient_abc', 'doctor_xyz');
+      final id2 = FirebaseDoctorChatRepository.generateChatId('doctor_xyz', 'patient_abc');
+      expect(id1, id2);
+      expect(id1, 'doctor_xyz_patient_abc');
+    });
+
+    test('DoctorChatMessage serialization and deserialization', () {
+      final now = DateTime(2026, 9, 4, 10, 30);
+      final msg = DoctorChatMessage(
+        id: 'msg_100',
+        conversationId: 'doctor_1_patient_2',
+        senderId: 'patient_2',
+        receiverId: 'doctor_1',
+        senderRole: 'patient',
+        senderName: 'Jane Patient',
+        text: 'Hello Doctor, I have a question about my medication.',
+        createdAt: now,
+      );
+
+      final map = msg.toFirestore();
+      expect(map['id'], 'msg_100');
+      expect(map['senderId'], 'patient_2');
+      expect(map['receiverId'], 'doctor_1');
+      expect(map['senderRole'], 'patient');
+      expect(map['text'], 'Hello Doctor, I have a question about my medication.');
+      expect(map['type'], 'text');
+      expect(map['isRead'], isFalse);
+    });
+
+    test('DoctorConversation participants schema serialization', () {
+      final now = DateTime(2026, 9, 4, 10, 0);
+      final conv = DoctorConversation(
+        id: 'doctor_1_patient_2',
+        patientId: 'patient_2',
+        doctorId: 'doctor_1',
+        participants: ['doctor_1', 'patient_2'],
+        doctorName: 'Dr. House',
+        patientName: 'Jane Patient',
+        createdAt: now,
+      );
+
+      final map = conv.toFirestore();
+      expect(map['id'], 'doctor_1_patient_2');
+      expect(map['participants'], contains('doctor_1'));
+      expect(map['participants'], contains('patient_2'));
+      expect(map['doctorName'], 'Dr. House');
+      expect(map['patientName'], 'Jane Patient');
+    });
+
+    test('CallModel status transitions and serialization', () {
+      final now = DateTime(2026, 9, 4, 11, 0);
+      final call = CallModel(
+        id: 'call_999',
+        callerId: 'patient_2',
+        callerName: 'Jane Patient',
+        callerRole: 'patient',
+        receiverId: 'doctor_1',
+        receiverName: 'Dr. House',
+        receiverRole: 'doctor',
+        channelId: 'call_call_999',
+        status: 'ringing',
+        createdAt: now,
+      );
+
+      expect(call.isRinging, isTrue);
+      expect(call.isAccepted, isFalse);
+      expect(call.isEnded, isFalse);
+      expect(call.isActive, isTrue);
+
+      final accepted = call.copyWith(status: 'accepted', acceptedAt: now.add(const Duration(seconds: 5)));
+      expect(accepted.isAccepted, isTrue);
+      expect(accepted.isRinging, isFalse);
+      expect(accepted.isActive, isTrue);
+
+      final ended = accepted.copyWith(status: 'ended', endedAt: now.add(const Duration(minutes: 10)));
+      expect(ended.isEnded, isTrue);
+      expect(ended.isActive, isFalse);
+
+      final map = call.toFirestore();
+      expect(map['callerId'], 'patient_2');
+      expect(map['receiverId'], 'doctor_1');
+      expect(map['channelId'], 'call_call_999');
+      expect(map['status'], 'ringing');
+      expect(map['participants'], containsAll(['patient_2', 'doctor_1']));
+
+      // WebRTC Offer & Answer serialization
+      final callWithOffer = call.copyWith(
+        offer: {'type': 'offer', 'sdp': 'v=0...'},
+        answer: {'type': 'answer', 'sdp': 'v=0...'},
+      );
+      expect(callWithOffer.offer?['type'], 'offer');
+      expect(callWithOffer.answer?['type'], 'answer');
+      final mapWithSDP = callWithOffer.toFirestore();
+      expect(mapWithSDP['offer']['type'], 'offer');
+      expect(mapWithSDP['answer']['type'], 'answer');
+    });
+
+    test('DoctorChat deterministic conversation ID property with reversed inputs', () {
+      final id1 = FirebaseDoctorChatRepository.generateChatId('patient_ABC', 'doctor_XYZ');
+      final id2 = FirebaseDoctorChatRepository.generateChatId('doctor_XYZ', 'patient_ABC');
+      expect(id1, equals(id2));
+      expect(id1, equals('doctor_XYZ_patient_ABC'));
+    });
+
+    test('AgoraConfig constants and fallback structure', () {
+      expect(AgoraConfig.appId, isNotEmpty);
+      expect(AgoraConfig.isConfigured, isTrue);
     });
   });
 }

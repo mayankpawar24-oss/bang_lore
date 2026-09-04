@@ -1,13 +1,10 @@
 import 'dart:developer' as dev;
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/report_model.dart';
 import '../models/reminder_model.dart';
 import '../models/medical_history_model.dart';
 import '../models/activity_log_model.dart';
-import '../services/proton_drive_service.dart';
 import '../services/ocr_service.dart';
 import '../services/activity_log_service.dart';
 
@@ -26,20 +23,14 @@ abstract class ReportRepository {
 
 class FirebaseReportRepository implements ReportRepository {
   final FirebaseFirestore _db;
-  final FirebaseStorage _storage;
-  final ProtonDriveService _protonService;
   final OcrService _ocrService;
   final ActivityLogService _activityLogService;
 
   FirebaseReportRepository({
     FirebaseFirestore? db,
-    FirebaseStorage? storage,
-    ProtonDriveService? protonService,
     OcrService? ocrService,
     ActivityLogService? activityLogService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _storage = storage ?? FirebaseStorage.instance,
-        _protonService = protonService ?? ProtonDriveService(),
         _ocrService = ocrService ?? OcrService(),
         _activityLogService = activityLogService ?? ActivityLogService();
 
@@ -92,77 +83,46 @@ class FirebaseReportRepository implements ReportRepository {
     final docId = report.id.isNotEmpty ? report.id : _medicalDocuments(report.patientId).doc().id;
     dev.log('[STORAGE] [REPORT] Ingesting document $docId for patient ${report.patientId} by $currentUid ($resolvedUploaderRole)', name: 'ReportRepository');
 
-    String? storagePath;
-    String? downloadUrl;
     final resolvedFileName = fileName ?? '${report.title.replaceAll(RegExp(r"[^a-zA-Z0-9_\-\.]"), "_")}.pdf';
     final resolvedFileType = fileType ?? 'application/pdf';
 
     try {
-      // 1. Upload to Firebase Storage if fileBytes provided
-      if (fileBytes != null && fileBytes.isNotEmpty) {
-        storagePath = 'patients/${report.patientId}/medicalDocuments/$docId/$resolvedFileName';
-        dev.log('[STORAGE] Uploading bytes to $storagePath (${fileBytes.length} bytes)', name: 'ReportRepository');
-        
-        final storageRef = _storage.ref(storagePath);
-        final metadata = SettableMetadata(
-          contentType: resolvedFileType,
-          customMetadata: {
-            'documentId': docId,
-            'patientId': report.patientId,
-            'uploaderId': currentUid,
-            'uploaderRole': resolvedUploaderRole,
-            'category': report.category.name,
-          },
-        );
+      // 1. Direct in-memory processing: Zero storage upload (Firebase Storage & Proton Drive avoided)
+      dev.log('[TRANSIENT_UPLOAD] Bypassing cloud file storage. Processing document transiently in memory for patient ${report.patientId}', name: 'ReportRepository');
 
-        final uploadTask = await storageRef.putData(Uint8List.fromList(fileBytes), metadata);
-        downloadUrl = await uploadTask.ref.getDownloadURL();
-        dev.log('[STORAGE] File uploaded successfully. Download URL obtained: $downloadUrl', name: 'ReportRepository');
-      }
-
-      // 2. Ingest into Proton Drive integration
-      String? protonRef;
-      if (fileBytes != null && fileBytes.isNotEmpty) {
-        try {
-          final protonRes = await _protonService.uploadDocument(
-            patientId: report.patientId,
-            documentId: docId,
-            fileName: resolvedFileName,
-            fileBytes: fileBytes,
-            mimeType: resolvedFileType,
-          );
-          protonRef = protonRes.protonReference;
-          dev.log('[PROTON] Ingestion completed: $protonRef', name: 'ReportRepository');
-        } catch (e) {
-          dev.log('[PROTON] Integration note: $e', name: 'ReportRepository');
-        }
-      }
-
-      // 3. Run OCR extraction
+      // 2. Stream document bytes directly to FastAPI Clinical Document Intelligence
       Map<String, dynamic>? ocrData = report.extractedData;
       bool ocrDone = report.ocrCompleted;
+      String? extractedSummary = report.summary;
       try {
         final ocrResult = await _ocrService.processDocument(
           fileName: resolvedFileName,
           fileBytes: fileBytes ?? [],
-          rawText: report.rawContent,
+          rawText: null, // Zero raw document text persisted
+          patientId: report.patientId,
+          documentId: docId,
+          mimeType: resolvedFileType,
         );
         ocrData = ocrResult.toMap();
         ocrDone = true;
-        dev.log('[OCR] Extracted data for $docId: ${ocrResult.diagnosis.join(", ")}', name: 'ReportRepository');
+        extractedSummary = ocrResult.extractedRawText.isNotEmpty ? ocrResult.extractedRawText : report.summary;
+        dev.log('[OCR] Extracted structured insights for $docId: ${ocrResult.diagnosis.join(", ")} | Meds: ${ocrResult.medicines.join(", ")}', name: 'ReportRepository');
       } catch (e) {
         dev.log('[OCR] Processing note: $e', name: 'ReportRepository');
       }
 
+      // 3. Assemble report model containing ONLY structured insights and session metadata (No file binaries or storage URLs)
       final reportModelWithMeta = report.copyWith(
         id: docId,
         documentId: docId,
         fileName: resolvedFileName,
         fileType: resolvedFileType,
-        storagePath: storagePath,
-        storageReference: storagePath,
-        protonDriveReference: protonRef,
-        downloadUrl: downloadUrl,
+        storagePath: null, // Invariant: Original document binary is never saved to Firebase Storage
+        storageReference: null,
+        protonDriveReference: null,
+        downloadUrl: null, // Invariant: No external download URL
+        rawContent: null, // Invariant: No raw document bytes stored in Firestore
+        summary: extractedSummary,
         uploadedBy: currentUid,
         uploaderId: currentUid,
         uploaderRole: resolvedUploaderRole,
@@ -222,8 +182,8 @@ class FirebaseReportRepository implements ReportRepository {
         'recipientUid': report.patientId,
         'senderUid': currentUid,
         'recipientRole': 'patient',
-        'title': 'Health Record Uploaded',
-        'message': 'Your "${report.title}" has been safely encrypted and synced to your health timeline.',
+        'title': 'Clinical Insights Extracted',
+        'message': 'Structured insights from "${report.title}" have been extracted and added to your care timeline.',
         'type': 'general',
         'isRead': false,
         'timestamp': FieldValue.serverTimestamp(),
@@ -231,14 +191,14 @@ class FirebaseReportRepository implements ReportRepository {
       });
 
       await batch.commit();
-      dev.log('[FIRESTORE] Document metadata persisted successfully to patients/${report.patientId}/medicalDocuments/$docId', name: 'ReportRepository');
+      dev.log('[FIRESTORE] Structured insights persisted successfully to patients/${report.patientId}/medicalDocuments/$docId', name: 'ReportRepository');
 
       // 9. Real Activity Logs
       await _activityLogService.logEvent(
         patientId: report.patientId,
         eventType: ActivityEventType.documentUploaded,
-        title: 'Document Uploaded: ${report.title}',
-        description: 'Uploaded by $resolvedUploaderRole ($resolvedFileName). Stored in Proton & Firebase.',
+        title: 'Clinical Insights Ingested: ${report.title}',
+        description: 'Processed transiently via Clinical Document Intelligence by $resolvedUploaderRole. Structured insights saved (Zero file storage).',
         actorUid: currentUid,
         actorRole: resolvedUploaderRole,
         metadata: {'documentId': docId, 'fileName': resolvedFileName},

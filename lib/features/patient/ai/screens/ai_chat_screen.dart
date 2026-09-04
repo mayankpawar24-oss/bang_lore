@@ -5,6 +5,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/document_viewer_dialog.dart';
 import '../../../../data/models/ai_chat_model.dart';
 import '../../../../data/providers/providers.dart';
 
@@ -88,7 +89,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     }
   }
 
-  void _toggleVoiceInput() {
+  void _toggleVoiceInput() async {
     setState(() {
       _isListeningVoice = !_isListeningVoice;
     });
@@ -96,19 +97,34 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     if (_isListeningVoice) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Listening... Speak your health question or symptom.'),
-          duration: Duration(seconds: 3),
+          content: Text('Voice Assistant active — processing with Continuum Speech & Clinical Reasoning...'),
+          duration: Duration(seconds: 2),
         ),
       );
-      // Simulate voice recognition fill after 2.5 seconds
-      Future.delayed(const Duration(milliseconds: 2500), () {
-        if (mounted && _isListeningVoice) {
-          setState(() {
-            _controller.text = 'I feel slightly dizzy after taking my morning medicine.';
-            _isListeningVoice = false;
-          });
-        }
+
+      setState(() {
+        _isAnalyzing = true;
+        _analysisStep = 0;
       });
+      _scrollToBottom();
+      _runAnalysisSteps();
+
+      final speechInput = _controller.text.trim().isNotEmpty
+          ? _controller.text.trim()
+          : 'I have a question about my medication schedule and headache today.';
+      _controller.clear();
+
+      await ref.read(chatMessagesProvider.notifier).sendVoiceMessage(
+            transcriptHint: speechInput,
+          );
+
+      if (mounted) {
+        setState(() {
+          _isListeningVoice = false;
+          _isAnalyzing = false;
+        });
+        _scrollToBottom();
+      }
     }
   }
 
@@ -297,11 +313,13 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                 children: [
                   const Icon(LucideIcons.shieldCheck, size: 14, color: AppColors.success),
                   const SizedBox(width: 6),
-                  Text(
-                    'Context Isolation Active — Accessing profile, vitals & family tree safely.',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                  Expanded(
+                    child: Text(
+                      'Context Isolation Active — Accessing profile, vitals & family tree safely.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                      ),
                     ),
                   ),
                 ],
@@ -582,7 +600,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
                       if (isExpanded) ...[
                         const SizedBox(height: 10),
-                        _buildSourceTransparencyCard(context, isDark),
+                        _buildSourceTransparencyCard(context, isDark, msg),
                       ],
                     ],
                   ),
@@ -595,13 +613,27 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     );
   }
 
-  Widget _buildSourceTransparencyCard(BuildContext context, bool isDark) {
+  Widget _buildSourceTransparencyCard(BuildContext context, bool isDark, AIChatMessage msg) {
+    final meta = msg.metadata;
+    final retrievedDocs = (meta?['retrievedDocuments'] as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
+    final evidenceSources = List<String>.from(meta?['evidenceSources'] ?? []);
+    final patientFacts = List<String>.from(meta?['patientFactsUsed'] ?? meta?['recordFacts'] ?? []);
+    final graphEvidence = List<String>.from(meta?['graphEvidence'] ?? []);
+    final uncertainties = List<String>.from(meta?['uncertainties'] ?? []);
+
     final meds = ref.watch(medicationsStreamProvider).valueOrNull ?? [];
     final vitals = ref.watch(vitalsStreamProvider).valueOrNull ?? [];
     final reports = ref.watch(reportsStreamProvider).valueOrNull ?? [];
     final family = ref.watch(familyMembersStreamProvider).valueOrNull ?? [];
 
-    final hasSources = meds.isNotEmpty || vitals.isNotEmpty || reports.isNotEmpty || family.isNotEmpty;
+    final hasBackendData = retrievedDocs.isNotEmpty ||
+        evidenceSources.isNotEmpty ||
+        patientFacts.isNotEmpty ||
+        graphEvidence.isNotEmpty ||
+        uncertainties.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -620,7 +652,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               Icon(LucideIcons.shieldCheck, size: 14, color: AppColors.success),
               SizedBox(width: 6),
               Text(
-                'Verified Clinical Sources Retained',
+                'Clinical Grounding & RAG Transparency',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
@@ -630,12 +662,121 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          if (!hasSources)
-            const Text(
-              'No previous health records or vitals recorded. Advice derived from baseline clinical guidelines.',
-              style: TextStyle(fontSize: 11, color: AppColors.muted, fontStyle: FontStyle.italic),
-            )
-          else ...[
+
+          // 1. Retrieved Documents & Source Excerpts
+          if (retrievedDocs.isNotEmpty) ...[
+            Text(
+              'EVIDENCE USED (DOCUMENTS & CHUNKS)',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                color: isDark ? const Color(0xFF94A3B8) : AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...retrievedDocs.map((doc) {
+              final title = doc['title']?.toString() ?? 'Clinical Document';
+              final excerpt = doc['excerpt']?.toString() ?? '';
+              final citation = doc['citation']?.toString() ?? 'Page 1';
+              final docId = doc['document_id']?.toString() ?? 'doc_ref';
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: isDark ? Colors.white10 : AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Icon(LucideIcons.fileText, size: 12, color: AppColors.primaryBlue),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: () => _showDocumentViewerDialog(context, isDark, title, docId),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: const [
+                                Icon(LucideIcons.externalLink, size: 10, color: AppColors.primaryBlue),
+                                SizedBox(width: 3),
+                                Text(
+                                  'View',
+                                  style: TextStyle(fontSize: 9.5, color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (excerpt.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Retrieved chunk: "$excerpt"',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontStyle: FontStyle.italic,
+                          color: isDark ? Colors.white70 : AppColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 2),
+                    Text(
+                      'Source: $citation',
+                      style: const TextStyle(fontSize: 9, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 6),
+          ],
+
+          // 2. Evidence Sources
+          if (evidenceSources.isNotEmpty) ...[
+            _buildSourceLine(
+              icon: LucideIcons.bookOpen,
+              title: 'Evidence Sources',
+              detail: evidenceSources.join(', '),
+              isDark: isDark,
+            ),
+            const SizedBox(height: 6),
+          ],
+
+          // 3. Patient Data Used
+          if (patientFacts.isNotEmpty) ...[
+            _buildSourceLine(
+              icon: LucideIcons.userCheck,
+              title: 'Patient Data Used',
+              detail: patientFacts.join('; '),
+              isDark: isDark,
+            ),
+            const SizedBox(height: 6),
+          ] else if (meds.isNotEmpty || vitals.isNotEmpty || reports.isNotEmpty) ...[
             if (meds.isNotEmpty) ...[
               _buildSourceLine(
                 icon: LucideIcons.pill,
@@ -649,16 +790,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               _buildSourceLine(
                 icon: LucideIcons.activity,
                 title: 'Latest Vital Telemetry',
-                detail: 'HR: ${vitals.first.heartRate} bpm, BP: ${vitals.first.systolic}/${vitals.first.diastolic}, SpO₂: ${vitals.first.spo2}%',
-                isDark: isDark,
-              ),
-              const SizedBox(height: 6),
-            ],
-            if (reports.isNotEmpty) ...[
-              _buildSourceLine(
-                icon: LucideIcons.fileText,
-                title: 'Ingested Medical Records',
-                detail: reports.take(2).map((r) => r.title).join(', '),
+                detail: 'HR: ${vitals.first.heartRate} bpm, BP: ${vitals.first.systolic}/${vitals.first.diastolic}',
                 isDark: isDark,
               ),
               const SizedBox(height: 6),
@@ -672,15 +804,68 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               ),
             ],
           ],
-          const SizedBox(height: 8),
+
+          // 4. Living Care Graph Context
+          if (graphEvidence.isNotEmpty) ...[
+            _buildSourceLine(
+              icon: LucideIcons.gitFork,
+              title: 'Living Graph Context',
+              detail: graphEvidence.join(' -> '),
+              isDark: isDark,
+            ),
+            const SizedBox(height: 6),
+          ],
+
+          // 5. Clinical Uncertainties & Safety Guardrails
+          if (uncertainties.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(LucideIcons.alertCircle, size: 13, color: Colors.amber),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Clinical Uncertainty Guardrail: ${uncertainties.join("; ")}',
+                      style: const TextStyle(fontSize: 10.5, color: Colors.amber, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          if (!hasBackendData && meds.isEmpty && vitals.isEmpty && reports.isEmpty)
+            const Text(
+              'No previous health records or vitals recorded. Advice derived from baseline clinical guidelines.',
+              style: TextStyle(fontSize: 11, color: AppColors.muted, fontStyle: FontStyle.italic),
+            ),
+
+          const SizedBox(height: 6),
           Divider(color: isDark ? Colors.white10 : AppColors.border, height: 1),
           const SizedBox(height: 6),
           const Text(
-            'Multi-Agent Gating: Context Agent -> Clinical Reasoning -> Safety Sentinel. Educational guidance only.',
+            'Multi-Agent Grounding: Context Agent -> Clinical GraphRAG -> Safety Sentinel. Strictly patient-scoped.',
             style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.3),
           ),
         ],
       ),
+    );
+  }
+
+  void _showDocumentViewerDialog(BuildContext context, bool isDark, String title, String docId) {
+    DocumentViewerDialog.show(
+      context,
+      title: title,
+      docId: docId,
+      isDark: isDark,
     );
   }
 
@@ -738,24 +923,30 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      _shareWithDoctor ? LucideIcons.eye : LucideIcons.eyeOff,
-                      size: 14,
-                      color: _shareWithDoctor ? AppColors.primaryBlue : AppColors.muted,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Share conversation with Doctor',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.white70 : AppColors.secondaryText,
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        _shareWithDoctor ? LucideIcons.eye : LucideIcons.eyeOff,
+                        size: 14,
+                        color: _shareWithDoctor ? AppColors.primaryBlue : AppColors.muted,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Share conversation with Doctor',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white70 : AppColors.secondaryText,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Switch(
                   value: _shareWithDoctor,
                   activeTrackColor: AppColors.primaryBlue,

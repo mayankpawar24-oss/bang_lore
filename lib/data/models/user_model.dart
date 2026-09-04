@@ -13,6 +13,7 @@ class UserModel {
   final String? abhaId;
   final String? telegramChatId;
   final bool telegramConnected;
+  final String? familyId;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -29,6 +30,7 @@ class UserModel {
     this.abhaId,
     this.telegramChatId,
     this.telegramConnected = false,
+    this.familyId,
     this.createdAt,
     this.updatedAt,
   });
@@ -44,6 +46,7 @@ class UserModel {
     String? abhaId,
     String? telegramChatId,
     bool? telegramConnected,
+    String? familyId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -59,6 +62,7 @@ class UserModel {
       abhaId: abhaId ?? this.abhaId,
       telegramChatId: telegramChatId ?? this.telegramChatId,
       telegramConnected: telegramConnected ?? this.telegramConnected,
+      familyId: familyId ?? this.familyId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -76,6 +80,7 @@ class UserModel {
       if (abhaId != null && abhaId!.isNotEmpty) 'abhaId': abhaId,
       'telegramChatId': telegramChatId,
       'telegramConnected': telegramConnected,
+      if (familyId != null) 'familyId': familyId,
       'createdAt': createdAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
     };
@@ -94,6 +99,7 @@ class UserModel {
       abhaId: json['abhaId'] as String?,
       telegramChatId: json['telegramChatId'] as String?,
       telegramConnected: json['telegramConnected'] as bool? ?? false,
+      familyId: json['familyId'] as String?,
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) : null,
       updatedAt: json['updatedAt'] != null ? DateTime.tryParse(json['updatedAt'] as String) : null,
     );
@@ -117,6 +123,7 @@ class UserModel {
       abhaId: data['abhaId'] as String?,
       telegramChatId: data['telegramChatId'] as String?,
       telegramConnected: data['telegramConnected'] as bool? ?? false,
+      familyId: data['familyId'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -136,6 +143,7 @@ class UserModel {
       if (abhaId != null && abhaId!.isNotEmpty) 'abhaId': abhaId,
       'telegramChatId': telegramChatId,
       'telegramConnected': telegramConnected,
+      if (familyId != null) 'familyId': familyId,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }

@@ -8,6 +8,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/status_chip.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/appointment_model.dart';
 import '../../../../data/models/reminder_model.dart';
@@ -797,15 +798,27 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 640,
+            maxHeight: MediaQuery.of(context).size.height * 0.88,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              28,
+              28,
+              28,
+              AppLayoutInsets.bottomSafeInset(context) + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -872,10 +885,20 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+),
+);
   }
 
-  void _showSosSuccess(BuildContext context, bool isDark) {
+  Future<void> _showSosSuccess(BuildContext context, bool isDark) async {
+    final currentUid = ref.read(currentUidProvider) ?? '';
+    final alertResult = await ref.read(emergencyServiceProvider).triggerEmergencyAlert(
+      patientUid: currentUid,
+    );
+
+    if (!context.mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -894,16 +917,30 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                 color: isDark ? Colors.white : AppColors.navy,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            Text(
+              alertResult.locationText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primaryBlue,
+              ),
+            ),
+            const SizedBox(height: 16),
             _buildCheckItem('Family notified', isDark),
             _buildCheckItem('Care team notified', isDark),
-            _buildCheckItem('Location shared', isDark),
-            _buildCheckItem('Health info shared', isDark),
+            _buildCheckItem(
+              alertResult.mapsUrl != null ? 'GPS Location broadcast' : 'Location status broadcast',
+              isDark,
+            ),
+            if (alertResult.telegramSent)
+              _buildCheckItem('Telegram emergency alert sent', isDark),
             const SizedBox(height: 24),
             PrimaryButton(
-              label: 'Cancel Emergency',
+              label: 'Close',
               onPressed: () => Navigator.pop(context),
-              icon: LucideIcons.xCircle,
+              icon: LucideIcons.check,
             )
           ],
         ),
@@ -935,43 +972,55 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       context: context,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              appt.doctorName,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              AppLayoutInsets.bottomSafeInset(context) + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    appt.doctorName,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${appt.specialty} Consultation',
+                    style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
+                  ),
+                  Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
+                  Text(
+                    'Date & Time: ${_formatDateStr(appt.dateTime)} at ${_formatTime(appt.dateTime)}',
+                    style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Duration: ${appt.durationMinutes} minutes',
+                    style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Notes: ${appt.notes ?? "Routine checkup"}',
+                    style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
+                  ),
+                  const SizedBox(height: 24),
+                  PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${appt.specialty} Consultation',
-              style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold),
-            ),
-            Divider(height: 24, color: isDark ? const Color(0xFF334155) : AppColors.border),
-            Text(
-              'Date & Time: ${_formatDateStr(appt.dateTime)} at ${_formatTime(appt.dateTime)}',
-              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Duration: ${appt.durationMinutes} minutes',
-              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Notes: ${appt.notes ?? "Routine checkup"}',
-              style: TextStyle(fontSize: 14, color: isDark ? const Color(0xFF94A3B8) : AppColors.slate),
-            ),
-            const SizedBox(height: 24),
-            PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
-          ],
+          ),
         ),
       ),
     );
@@ -985,21 +1034,28 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF131C2E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          left: 24,
-          right: 24,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 640,
+            maxHeight: MediaQuery.of(context).size.height * 0.88,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF131C2E) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: EdgeInsets.only(
+              bottom: AppLayoutInsets.bottomSafeInset(context) + 20,
+              left: 24,
+              right: 24,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             Text(
               'Add Appointment',
               style: TextStyle(
@@ -1048,7 +1104,10 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+),
+);
   }
 
   void _showAddReminderSheet(BuildContext context, List<FamilyMemberModel> members, bool isDark) {
@@ -1063,21 +1122,28 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF131C2E) : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        builder: (context, setModalState) => Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 640,
+              maxHeight: MediaQuery.of(context).size.height * 0.88,
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131C2E) : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              padding: EdgeInsets.only(
+                bottom: AppLayoutInsets.bottomSafeInset(context) + 20,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1188,12 +1254,15 @@ class _PatientScheduleScreenState extends ConsumerState<PatientScheduleScreen> {
                   }
                 },
               ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;

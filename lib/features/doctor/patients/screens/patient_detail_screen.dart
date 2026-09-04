@@ -15,6 +15,7 @@ import '../../../../core/widgets/status_chip.dart';
 import '../../../../core/widgets/primary_button.dart';
 import '../../../../core/widgets/secondary_button.dart';
 import '../../../../core/widgets/section_header.dart';
+import '../../../../core/widgets/app_layout_insets.dart';
 import '../../../../data/providers/providers.dart';
 import '../../../../data/models/patient_model.dart';
 import '../../../../data/models/appointment_model.dart';
@@ -22,6 +23,7 @@ import '../../../../data/models/permission_request_model.dart';
 import '../../../../data/models/ai_chat_model.dart';
 import '../../../../data/models/report_model.dart';
 import '../../../../data/models/activity_log_model.dart';
+import '../../../patient/dashboard/screens/doctor_chat_screen.dart';
 
 class PatientDetailScreen extends ConsumerStatefulWidget {
   final String patientId;
@@ -283,9 +285,29 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
           icon: Icon(LucideIcons.arrowLeft, color: isDark ? Colors.white : AppColors.navy),
           onPressed: () => context.pop(),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.messageSquare, color: AppColors.primaryBlue),
+            tooltip: 'Chat with Patient',
+            onPressed: () {
+              final currentDoctor = ref.read(currentUserProvider).valueOrNull;
+              final doctorUid = currentDoctor?.id ?? ref.read(currentUidProvider) ?? '';
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DoctorChatScreen(
+                    doctorId: doctorUid,
+                    patientId: currentPatient.id,
+                    patientName: currentPatient.name,
+                    doctorName: currentDoctor?.name ?? 'Doctor',
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+        padding: EdgeInsets.fromLTRB(20.0, 12.0, 20.0, AppLayoutInsets.bottomSafeInset(context) + 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -753,67 +775,74 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          left: 24,
-          right: 24,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Schedule Consultation with $patientName',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+              left: 24,
+              right: 24,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Schedule Consultation with $patientName',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reasonCtrl,
+                    decoration: const InputDecoration(labelText: 'Consultation Reason', hintText: 'e.g. ECG Review'),
+                  ),
+                  const SizedBox(height: 24),
+                  PrimaryButton(
+                    label: 'Confirm Consultation Slot',
+                    onPressed: () async {
+                      final apptId = const Uuid().v4();
+                      final appt = AppointmentModel(
+                        id: apptId,
+                        patientId: widget.patientId,
+                        doctorId: currentDoctorUid,
+                        doctorName: doctorName,
+                        patientName: patientName,
+                        specialty: 'Clinical Follow-up',
+                        dateTime: DateTime.now().add(const Duration(days: 1, hours: 2)),
+                        durationMinutes: 30,
+                        status: AppointmentStatus.approved,
+                        notes: reasonCtrl.text.trim(),
+                      );
+
+                      try {
+                        await ref.read(appointmentRepositoryProvider).bookAppointment(appt);
+                        if (context.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Appointment scheduled in Firestore!'), backgroundColor: AppColors.success),
+                          );
+                        }
+                      } catch (e) {
+                        dev.log('[APPOINTMENT] exception: $e', name: 'PatientDetailScreen');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.danger),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(labelText: 'Consultation Reason', hintText: 'e.g. ECG Review'),
-            ),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Confirm Consultation Slot',
-              onPressed: () async {
-                final apptId = const Uuid().v4();
-                final appt = AppointmentModel(
-                  id: apptId,
-                  patientId: widget.patientId,
-                  doctorId: currentDoctorUid,
-                  doctorName: doctorName,
-                  patientName: patientName,
-                  specialty: 'Clinical Follow-up',
-                  dateTime: DateTime.now().add(const Duration(days: 1, hours: 2)),
-                  durationMinutes: 30,
-                  status: AppointmentStatus.approved,
-                  notes: reasonCtrl.text.trim(),
-                );
-
-                try {
-                  await ref.read(appointmentRepositoryProvider).bookAppointment(appt);
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Appointment scheduled in Firestore!'), backgroundColor: AppColors.success),
-                    );
-                  }
-                } catch (e) {
-                  dev.log('[APPOINTMENT] exception: $e', name: 'PatientDetailScreen');
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed: $e'), backgroundColor: AppColors.danger),
-                    );
-                  }
-                }
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -829,65 +858,72 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          left: 24,
-          right: 24,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Send Patient Care Reminder',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : AppColors.navy,
+      builder: (ctx) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: AppLayoutInsets.bottomSafeInset(ctx) + 20,
+              left: 24,
+              right: 24,
+              top: 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Send Patient Care Reminder',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: reminderCtrl,
+                    decoration: const InputDecoration(labelText: 'Reminder Message', hintText: 'e.g. Take evening BP reading'),
+                  ),
+                  const SizedBox(height: 24),
+                  PrimaryButton(
+                    label: 'Send Push Reminder',
+                    onPressed: () async {
+                      final text = reminderCtrl.text.trim();
+                      if (text.isEmpty) return;
+
+                      try {
+                        await FirebaseFirestore.instance
+                            .collection('patients')
+                            .doc(widget.patientId)
+                            .collection('notifications')
+                            .add({
+                          'title': 'Doctor Care Reminder',
+                          'message': text,
+                          'type': 'doctor_reminder',
+                          'doctorId': currentDoctorUid,
+                          'doctorName': doctorName,
+                          'isRead': false,
+                          'timestamp': FieldValue.serverTimestamp(),
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
+
+                        if (context.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Reminder sent to patient!'), backgroundColor: AppColors.success),
+                          );
+                        }
+                      } catch (e) {
+                        dev.log('[NOTIFICATION] exception: $e', name: 'PatientDetailScreen');
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reminderCtrl,
-              decoration: const InputDecoration(labelText: 'Reminder Message', hintText: 'e.g. Take evening BP reading'),
-            ),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Send Push Reminder',
-              onPressed: () async {
-                final text = reminderCtrl.text.trim();
-                if (text.isEmpty) return;
-
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('patients')
-                      .doc(widget.patientId)
-                      .collection('notifications')
-                      .add({
-                    'title': 'Doctor Care Reminder',
-                    'message': text,
-                    'type': 'doctor_reminder',
-                    'doctorId': currentDoctorUid,
-                    'doctorName': doctorName,
-                    'isRead': false,
-                    'timestamp': FieldValue.serverTimestamp(),
-                    'createdAt': FieldValue.serverTimestamp(),
-                  });
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Reminder sent to patient!'), backgroundColor: AppColors.success),
-                    );
-                  }
-                } catch (e) {
-                  dev.log('[NOTIFICATION] exception: $e', name: 'PatientDetailScreen');
-                }
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -896,49 +932,57 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
   void _showRecordsSheet(BuildContext context, String patientName, bool isDark) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Consumer(
+      builder: (ctx) => Consumer(
         builder: (context, ref, _) {
           final reportsAsync = ref.watch(patientReportsFamilyStreamProvider(widget.patientId));
           final reports = reportsAsync.valueOrNull ?? [];
 
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Medical Records — $patientName',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : AppColors.navy,
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Medical Records — $patientName',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.navy,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (reports.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: Text(
+                              'No medical records uploaded for this patient.',
+                              style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                            ),
+                          ),
+                        )
+                      else
+                        ...reports.take(5).map((r) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
+                          title: Text(r.title, style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
+                          subtitle: Text('${r.category.name} • ${r.date.day}/${r.date.month}/${r.date.year}'),
+                          trailing: const Icon(LucideIcons.download),
+                        )),
+                      const SizedBox(height: 16),
+                      PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(ctx)),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                if (reports.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Center(
-                      child: Text(
-                        'No medical records uploaded for this patient.',
-                        style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                      ),
-                    ),
-                  )
-                else
-                  ...reports.take(5).map((r) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(LucideIcons.fileText, color: AppColors.primaryBlue),
-                    title: Text(r.title, style: TextStyle(color: isDark ? Colors.white : AppColors.navy)),
-                    subtitle: Text('${r.category.name} • ${r.date.day}/${r.date.month}/${r.date.year}'),
-                    trailing: const Icon(LucideIcons.download),
-                  )),
-                const SizedBox(height: 16),
-                PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
-              ],
+              ),
             ),
           );
         },
@@ -959,42 +1003,47 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
+      builder: (ctx) {
         if (!hasChatPerm) {
-          return Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(LucideIcons.lock, size: 36, color: AppColors.warning),
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(24.0, 24.0, 24.0, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: isDark ? 0.25 : 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(LucideIcons.lock, size: 36, color: AppColors.warning),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Chat History Restricted',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Patient $patientName has not granted "aiChat" permission. To view AI consultation history, request updated permissions from the patient.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(ctx)),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Chat History Restricted',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : AppColors.navy,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Patient $patientName has not granted "aiChat" permission. To view AI consultation history, request updated permissions from the patient.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                PrimaryButton(label: 'Close', onPressed: () => Navigator.pop(context)),
-              ],
+              ),
             ),
           );
         }
@@ -1004,92 +1053,97 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
             final chatsAsync = ref.watch(patientAiChatsFamilyStreamProvider(patientId));
             final chats = chatsAsync.valueOrNull ?? [];
 
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Container(
+                  height: MediaQuery.of(context).size.height * 0.7,
+                  padding: EdgeInsets.fromLTRB(24, 24, 24, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'AI Consultation History',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : AppColors.navy,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'AI Consultation History',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Permitted chat records for $patientName',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Permitted chat records for $patientName',
-                            style: TextStyle(
-                              color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                              fontSize: 13,
-                            ),
+                          IconButton(
+                            icon: const Icon(LucideIcons.x),
+                            onPressed: () => Navigator.pop(ctx),
                           ),
                         ],
                       ),
-                      IconButton(
-                        icon: const Icon(LucideIcons.x),
-                        onPressed: () => Navigator.pop(context),
-                      ),
+                      const SizedBox(height: 16),
+                      if (chatsAsync.isLoading)
+                        const Expanded(child: Center(child: CircularProgressIndicator()))
+                      else if (chats.isEmpty)
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              'No AI chat history recorded for this patient.',
+                              style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: chats.length,
+                            separatorBuilder: (_, __) => Divider(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                            itemBuilder: (context, idx) {
+                              final chat = chats[idx];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryBlue.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(LucideIcons.bot, color: AppColors.primaryBlue, size: 20),
+                                ),
+                                title: Text(
+                                  chat.title,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : AppColors.navy,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${chat.createdAt.day}/${chat.createdAt.month}/${chat.createdAt.year} ${chat.createdAt.hour.toString().padLeft(2, '0')}:${chat.createdAt.minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
+                                  ),
+                                ),
+                                trailing: const Icon(LucideIcons.chevronRight, size: 18),
+                                onTap: () => _showChatMessagesDialog(context, patientId, chat, isDark),
+                              );
+                            },
+                          ),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  if (chatsAsync.isLoading)
-                    const Expanded(child: Center(child: CircularProgressIndicator()))
-                  else if (chats.isEmpty)
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          'No AI chat history recorded for this patient.',
-                          style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: chats.length,
-                        separatorBuilder: (_, __) => Divider(color: isDark ? Colors.white12 : Colors.grey.shade200),
-                        itemBuilder: (context, idx) {
-                          final chat = chats[idx];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryBlue.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(LucideIcons.bot, color: AppColors.primaryBlue, size: 20),
-                            ),
-                            title: Text(
-                              chat.title,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : AppColors.navy,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${chat.createdAt.day}/${chat.createdAt.month}/${chat.createdAt.year} ${chat.createdAt.hour.toString().padLeft(2, '0')}:${chat.createdAt.minute.toString().padLeft(2, '0')}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText,
-                              ),
-                            ),
-                            trailing: const Icon(LucideIcons.chevronRight, size: 18),
-                            onTap: () => _showChatMessagesDialog(context, patientId, chat, isDark),
-                          );
-                        },
-                      ),
-                    ),
-                ],
+                ),
               ),
             );
           },
@@ -1105,95 +1159,100 @@ class _PatientDetailScreenState extends ConsumerState<PatientDetailScreen> {
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Consumer(
+      builder: (ctx) => Consumer(
         builder: (context, ref, _) {
           final messagesAsync = ref.watch(patientChatMessagesFamilyStreamProvider((patientId: patientId, chatId: chat.id)));
           final messages = messagesAsync.valueOrNull ?? [];
 
-          return Container(
-            height: MediaQuery.of(context).size.height * 0.8,
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.8,
+                padding: EdgeInsets.fromLTRB(20, 20, 20, AppLayoutInsets.bottomSafeInset(ctx) + 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        chat.title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : AppColors.navy,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            chat.title,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.navy,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
+                        IconButton(
+                          icon: const Icon(LucideIcons.x),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    Divider(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                    if (messagesAsync.isLoading)
+                      const Expanded(child: Center(child: CircularProgressIndicator()))
+                    else if (messages.isEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            'No messages in this chat session.',
+                            style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: messages.length,
+                          itemBuilder: (context, idx) {
+                            final msg = messages[idx];
+                            final isUser = msg.isUser;
+                            return Align(
+                              alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                                decoration: BoxDecoration(
+                                  color: isUser
+                                      ? AppColors.primaryBlue
+                                      : (isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      isUser ? 'Patient' : 'AI Assistant',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: isUser ? Colors.white70 : (isDark ? Colors.white60 : Colors.black54),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      msg.content,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: isUser ? Colors.white : (isDark ? Colors.white : AppColors.navy),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(LucideIcons.x),
-                      onPressed: () => Navigator.pop(context),
-                    ),
                   ],
                 ),
-                Divider(color: isDark ? Colors.white12 : Colors.grey.shade200),
-                if (messagesAsync.isLoading)
-                  const Expanded(child: Center(child: CircularProgressIndicator()))
-                else if (messages.isEmpty)
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        'No messages in this chat session.',
-                        style: TextStyle(color: isDark ? const Color(0xFF94A3B8) : AppColors.secondaryText),
-                      ),
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: messages.length,
-                      itemBuilder: (context, idx) {
-                        final msg = messages[idx];
-                        final isUser = msg.isUser;
-                        return Align(
-                          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                            decoration: BoxDecoration(
-                              color: isUser
-                                  ? AppColors.primaryBlue
-                                  : (isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  isUser ? 'Patient' : 'AI Assistant',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isUser ? Colors.white70 : (isDark ? Colors.white60 : Colors.black54),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  msg.content,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: isUser ? Colors.white : (isDark ? Colors.white : AppColors.navy),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
+              ),
             ),
           );
         },
