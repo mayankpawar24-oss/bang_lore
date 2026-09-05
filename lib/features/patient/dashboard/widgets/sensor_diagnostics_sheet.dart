@@ -68,42 +68,47 @@ class SensorDiagnosticsSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        LucideIcons.gauge,
-                        color: Color(0xFF3B82F6),
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Sensor Diagnostics Mode',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: textColor,
-                          ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        Text(
-                          'Live hardware telemetry & fusion state (Dev Only)',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: subColor,
-                          ),
+                        child: const Icon(
+                          LucideIcons.gauge,
+                          color: Color(0xFF3B82F6),
+                          size: 20,
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Sensor Diagnostics Mode',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: textColor,
+                              ),
+                            ),
+                            Text(
+                              'Live hardware telemetry & fusion state (Dev Only)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: subColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
@@ -302,12 +307,17 @@ class SensorDiagnosticsSheet extends StatelessWidget {
               color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
             ),
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: isHighlight ? 15 : 13,
-              fontWeight: isHighlight || isBold ? FontWeight.w700 : FontWeight.w500,
-              color: valueColor ?? (isDark ? Colors.white : AppColors.navy),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: isHighlight ? 15 : 13,
+                fontWeight: isHighlight || isBold ? FontWeight.w700 : FontWeight.w500,
+                color: valueColor ?? (isDark ? Colors.white : AppColors.navy),
+              ),
             ),
           ),
         ],
@@ -373,8 +383,9 @@ class SensorDiagnosticsSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
             children: [
               _buildAxisChip('X', x, unit, Colors.red),
               _buildAxisChip('Y', y, unit, Colors.green),

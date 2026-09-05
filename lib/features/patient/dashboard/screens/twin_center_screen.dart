@@ -260,11 +260,14 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
             children: [
               Icon(LucideIcons.radio, size: 16, color: AppColors.primaryBlue),
               const SizedBox(width: 8),
-              const Text(
-                'Live Device Hardware Integration',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              const Expanded(
+                child: Text(
+                  'Live Device Hardware Integration',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
@@ -362,15 +365,18 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
                     children: [
                       Icon(LucideIcons.move, size: 14, color: active ? Colors.blue.shade700 : Colors.grey),
                       const SizedBox(width: 8),
-                      Text(
-                        'Phone Accelerometer & Gyroscope',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: active ? Colors.blue.shade900 : Colors.grey.shade700,
+                      Expanded(
+                        child: Text(
+                          'Phone IMU Sensors',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: active ? Colors.blue.shade900 : Colors.grey.shade700,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -378,7 +384,7 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          active ? '$hzText • Tap for Diagnostics' : 'Standby',
+                          active ? '$hzText • Diagnostics' : 'Standby',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -461,12 +467,14 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
           Row(
             children: [
               const Icon(LucideIcons.shieldCheck, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              const Text(
-                'Clinical Care & Recovery Context',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+              const Expanded(
+                child: Text(
+                  'Clinical Care & Recovery Context',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(

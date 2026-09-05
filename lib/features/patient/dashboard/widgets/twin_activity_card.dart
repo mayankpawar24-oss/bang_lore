@@ -246,9 +246,9 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Activity & Behavior Twin',
+                            'Activity Twin',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: isDark ? Colors.white : AppColors.navy,
                               letterSpacing: -0.2,
@@ -257,9 +257,9 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Continuous real-world behavioral telemetry',
+                            'Real-world behavioral telemetry',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 10.5,
                               color: isDark ? const Color(0xFF94A3B8) : AppColors.textSecondary,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -270,71 +270,52 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                   ],
                 ),
               ),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => _showDeviceManagerSheet(context, isDark),
-                    icon: const Icon(LucideIcons.bluetooth, size: 18),
-                    tooltip: 'Manage Devices',
-                    visualDensity: VisualDensity.compact,
-                    color: const Color(0xFF3B82F6),
-                  ),
-                  IconButton(
-                    onPressed: () => SensorDiagnosticsSheet.show(context, _coordinator),
-                    icon: const Icon(LucideIcons.gauge, size: 18),
-                    tooltip: 'Sensor Diagnostics (Dev)',
-                    visualDensity: VisualDensity.compact,
-                    color: const Color(0xFF10B981),
-                  ),
-                  const SizedBox(width: 4),
-                  InkWell(
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (ctx) => TwinCenterScreen(
-                            patientId: widget.patientId,
-                            backendService: widget.backendService,
-                            sensorCoordinator: _coordinator,
-                          ),
-                        ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'TWIN Center →',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
-                            ),
-                          ),
-                        ],
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => TwinCenterScreen(
+                        patientId: widget.patientId,
+                        backendService: widget.backendService,
+                        sensorCoordinator: _coordinator,
                       ),
                     ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                      width: 1,
+                    ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 5,
+                        height: 5,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF10B981),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'TWIN Center →',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -366,7 +347,7 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                     final durString = hours > 0 ? '${hours}h ${mins}m' : '${mins}m';
 
                     return Container(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(16),
@@ -383,17 +364,18 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
                                     summary?.isSedentary == true
                                         ? LucideIcons.armchair
                                         : LucideIcons.footprints,
-                                    size: 16,
+                                    size: 15,
                                     color: summary?.isSedentary == true
                                         ? const Color(0xFFF59E0B)
                                         : const Color(0xFF3B82F6),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 5),
                                   Text(
                                     'Activity',
                                     style: TextStyle(
@@ -407,15 +389,15 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                                 ],
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
-                                  'MOTION',
+                                  'IMU',
                                   style: TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFF3B82F6),
                                   ),
@@ -460,25 +442,29 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                     final restingBaseline = state?.baselines.restingHeartRate;
 
                     final String displayBpm;
-                    final String sourceTag;
+                    final String sourceTagShort;
+                    final String sourceDesc;
 
                     if (liveHr != null) {
                       displayBpm = '${liveHr.bpm.toInt()} BPM';
                       final loc = liveHr.sensorLocation;
                       final locSuffix = loc != null ? ' • $loc' : '';
-                      sourceTag = (liveHr.source == TwinSignalSource.ble
-                          ? 'OBSERVED BLE$locSuffix'
-                          : 'PLATFORM WATCH$locSuffix').toUpperCase();
+                      sourceTagShort = liveHr.source == TwinSignalSource.ble ? 'BLE' : 'WATCH';
+                      sourceDesc = '${liveHr.source == TwinSignalSource.ble ? "BLE Monitor" : "Smartwatch"}$locSuffix';
                     } else if (hrSignal != null) {
                       displayBpm = '${hrSignal.value.toInt()} BPM';
-                      sourceTag = 'TWIN ${hrSignal.source.toUpperCase()}';
+                      sourceTagShort = 'TWIN';
+                      sourceDesc = 'Baseline ~${restingBaseline?.toInt() ?? 72} BPM';
                     } else {
                       displayBpm = 'Resting';
-                      sourceTag = 'NO SENSOR';
+                      sourceTagShort = 'NONE';
+                      sourceDesc = restingBaseline != null
+                          ? 'Baseline ~${restingBaseline.toInt()} BPM'
+                          : 'Collecting baseline';
                     }
 
                     return Container(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(16),
@@ -495,17 +481,18 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const Icon(
                                     LucideIcons.heartPulse,
-                                    size: 16,
+                                    size: 14,
                                     color: Color(0xFFEF4444),
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 4),
                                   Text(
                                     'Heart Rate',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 10.5,
                                       fontWeight: FontWeight.w600,
                                       color: isDark
                                           ? const Color(0xFF94A3B8)
@@ -515,15 +502,15 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                                 ],
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  sourceTag,
+                                  sourceTagShort,
                                   style: const TextStyle(
-                                    fontSize: 9,
+                                    fontSize: 8,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFFEF4444),
                                   ),
@@ -542,9 +529,9 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            restingBaseline != null
-                                ? 'Baseline ~${restingBaseline.toInt()} BPM'
-                                : 'Collecting baseline',
+                            sourceDesc,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark

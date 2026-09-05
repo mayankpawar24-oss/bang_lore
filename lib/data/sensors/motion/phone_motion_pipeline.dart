@@ -50,6 +50,10 @@ class SensorSample {
     this.source = 'PHONE_INTERNAL_SENSORS',
   });
 
+  double get gravityX => ax - userAx;
+  double get gravityY => ay - userAy;
+  double get gravityZ => az - userAz;
+
   /// Factory creating sample with real-time gravity separation.
   factory SensorSample.fromRaw({
     required DateTime timestamp,

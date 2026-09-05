@@ -2,8 +2,13 @@ import 'package:uuid/uuid.dart';
 
 enum TwinActivityType {
   stationary('STATIONARY', 'Stationary'),
+  sitting('SITTING', 'Sitting'),
+  standing('STANDING', 'Standing'),
   walking('WALKING', 'Walking'),
+  briskWalking('BRISK_WALKING', 'Brisk Walking'),
   running('RUNNING', 'Running'),
+  stairsUp('STAIRS_UP', 'Climbing Stairs'),
+  stairsDown('STAIRS_DOWN', 'Descending Stairs'),
   cycling('CYCLING', 'Cycling'),
   automotive('AUTOMOTIVE', 'In Vehicle'),
   highActivity('HIGH_ACTIVITY', 'High Activity'),
@@ -110,6 +115,7 @@ class NormalizedActivity {
   final TwinSignalConfidence confidence;
   final TwinSignalSource source;
   final String? deviceId;
+  final Map<String, dynamic>? evidence;
 
   const NormalizedActivity({
     required this.activity,
@@ -119,6 +125,7 @@ class NormalizedActivity {
     this.confidence = TwinSignalConfidence.high,
     this.source = TwinSignalSource.phoneSensor,
     this.deviceId,
+    this.evidence,
   });
 
   Map<String, dynamic> toTwinSignal(String patientId, {String? platform}) {
@@ -137,6 +144,7 @@ class NormalizedActivity {
         if (deviceId != null) 'device_id': deviceId,
         'device_platform': deviceId ?? platform ?? 'phone',
         if (endTime != null) 'end_time': endTime!.toUtc().toIso8601String(),
+        if (evidence != null) 'evidence': evidence,
       },
     };
   }
