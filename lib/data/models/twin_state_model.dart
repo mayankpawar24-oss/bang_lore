@@ -445,3 +445,117 @@ class TwinStateModel {
     );
   }
 }
+
+class TwinPipelineStage {
+  final String stage;
+  final String status;
+  final String detail;
+  final String timestamp;
+
+  const TwinPipelineStage({
+    required this.stage,
+    required this.status,
+    required this.detail,
+    required this.timestamp,
+  });
+
+  factory TwinPipelineStage.fromJson(Map<String, dynamic> json) {
+    return TwinPipelineStage(
+      stage: json['stage'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      detail: json['detail'] as String? ?? '',
+      timestamp: json['timestamp'] as String? ?? '',
+    );
+  }
+}
+
+class TwinScenarioResult {
+  final String scenario;
+  final String patientId;
+  final String correlationId;
+  final String? eventId;
+  final String? recommendationId;
+  final String? followUpId;
+  final String? notificationId;
+  final String status;
+  final String summary;
+  final List<TwinPipelineStage> pipelineStages;
+  final Map<String, dynamic> technicalTrace;
+  final List<Map<String, dynamic>> suppressionReasons;
+  final TwinStateModel? twinState;
+
+  const TwinScenarioResult({
+    required this.scenario,
+    required this.patientId,
+    required this.correlationId,
+    this.eventId,
+    this.recommendationId,
+    this.followUpId,
+    this.notificationId,
+    required this.status,
+    required this.summary,
+    this.pipelineStages = const [],
+    this.technicalTrace = const {},
+    this.suppressionReasons = const [],
+    this.twinState,
+  });
+
+  factory TwinScenarioResult.fromJson(Map<String, dynamic> json) {
+    return TwinScenarioResult(
+      scenario: json['scenario'] as String? ?? '',
+      patientId: json['patient_id'] as String? ?? '',
+      correlationId: json['correlation_id'] as String? ?? '',
+      eventId: json['event_id'] as String?,
+      recommendationId: json['recommendation_id'] as String?,
+      followUpId: json['follow_up_id'] as String?,
+      notificationId: json['notification_id'] as String?,
+      status: json['status'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      pipelineStages: (json['pipeline_stages'] as List<dynamic>?)
+              ?.map((e) =>
+                  TwinPipelineStage.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList() ??
+          [],
+      technicalTrace: json['technical_trace'] != null
+          ? Map<String, dynamic>.from(json['technical_trace'] as Map)
+          : {},
+      suppressionReasons: (json['suppression_reasons'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
+      twinState: json['twin_state'] != null
+          ? TwinStateModel.fromJson(
+              Map<String, dynamic>.from(json['twin_state'] as Map))
+          : null,
+    );
+  }
+}
+
+class TwinInAppNotification {
+  final String notificationId;
+  final String? followUpId;
+  final String title;
+  final String body;
+  final String type;
+  final String dispatchedAt;
+
+  const TwinInAppNotification({
+    required this.notificationId,
+    this.followUpId,
+    required this.title,
+    required this.body,
+    required this.type,
+    required this.dispatchedAt,
+  });
+
+  factory TwinInAppNotification.fromJson(Map<String, dynamic> json) {
+    return TwinInAppNotification(
+      notificationId: json['notification_id'] as String? ?? '',
+      followUpId: json['follow_up_id'] as String?,
+      title: json['title'] as String? ?? '',
+      body: json['body'] as String? ?? '',
+      type: json['type'] as String? ?? 'GENERAL',
+      dispatchedAt: json['dispatched_at'] as String? ?? '',
+    );
+  }
+}

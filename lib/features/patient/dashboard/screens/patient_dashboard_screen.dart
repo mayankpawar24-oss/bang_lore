@@ -32,6 +32,8 @@ import '../widgets/home_action_carousel.dart';
 import '../widgets/health_insights_summary_card.dart';
 import '../widgets/supporting_insight_cards.dart';
 import '../widgets/twin_activity_card.dart';
+import '../widgets/ble_device_manager_sheet.dart';
+import '../../../../data/sensors/ble/ble_device_manager.dart';
 import '../../../../data/models/twin_state_model.dart';
 import '../../../../data/sensors/twin_sensor_provider.dart';
 
@@ -152,7 +154,7 @@ reminderTime = $timeDisplay
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildHeader(context, ref, unreadCount, isDark),
+                  _buildHeader(context, ref, unreadCount, isDark, uid),
                   const SizedBox(height: 16),
                   AppSearchBar(
                     readOnly: true,
@@ -283,7 +285,7 @@ reminderTime = $timeDisplay
     );
   }
 
-  Widget _buildHeader(BuildContext context, WidgetRef ref, int unreadCount, bool isDark) {
+  Widget _buildHeader(BuildContext context, WidgetRef ref, int unreadCount, bool isDark, String? uid) {
     final userAsync = ref.watch(currentUserProvider);
     final patientAsync = ref.watch(currentPatientStreamProvider);
 
@@ -358,6 +360,64 @@ reminderTime = $timeDisplay
         ),
         Row(
           children: [
+            // BLE Device Manager button with live status indicator
+            Builder(
+              builder: (ctx) {
+                final effectivePatientId = (uid != null && uid.isNotEmpty)
+                    ? uid
+                    : 'dev-token-patient-alex';
+                final coordinator = ref.watch(twinSensorCoordinatorProvider(effectivePatientId));
+                return AnimatedBuilder(
+                  animation: Listenable.merge([
+                    coordinator.bleHrStatusNotifier,
+                    coordinator.esp32StatusNotifier,
+                  ]),
+                  builder: (ctx, _) {
+                    final hrStatus = coordinator.bleHrStatusNotifier.value;
+                    final espStatus = coordinator.esp32StatusNotifier.value;
+                    final isConnected = hrStatus == BleDeviceStatus.connected ||
+                        espStatus == BleDeviceStatus.connected;
+                    final isScanning = hrStatus == BleDeviceStatus.scanning ||
+                        espStatus == BleDeviceStatus.scanning;
+
+                    return Stack(
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            LucideIcons.bluetooth,
+                            color: isConnected
+                                ? const Color(0xFF10B981)
+                                : (isDark ? Colors.white : AppColors.navy),
+                            size: 22,
+                          ),
+                          tooltip: 'BLE Device Manager',
+                          onPressed: () => BleDeviceManagerSheet.show(context, coordinator),
+                        ),
+                        if (isConnected || isScanning)
+                          Positioned(
+                            top: 10,
+                            right: 10,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isConnected
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFFF59E0B),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF0A0F1D) : Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
             Stack(
               children: [
                 IconButton(

@@ -10,23 +10,64 @@ import 'esp32_constants.dart';
 class Esp32EnvironmentAdapter {
   final IBleDeviceManager _bleManager;
   final _environmentController = StreamController<NormalizedEnvironment>.broadcast();
+  final _statusController = StreamController<BleDeviceStatus>.broadcast();
 
   StreamSubscription<List<int>>? _tempSubscription;
   StreamSubscription<List<int>>? _humSubscription;
+  StreamSubscription<BleDeviceStatus>? _managerStatusSubscription;
+  Timer? _staleTimer;
 
+  BleDeviceStatus _effectiveStatus = BleDeviceStatus.disconnected;
   double? _latestTemperature;
   double? _latestHumidity;
+  DateTime? _lastReadingTime;
 
   Esp32EnvironmentAdapter({IBleDeviceManager? bleManager})
-      : _bleManager = bleManager ?? BleDeviceManager();
+      : _bleManager = bleManager ?? BleDeviceManager() {
+    _effectiveStatus = _bleManager.currentStatus;
+    _statusController.add(_effectiveStatus);
+    _managerStatusSubscription = _bleManager.statusStream.listen(_onManagerStatusChanged);
+  }
+
+  void _onManagerStatusChanged(BleDeviceStatus status) {
+    if (status != BleDeviceStatus.connected && _effectiveStatus == BleDeviceStatus.stale) {
+      _staleTimer?.cancel();
+    }
+    _updateEffectiveStatus(status);
+    if (status == BleDeviceStatus.connected) {
+      _resetStaleTimer();
+    } else {
+      _staleTimer?.cancel();
+    }
+  }
+
+  void _updateEffectiveStatus(BleDeviceStatus status) {
+    if (_effectiveStatus != status) {
+      _effectiveStatus = status;
+      if (!_statusController.isClosed) {
+        _statusController.add(status);
+      }
+    }
+  }
+
+  void _resetStaleTimer() {
+    _staleTimer?.cancel();
+    _staleTimer = Timer(const Duration(seconds: 20), () {
+      if (_effectiveStatus == BleDeviceStatus.connected) {
+        _updateEffectiveStatus(BleDeviceStatus.stale);
+      }
+    });
+  }
 
   Stream<NormalizedEnvironment> get environmentStream => _environmentController.stream;
-  Stream<BleDeviceStatus> get statusStream => _bleManager.statusStream;
-  BleDeviceStatus get currentStatus => _bleManager.currentStatus;
+  Stream<BleDeviceStatus> get statusStream => _statusController.stream;
+  BleDeviceStatus get currentStatus => _effectiveStatus;
   String? get connectedDeviceId => _bleManager.connectedDeviceId;
 
   double? get latestTemperature => _latestTemperature;
   double? get latestHumidity => _latestHumidity;
+  DateTime? get lastReadingTime => _lastReadingTime;
+  IBleDeviceManager get bleManager => _bleManager;
 
   /// Scans for ESP32 devices advertising standard or custom environmental services.
   Stream<DiscoveredBleDevice> scanForEsp32Sensors({
@@ -66,6 +107,12 @@ class Esp32EnvironmentAdapter {
         final val = parseTemperaturePayload(bytes);
         if (val != null) {
           _latestTemperature = val;
+          _lastReadingTime = DateTime.now();
+          if (_effectiveStatus == BleDeviceStatus.stale) {
+            _updateEffectiveStatus(BleDeviceStatus.connected);
+          }
+          _resetStaleTimer();
+
           final signal = NormalizedEnvironment(
             metric: 'temperature',
             value: val,
@@ -79,7 +126,9 @@ class Esp32EnvironmentAdapter {
           }
         }
       },
-      onError: (_) {},
+      onError: (_) {
+        _updateEffectiveStatus(BleDeviceStatus.error);
+      },
     );
 
     // Subscribe to Humidity
@@ -92,6 +141,12 @@ class Esp32EnvironmentAdapter {
         final val = parseHumidityPayload(bytes);
         if (val != null) {
           _latestHumidity = val;
+          _lastReadingTime = DateTime.now();
+          if (_effectiveStatus == BleDeviceStatus.stale) {
+            _updateEffectiveStatus(BleDeviceStatus.connected);
+          }
+          _resetStaleTimer();
+
           final signal = NormalizedEnvironment(
             metric: 'humidity',
             value: val,
@@ -105,7 +160,9 @@ class Esp32EnvironmentAdapter {
           }
         }
       },
-      onError: (_) {},
+      onError: (_) {
+        _updateEffectiveStatus(BleDeviceStatus.error);
+      },
     );
   }
 
@@ -181,17 +238,22 @@ class Esp32EnvironmentAdapter {
 
   /// Disconnects from the ESP32.
   Future<void> disconnect() async {
+    _staleTimer?.cancel();
     await _tempSubscription?.cancel();
     _tempSubscription = null;
     await _humSubscription?.cancel();
     _humSubscription = null;
     await _bleManager.disconnect();
+    _updateEffectiveStatus(BleDeviceStatus.disconnected);
   }
 
   void dispose() {
+    _staleTimer?.cancel();
+    _managerStatusSubscription?.cancel();
     _tempSubscription?.cancel();
     _humSubscription?.cancel();
     _environmentController.close();
+    _statusController.close();
     _bleManager.dispose();
   }
 }

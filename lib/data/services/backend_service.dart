@@ -406,6 +406,111 @@ class BackendService {
     return null;
   }
 
+  /// Trigger a controlled TWIN scenario across real event bus and autonomous engines
+  Future<TwinScenarioResult> triggerTwinScenario({
+    required String patientId,
+    required String scenarioName,
+    Map<String, dynamic>? params,
+  }) async {
+    final headers = await _authHeaders();
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/patients/$patientId/twin/scenarios/$scenarioName'),
+          headers: headers,
+          body: jsonEncode(params ?? {}),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return TwinScenarioResult.fromJson(data);
+    } else {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw BackendException(
+        data['detail']?.toString() ?? 'Failed to trigger scenario $scenarioName',
+      );
+    }
+  }
+
+  /// Retrieve technical scenario and event pipeline traces
+  Future<List<Map<String, dynamic>>> getTwinScenarioTraces(String patientId) async {
+    final headers = await _authHeaders();
+    final response = await http
+        .get(
+          Uri.parse('$baseUrl/api/patients/$patientId/twin/scenarios/traces'),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      final list = jsonDecode(response.body) as List<dynamic>;
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
+  /// Manually trigger a DurableScheduler scan-and-claim cycle
+  Future<Map<String, dynamic>> triggerDurableScheduler(String patientId) async {
+    final headers = await _authHeaders();
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/api/patients/$patientId/twin/scenarios/trigger-scheduler'),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw BackendException(
+        data['detail']?.toString() ?? 'Failed to run scheduler cycle',
+      );
+    }
+  }
+
+  /// Retrieve active notifications dispatched by NotificationEngine
+  Future<List<TwinInAppNotification>> getActiveNotifications(String patientId) async {
+    final headers = await _authHeaders();
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/patients/$patientId/twin/scenarios/notifications'),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body) as List<dynamic>;
+        return list
+            .map((e) => TwinInAppNotification.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Acknowledge an active in-app notification
+  Future<bool> acknowledgeNotification({
+    required String patientId,
+    required String notificationId,
+  }) async {
+    final headers = await _authHeaders();
+    try {
+      final response = await http
+          .post(
+            Uri.parse(
+              '$baseUrl/api/patients/$patientId/twin/scenarios/notifications/$notificationId/ack',
+            ),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15));
+
+      return response.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
   /// Record adherence event into canonical event bus
   Future<bool> recordAdherenceEvent({
     required String patientId,

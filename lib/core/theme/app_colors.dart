@@ -33,6 +33,10 @@ class AppColors {
   static const Color cardSurface = Color(0xFFFAFBFD);
 
   // Aliases
+  static const Color primary = primaryBlue;
+  static const Color info = primaryBlue;
+  static const Color textPrimary = navy;
+  static const Color textLight = muted;
   static const Color textDark = navy;
   static const Color textSecondary = secondaryText;
 

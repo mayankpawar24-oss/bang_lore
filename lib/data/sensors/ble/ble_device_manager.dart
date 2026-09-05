@@ -7,6 +7,8 @@ enum BleDeviceStatus {
   connecting,
   connected,
   disconnecting,
+  reconnecting,
+  stale,
   error,
 }
 
@@ -205,11 +207,13 @@ class BleDeviceManager implements IBleDeviceManager {
   void _scheduleReconnect(String deviceId) {
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _autoReconnect = false;
+      _updateStatus(BleDeviceStatus.disconnected);
       return;
     }
     _reconnectAttempts++;
+    _updateStatus(BleDeviceStatus.reconnecting);
     Timer(const Duration(seconds: 3), () {
-      if (_autoReconnect && _status == BleDeviceStatus.disconnected) {
+      if (_autoReconnect && _status == BleDeviceStatus.reconnecting) {
         connect(deviceId).catchError((_) {});
       }
     });

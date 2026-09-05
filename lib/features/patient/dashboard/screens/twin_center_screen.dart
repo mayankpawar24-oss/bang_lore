@@ -11,6 +11,9 @@ import '../../../../data/sensors/models/twin_sensor_signals.dart';
 import '../../../../data/services/backend_service.dart';
 import '../widgets/twin_decision_trace_sheet.dart';
 import '../widgets/sensor_diagnostics_sheet.dart';
+import '../widgets/ble_device_manager_sheet.dart';
+import '../widgets/twin_scenario_console_sheet.dart';
+import '../../../../core/widgets/in_app_notification_banner.dart';
 
 /// Dedicated Personal Activity & Behavior Twin Center.
 ///
@@ -167,6 +170,24 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(LucideIcons.terminal, color: AppColors.primary),
+            tooltip: 'TWIN Autonomous Console (Dev)',
+            onPressed: () => TwinScenarioConsoleSheet.show(
+              context,
+              patientId: widget.patientId,
+              backendService: _backend,
+              onScenarioTriggered: _loadData,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.bluetooth, color: Color(0xFF3B82F6)),
+            tooltip: 'BLE Device Manager',
+            onPressed: () => BleDeviceManagerSheet.show(
+              context,
+              _coordinator,
+            ),
+          ),
+          IconButton(
             icon: const Icon(LucideIcons.gauge, color: Color(0xFF3B82F6)),
             tooltip: 'Sensor Diagnostics (Dev)',
             onPressed: () => SensorDiagnosticsSheet.show(context, _coordinator),
@@ -194,6 +215,18 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  // Active In-App Notification Banner
+                  InAppNotificationBanner(
+                    patientId: widget.patientId,
+                    backendService: _backend,
+                    onViewInTwin: () => TwinScenarioConsoleSheet.show(
+                      context,
+                      patientId: widget.patientId,
+                      backendService: _backend,
+                      onScenarioTriggered: _loadData,
+                    ),
+                    onNotificationHandled: _loadData,
+                  ),
                   if (_error != null) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -306,11 +339,18 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
               Expanded(
                 child: ValueListenableBuilder<BleDeviceStatus>(
                   valueListenable: _coordinator.bleHrStatusNotifier,
-                  builder: (ctx, status, _) => _buildSensorPill(
-                    label: 'BLE Heart Rate',
-                    status: status.name.toUpperCase(),
-                    isConnected: status == BleDeviceStatus.connected,
-                    icon: LucideIcons.heart,
+                  builder: (ctx, status, _) => InkWell(
+                    onTap: () => BleDeviceManagerSheet.show(
+                      context,
+                      _coordinator,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    child: _buildSensorPill(
+                      label: 'BLE Heart Rate',
+                      status: status.name.toUpperCase(),
+                      isConnected: status == BleDeviceStatus.connected,
+                      icon: LucideIcons.heart,
+                    ),
                   ),
                 ),
               ),
@@ -318,11 +358,18 @@ class _TwinCenterScreenState extends State<TwinCenterScreen> {
               Expanded(
                 child: ValueListenableBuilder<BleDeviceStatus>(
                   valueListenable: _coordinator.esp32StatusNotifier,
-                  builder: (ctx, status, _) => _buildSensorPill(
-                    label: 'ESP32 Climate',
-                    status: status.name.toUpperCase(),
-                    isConnected: status == BleDeviceStatus.connected,
-                    icon: LucideIcons.thermometer,
+                  builder: (ctx, status, _) => InkWell(
+                    onTap: () => BleDeviceManagerSheet.show(
+                      context,
+                      _coordinator,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    child: _buildSensorPill(
+                      label: 'ESP32 Climate',
+                      status: status.name.toUpperCase(),
+                      isConnected: status == BleDeviceStatus.connected,
+                      icon: LucideIcons.thermometer,
+                    ),
                   ),
                 ),
               ),

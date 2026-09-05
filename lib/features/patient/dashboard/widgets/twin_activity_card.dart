@@ -12,6 +12,9 @@ import '../../../../data/services/backend_service.dart';
 import '../screens/twin_center_screen.dart';
 import 'twin_decision_trace_sheet.dart';
 import 'sensor_diagnostics_sheet.dart';
+import 'ble_device_manager_sheet.dart';
+import 'twin_scenario_console_sheet.dart';
+import '../../../../core/widgets/in_app_notification_banner.dart';
 
 class TwinActivityCard extends StatefulWidget {
   final TwinStateModel? twinState;
@@ -170,17 +173,9 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
   }
 
   void _showDeviceManagerSheet(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF131C2E) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => _DeviceManagerSheet(
-        coordinator: _coordinator,
-        isDark: isDark,
-      ),
+    BleDeviceManagerSheet.show(
+      context,
+      _coordinator,
     );
   }
 
@@ -218,6 +213,27 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Active Dispatched In-App Notifications
+          InAppNotificationBanner(
+            patientId: widget.patientId,
+            backendService: widget.backendService,
+            onViewInTwin: () {
+              TwinScenarioConsoleSheet.show(
+                context,
+                patientId: widget.patientId,
+                backendService: widget.backendService,
+                onScenarioTriggered: () {
+                  setState(() {});
+                  widget.onRefresh?.call();
+                },
+              );
+            },
+            onNotificationHandled: () {
+              setState(() {});
+              widget.onRefresh?.call();
+            },
+          ),
+
           // Header Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -270,52 +286,129 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                   ],
                 ),
               ),
-              InkWell(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (ctx) => TwinCenterScreen(
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      TwinScenarioConsoleSheet.show(
+                        context,
                         patientId: widget.patientId,
                         backendService: widget.backendService,
-                        sensorCoordinator: _coordinator,
-                      ),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        onScenarioTriggered: () {
+                          setState(() {});
+                          widget.onRefresh?.call();
+                        },
+                      );
+                    },
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                      width: 1,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(LucideIcons.terminal, size: 10, color: AppColors.primary),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Console',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 5,
-                        height: 5,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF10B981),
-                          shape: BoxShape.circle,
+                  const SizedBox(width: 5),
+                  InkWell(
+                    onTap: () => _showDeviceManagerSheet(context, isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.35),
+                          width: 1,
                         ),
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'TWIN Center →',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(LucideIcons.bluetooth, size: 10, color: Color(0xFF3B82F6)),
+                          const SizedBox(width: 3),
+                          Text(
+                            'BLE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 5),
+                  InkWell(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (ctx) => TwinCenterScreen(
+                            patientId: widget.patientId,
+                            backendService: widget.backendService,
+                            sensorCoordinator: _coordinator,
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'TWIN Center →',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -463,83 +556,87 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
                           : 'Collecting baseline';
                     }
 
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.05)
-                              : const Color(0xFFE2E8F0),
+                    return InkWell(
+                      onTap: () => _showDeviceManagerSheet(context, isDark),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.05)
+                                : const Color(0xFFE2E8F0),
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    LucideIcons.heartPulse,
-                                    size: 14,
-                                    color: Color(0xFFEF4444),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      LucideIcons.heartPulse,
+                                      size: 14,
+                                      color: Color(0xFFEF4444),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Heart Rate',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Heart Rate',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : AppColors.textSecondary,
+                                  child: Text(
+                                    sourceTagShort,
+                                    style: const TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFFEF4444),
                                     ),
                                   ),
-                                ],
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: Text(
-                                  sourceTagShort,
-                                  style: const TextStyle(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFFEF4444),
-                                  ),
-                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              displayBpm,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? Colors.white : AppColors.navy,
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            displayBpm,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: isDark ? Colors.white : AppColors.navy,
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            sourceDesc,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark
-                                  ? const Color(0xFF64748B)
-                                  : const Color(0xFF64748B),
+                            const SizedBox(height: 2),
+                            Text(
+                              sourceDesc,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark
+                                    ? const Color(0xFF64748B)
+                                    : const Color(0xFF64748B),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -639,6 +736,11 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
               );
             },
           ),
+
+          const SizedBox(height: 12),
+
+          // Dedicated Bluetooth Devices (BLE) Section
+          _buildBluetoothDevicesSection(isDark),
 
           const SizedBox(height: 12),
 
@@ -750,6 +852,314 @@ class _TwinActivityCardState extends State<TwinActivityCard> {
             ...proposedRecs.map((rec) => _buildRecommendationCard(rec, isDark)),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildBluetoothDevicesSection(bool isDark) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _coordinator.bleHrStatusNotifier,
+        _coordinator.esp32StatusNotifier,
+        _coordinator.currentHeartRateNotifier,
+        _coordinator.currentTemperatureNotifier,
+        _coordinator.currentHumidityNotifier,
+      ]),
+      builder: (ctx, _) {
+        final hrStatus = _coordinator.bleHrStatusNotifier.value;
+        final espStatus = _coordinator.esp32StatusNotifier.value;
+        final liveHr = _coordinator.currentHeartRateNotifier.value;
+        final temp = _coordinator.currentTemperatureNotifier.value;
+        final hum = _coordinator.currentHumidityNotifier.value;
+
+        final bool anyConnected = hrStatus == BleDeviceStatus.connected ||
+            espStatus == BleDeviceStatus.connected;
+        final bool anyScanning = hrStatus == BleDeviceStatus.scanning ||
+            espStatus == BleDeviceStatus.scanning;
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Section Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              LucideIcons.bluetooth,
+                              color: Color(0xFF3B82F6),
+                              size: 15,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bluetooth Devices (BLE)',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white : AppColors.navy,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                anyConnected
+                                    ? 'Connected & streaming telemetry'
+                                    : (anyScanning ? 'Scanning for peripherals...' : 'Standard GATT • 20s watchdog'),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark ? const Color(0xFF94A3B8) : AppColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _showDeviceManagerSheet(context, isDark),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            anyScanning ? LucideIcons.loader2 : LucideIcons.sliders,
+                            size: 11,
+                            color: const Color(0xFF3B82F6),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            anyScanning ? 'Scanning' : 'Manage',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF3B82F6),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Device 1: BLE Heart Rate Monitor
+              _buildBleDeviceTile(
+                icon: LucideIcons.heartPulse,
+                iconColor: const Color(0xFFEF4444),
+                name: 'Heart Rate Monitor',
+                serviceUuid: '0x180D (Measurement 0x2A37)',
+                status: hrStatus,
+                liveData: liveHr != null ? '${liveHr.bpm.toInt()} BPM' : null,
+                isDark: isDark,
+                onConnect: () => _showDeviceManagerSheet(context, isDark),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Device 2: ESP32 Climate Sensor
+              _buildBleDeviceTile(
+                icon: LucideIcons.thermometer,
+                iconColor: const Color(0xFF06B6D4),
+                name: 'ESP32 Climate Sensor',
+                serviceUuid: '0x181A (Temp & Humidity)',
+                status: espStatus,
+                liveData: (temp != null && hum != null)
+                    ? '${temp.toStringAsFixed(1)}°C • ${hum.toStringAsFixed(0)}%'
+                    : null,
+                isDark: isDark,
+                onConnect: () => _showDeviceManagerSheet(context, isDark),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBleDeviceTile({
+    required IconData icon,
+    required Color iconColor,
+    required String name,
+    required String serviceUuid,
+    required BleDeviceStatus status,
+    required String? liveData,
+    required bool isDark,
+    required VoidCallback onConnect,
+  }) {
+    Color badgeColor;
+    String badgeText;
+    switch (status) {
+      case BleDeviceStatus.connected:
+        badgeColor = const Color(0xFF10B981);
+        badgeText = 'CONNECTED';
+        break;
+      case BleDeviceStatus.connecting:
+        badgeColor = const Color(0xFF3B82F6);
+        badgeText = 'CONNECTING';
+        break;
+      case BleDeviceStatus.scanning:
+        badgeColor = const Color(0xFFF59E0B);
+        badgeText = 'SCANNING';
+        break;
+      case BleDeviceStatus.reconnecting:
+        badgeColor = const Color(0xFF8B5CF6);
+        badgeText = 'RECONNECTING';
+        break;
+      case BleDeviceStatus.stale:
+        badgeColor = const Color(0xFFF97316);
+        badgeText = 'STALE DATA';
+        break;
+      case BleDeviceStatus.error:
+        badgeColor = const Color(0xFFEF4444);
+        badgeText = 'ERROR';
+        break;
+      case BleDeviceStatus.disconnected:
+      default:
+        badgeColor = const Color(0xFF64748B);
+        badgeText = 'DISCONNECTED';
+        break;
+    }
+
+    return InkWell(
+      onTap: onConnect,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.5) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Icon(icon, color: iconColor, size: 14),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : AppColors.navy,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (liveData != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            liveData,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    serviceUuid,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: badgeColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: badgeColor.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                badgeText,
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w700,
+                  color: badgeColor,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
