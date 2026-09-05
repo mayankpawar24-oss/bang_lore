@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/sensors/ble/ble_device_manager.dart';
@@ -40,6 +42,7 @@ class _BleDeviceManagerSheetState extends State<BleDeviceManagerSheet>
   bool _isScanning = false;
   String? _connectingDeviceId;
   String? _errorMessage;
+  BlePermissionReport? _lastPermissionReport;
   Timer? _ticker;
 
   HeartRateBleAdapter get _hrAdapter => widget.coordinator.heartRateAdapter;
@@ -69,12 +72,35 @@ class _BleDeviceManagerSheetState extends State<BleDeviceManagerSheet>
     super.dispose();
   }
 
-  void _startScan() {
+  Future<void> _startScan() async {
     setState(() {
       _isScanning = true;
       _discoveredDevices.clear();
       _errorMessage = null;
+      _lastPermissionReport = null;
     });
+
+    try {
+      final report = await widget.coordinator.bleManager.checkAndRequestPermissions();
+      if (!report.isGranted) {
+        if (mounted) {
+          setState(() {
+            _isScanning = false;
+            _lastPermissionReport = report;
+            _errorMessage = report.message;
+          });
+        }
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          _errorMessage = 'Permission check failed: $e';
+        });
+      }
+      return;
+    }
 
     final stream = _tabController.index == 0
         ? _hrAdapter.scanForHeartRateMonitors(duration: const Duration(seconds: 15))
@@ -309,21 +335,77 @@ class _BleDeviceManagerSheetState extends State<BleDeviceManagerSheet>
         // Error message if any
         if (_errorMessage != null) ...[
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.shade300),
+              color: Colors.red.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.red.shade300, width: 1.2),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(LucideIcons.alertTriangle, size: 18, color: Colors.red),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(fontSize: 12, color: Colors.red),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(LucideIcons.alertTriangle, size: 20, color: Colors.red),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (_lastPermissionReport?.permanentlyDenied == true)
+                      FilledButton.tonalIcon(
+                        onPressed: () async {
+                          await openAppSettings();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red.shade100,
+                          foregroundColor: Colors.red.shade900,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(LucideIcons.settings, size: 14),
+                        label: const Text('Open App Settings', style: TextStyle(fontSize: 12)),
+                      ),
+                    if (_lastPermissionReport != null && !_lastPermissionReport!.locationServiceEnabled)
+                      FilledButton.tonalIcon(
+                        onPressed: () async {
+                          await Geolocator.openLocationSettings();
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.amber.shade100,
+                          foregroundColor: Colors.amber.shade900,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(LucideIcons.mapPin, size: 14),
+                        label: const Text('Enable Location Settings', style: TextStyle(fontSize: 12)),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: _startScan,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF3B82F6),
+                        side: const BorderSide(color: Color(0xFF3B82F6)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(LucideIcons.refreshCw, size: 14),
+                      label: const Text('Retry Scan', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
                 ),
               ],
             ),

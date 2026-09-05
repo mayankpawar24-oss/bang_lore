@@ -29,6 +29,8 @@ class Esp32EnvironmentAdapter {
     _managerStatusSubscription = _bleManager.statusStream.listen(_onManagerStatusChanged);
   }
 
+  IBleDeviceManager get bleManager => _bleManager;
+
   void _onManagerStatusChanged(BleDeviceStatus status) {
     if (status != BleDeviceStatus.connected && _effectiveStatus == BleDeviceStatus.stale) {
       _staleTimer?.cancel();
@@ -67,7 +69,6 @@ class Esp32EnvironmentAdapter {
   double? get latestTemperature => _latestTemperature;
   double? get latestHumidity => _latestHumidity;
   DateTime? get lastReadingTime => _lastReadingTime;
-  IBleDeviceManager get bleManager => _bleManager;
 
   /// Scans for ESP32 devices advertising standard or custom environmental services.
   Stream<DiscoveredBleDevice> scanForEsp32Sensors({

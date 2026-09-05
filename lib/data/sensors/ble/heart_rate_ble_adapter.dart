@@ -30,6 +30,8 @@ class HeartRateBleAdapter {
     _managerStatusSubscription = _bleManager.statusStream.listen(_onManagerStatusChanged);
   }
 
+  IBleDeviceManager get bleManager => _bleManager;
+
   void _onManagerStatusChanged(BleDeviceStatus status) {
     if (status != BleDeviceStatus.connected && _effectiveStatus == BleDeviceStatus.stale) {
       _staleTimer?.cancel();
@@ -68,7 +70,6 @@ class HeartRateBleAdapter {
   NormalizedHeartRate? get latestReading => _latestReading;
   String? get sensorLocation => _sensorLocation;
   DateTime? get lastReadingTime => _lastReadingTime;
-  IBleDeviceManager get bleManager => _bleManager;
 
   /// Scans specifically for Bluetooth devices advertising the standard Heart Rate Service (0x180D).
   Stream<DiscoveredBleDevice> scanForHeartRateMonitors({

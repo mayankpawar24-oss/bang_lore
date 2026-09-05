@@ -79,6 +79,8 @@ class TwinSensorCoordinator {
   ValueNotifier<SensorDiagnosticsData> get diagnosticsNotifier =>
       motionPipeline.diagnosticsNotifier;
 
+  IBleDeviceManager get bleManager => heartRateAdapter.bleManager;
+
   /// Initializes all sensors, connects streams, and starts background synchronization.
   Future<void> initialize() async {
     if (_isInitialized) return;

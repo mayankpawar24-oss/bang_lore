@@ -60,6 +60,15 @@ class MockBleDeviceManager implements IBleDeviceManager {
   String? get connectedDeviceId => null;
 
   @override
+  BleStatus get bleStatus => BleStatus.ready;
+
+  @override
+  Stream<BleStatus> get bleStatusStream => Stream.value(BleStatus.ready);
+
+  @override
+  Future<BlePermissionReport> checkAndRequestPermissions() async => BlePermissionReport.ready;
+
+  @override
   Stream<DiscoveredBleDevice> scanForDevices({
     List<Uuid> serviceUuids = const [],
     Duration duration = const Duration(seconds: 10),
